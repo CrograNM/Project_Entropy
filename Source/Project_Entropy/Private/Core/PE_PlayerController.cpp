@@ -58,25 +58,29 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 	switch (NewState)
 	{
 		case EPEGameState::Base:
-			if (IMC_DirectMove)
 			{
-				Subsystem->AddMappingContext(IMC_DirectMove, 0);
+				if (IMC_DirectMove)
+				{
+					Subsystem->AddMappingContext(IMC_DirectMove, 0);
+				}
+				// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
+				FInputModeGameOnly InputModeDataGame;
+				SetInputMode(InputModeDataGame);
+				break;
 			}
-			// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
-			FInputModeGameOnly InputModeDataGame;
-			SetInputMode(InputModeDataGame);
-			break;
 
 		case EPEGameState::Battle:
-			if (IMC_Battle)
 			{
-				Subsystem->AddMappingContext(IMC_Battle, 0);
+				if (IMC_Battle)
+				{
+					Subsystem->AddMappingContext(IMC_Battle, 0);
+				}
+				// 배틀 모드: 마우스가 UI(카드)와 전장을 자유롭게 넘나들어야 하므로 GameAndUI 모드로 설정
+				FInputModeGameAndUI InputModeDataUI;
+				InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+				SetInputMode(InputModeDataUI);
+				break;
 			}
-			// 배틀 모드: 마우스가 UI(카드)와 전장을 자유롭게 넘나들어야 하므로 GameAndUI 모드로 설정
-			FInputModeGameAndUI InputModeDataUI;
-			InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-			SetInputMode(InputModeDataUI);
-			break;
 	}
 }
 
