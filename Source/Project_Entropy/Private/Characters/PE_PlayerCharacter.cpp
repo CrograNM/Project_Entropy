@@ -1,7 +1,7 @@
 // Copyright CrograNM
 
 
-#include "PE_PlayerCharacter.h"
+#include "Characters/PE_PlayerCharacter.h"
 
 // Sets default values
 APE_PlayerCharacter::APE_PlayerCharacter()
