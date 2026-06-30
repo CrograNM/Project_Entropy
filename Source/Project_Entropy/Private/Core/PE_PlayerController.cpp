@@ -91,8 +91,8 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
 		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
 		
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 라인 트레이스 결과 %s"), *HitResult.GetActor()->GetName());
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 타일: %s"), HoveredTile ? *HoveredTile->GetName() : TEXT("None"));
+		// UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 라인 트레이스 결과 %s"), *HitResult.GetActor()->GetName());
+		// UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 타일: %s"), HoveredTile ? *HoveredTile->GetName() : TEXT("None"));
 		if (HoveredTile && PC)
 		{
 			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
@@ -174,23 +174,27 @@ void APE_PlayerController::Move(const FInputActionValue& Value)
 void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 {
 	if (!bIsMovementMode || !GridSystem) return;
-	UE_LOG(LogTemp, Warning, TEXT("APE_PlayerController::OnMouseClick"));
 
 	FHitResult HitResult;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
 		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
 		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
-
+	
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 타일: %s"), TargetTile ? *TargetTile->GetName() : TEXT("None"));
+		
 		if (TargetTile && PC && ValidRangeTiles.Contains(TargetTile))
 		{
 			// 이동 경로 추출
 			TArray<AACTile*> Path = GridSystem->CalculatePath(PC->GetGridPosition(), TargetTile->GetGridPosition());
 			
-			// 경로 타일들은 즉시 불빛 복구 (도착지만 빼고)
-			for (AACTile* Tile : Path)
+			// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
+			for (AACTile* Tile : ValidRangeTiles)
 			{
-				if (Tile != TargetTile) Tile->SetHighlightState(ETileHighlightType::None);
+				if (Tile && Tile != TargetTile)
+				{
+					Tile->SetHighlightState(ETileHighlightType::None);
+				}
 			}
 			
 			// 캐릭터에게 이동 명령 하달 및 모드 종료

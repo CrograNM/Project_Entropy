@@ -6,7 +6,9 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
+#include "Kismet/GameplayStatics.h"
 
 APE_PlayerCharacter::APE_PlayerCharacter()
 {
@@ -37,6 +39,48 @@ void APE_PlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	// 플레이어 배치 위치 기반 최초 그리드 위치 자동 설정
+	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
+	{
+		if (AACGridSystem* GridSystem = Cast<AACGridSystem>(FoundGridActor))
+		{
+			FVector PlayerLoc = GetActorLocation();
+			AACTile* ClosestTile = nullptr;
+			float MinDistance = MAX_FLT;
+
+			// 이전에 구현해둔 GridSystem 내부의 map_data(GridTiles)를 순회하며 가장 가까운 타일을 찾습니다.
+			TArray<AActor*> FoundTiles;
+			UGameplayStatics::GetAllActorsOfClass(GetWorld(), AACTile::StaticClass(), FoundTiles);
+
+			for (AActor* Actor : FoundTiles)
+			{
+				AACTile* Tile = Cast<AACTile>(Actor);
+				if (Tile)
+				{
+					float Dist = FVector::DistSquared(PlayerLoc, Tile->GetActorLocation());
+					if (Dist < MinDistance)
+					{
+						MinDistance = Dist;
+						ClosestTile = Tile;
+					}
+				}
+			}
+
+			// 가장 가까운 타일을 찾았다면, 해당 타일의 정중앙으로 캐릭터 위치를 스냅하고 그리드 좌표를 동기화합니다.
+			if (ClosestTile)
+			{
+				GridPosition = ClosestTile->GetGridPosition();
+				
+				FVector SnapLocation = ClosestTile->GetCenterWorldLocation();
+				// 캐릭터 모델 피벗에 맞춰 Z축 높이만 플레이어 본래 높이 유지
+				SnapLocation.Z = PlayerLoc.Z; 
+				
+				SetActorLocation(SnapLocation);
+
+				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerCharacter::BeginPlay] 플레이어 초기 그리드 좌표 자동 등록 완료: (%d, %d)"), GridPosition.X, GridPosition.Y);
+			}
+		}
+	}
 }
 
 void APE_PlayerCharacter::Tick(float DeltaTime)
