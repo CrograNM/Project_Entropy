@@ -6,6 +6,15 @@
 #include "GameFramework/Actor.h"
 #include "ACTile.generated.h"
 
+UENUM(BlueprintType)
+enum class ETileHighlightType : uint8
+{
+	None,
+	InRange,    // 이동 사거리 내 타일 (은은한 불빛)
+	Hovered,    // 마우스가 올라간 도착 타일 (강한 불빛)
+	Path        // 이동 경로 상의 타일들 (경로 불빛)
+};
+
 UCLASS()
 class PROJECT_ENTROPY_API AACTile : public AActor
 {
@@ -18,19 +27,35 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	/** 타일의 그리드 좌표 (X, Y) */
 	void SetGridPosition(FIntPoint InPos) { GridPosition = InPos; }
 	FIntPoint GetGridPosition() const { return GridPosition; }
-
-	/** 캐릭터가 이동할 타일 중심점의 월드 위치 반환 */
 	FVector GetCenterWorldLocation() const;
 
+	/** 타일의 하이라이트 상태를 변경하여 이미시브 컬러를 제어하는 함수 */
+	void SetHighlightState(ETileHighlightType NewState);
+	
 protected:
-	/** 마우스 클릭 레이캐스트를 감지할 타일 메쉬 (에디터에서 납작한 사각판 지정) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile")
 	TObjectPtr<UStaticMeshComponent> TileMesh;
 
-	/** 이 타일의 고유 그리드 좌표 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|Data")
 	FIntPoint GridPosition;
+	
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Tile|Visual")
+	FName EmissiveParamName = TEXT("EmissiveColor");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor DefaultColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f); 
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor InRangeColor = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f); 
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor HoveredColor = FLinearColor(0.0f, 0.5f, 0.8f, 1.0f); 
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor PathColor = FLinearColor(0.0f, 1.0f, 0.8f, 1.0f);
 };

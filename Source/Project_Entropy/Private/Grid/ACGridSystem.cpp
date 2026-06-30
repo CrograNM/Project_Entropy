@@ -12,6 +12,96 @@ AACGridSystem::AACGridSystem()
 	GridShape = EGridShape::Rectangle;
 }
 
+AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
+{
+	if (GridTiles.Contains(Pos)) return GridTiles[Pos];
+	return nullptr;
+}
+
+TArray<AACTile*> AACGridSystem::ShowMovementRange(FIntPoint CenterPos, int32 Range)
+{
+	ClearAllHighlights();
+	CurrentRangeTiles.Empty();
+
+	for (auto& Pair : GridTiles)
+	{
+		FIntPoint TilePos = Pair.Key;
+		// 맨해튼 거리 공식 (|x1 - x2| + |y1 - y2|)으로 사각형/마름모 형태 범위 추출
+		int32 Distance = FMath::Abs(CenterPos.X - TilePos.X) + FMath::Abs(CenterPos.Y - TilePos.Y);
+		
+		if (Distance <= Range && Distance > 0) // 자기 자신 제외
+		{
+			Pair.Value->SetHighlightState(ETileHighlightType::InRange);
+			CurrentRangeTiles.Add(Pair.Value);
+		}
+	}
+	return CurrentRangeTiles;
+}
+
+TArray<AACTile*> AACGridSystem::CalculatePath(FIntPoint StartPos, FIntPoint EndPos)
+{
+	TArray<AACTile*> Path;
+	// 프로토타입용 단순 직선 축 이동 알고리즘 (추후 장애물 인식을 위해 A* 알고리즘으로 확장 가능)
+	FIntPoint Current = StartPos;
+	
+	while (Current != EndPos)
+	{
+		if (Current.X != EndPos.X)
+		{
+			Current.X += (EndPos.X > Current.X) ? 1 : -1;
+		}
+		else if (Current.Y != EndPos.Y)
+		{
+			Current.Y += (EndPos.Y > Current.Y) ? 1 : -1;
+		}
+		
+		AACTile* NextTile = GetTileAtPosition(Current);
+		if (NextTile) Path.Add(NextTile);
+	}
+	return Path;
+}
+
+void AACGridSystem::HighlightPath(FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles)
+{
+	// 기존 경로 초기화 (범위 내 색상인 InRange로 원상복구)
+	for (AACTile* Tile : CurrentPathTiles)
+	{
+		if (InRangeTiles.Contains(Tile))
+		{
+			Tile->SetHighlightState(ETileHighlightType::InRange);
+		}
+	}
+	CurrentPathTiles.Empty();
+
+	AACTile* TargetTile = GetTileAtPosition(EndPos);
+	if (!TargetTile || !InRangeTiles.Contains(TargetTile)) return;
+
+	// 새 경로 연산 및 하이라이트
+	CurrentPathTiles = CalculatePath(StartPos, EndPos);
+	
+	for (AACTile* Tile : CurrentPathTiles)
+	{
+		if (Tile == TargetTile)
+		{
+			Tile->SetHighlightState(ETileHighlightType::Hovered); // 목적지
+		}
+		else
+		{
+			Tile->SetHighlightState(ETileHighlightType::Path); // 이동 경로
+		}
+	}
+}
+
+void AACGridSystem::ClearAllHighlights()
+{
+	for (auto& Pair : GridTiles)
+	{
+		Pair.Value->SetHighlightState(ETileHighlightType::None);
+	}
+	CurrentRangeTiles.Empty();
+	CurrentPathTiles.Empty();
+}
+
 void AACGridSystem::BeginPlay()
 {
 	Super::BeginPlay();

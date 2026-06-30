@@ -3,7 +3,9 @@
 #include "Core/PE_PlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Characters/PE_PlayerCharacter.h"
 #include "GameFramework/Character.h"
+#include "Kismet/GameplayStatics.h"
 
 APE_PlayerController::APE_PlayerController()
 {
@@ -16,9 +18,24 @@ APE_PlayerController::APE_PlayerController()
 void APE_PlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-
+	
 	// 최초 상태 설정 (여기서는 편의상 기지 모드로 시작한다고 가정)
 	SwitchInputMode(EPEGameState::Base);
+	
+	// 현재 월드에 스폰되어 배치되어 있는 AACGridSystem 타입의 액터를 찾아 자동으로 연동
+	AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass());
+	if (FoundGridActor)
+	{
+		GridSystem = Cast<AACGridSystem>(FoundGridActor);
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::BeginPlay] 월드에서 GridSystem 연동 성공"));
+		SwitchInputMode(EPEGameState::Battle);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::BeginPlay] 월드에 GridSystem 액터가 없음"));
+		SwitchInputMode(EPEGameState::Base);
+	}
+	
 }
 
 void APE_PlayerController::SetupInputComponent()
@@ -38,6 +55,54 @@ void APE_PlayerController::SetupInputComponent()
 		if (IA_MouseClick)
 		{
 			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClick);
+		}
+	}
+}
+
+void APE_PlayerController::ToggleMovementMode()
+{
+	bIsMovementMode = !bIsMovementMode;
+
+	APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
+	if (bIsMovementMode && PC && GridSystem)
+	{
+		ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridPosition(), PlayerMoveRange);
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
+	}
+	else if (GridSystem)
+	{
+		GridSystem->ClearAllHighlights();
+		ValidRangeTiles.Empty();
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 비활성화 - 하이라이트 초기화"));
+	}
+}
+
+void APE_PlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	// --- 이동: 마우스 호버링 ---
+	if (!bIsMovementMode || !GridSystem) return;
+
+	// 마우스 밑의 타일 레이캐스팅 감지
+	FHitResult HitResult;
+	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
+	{
+		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
+		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
+		
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 라인 트레이스 결과 %s"), *HitResult.GetActor()->GetName());
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 타일: %s"), HoveredTile ? *HoveredTile->GetName() : TEXT("None"));
+		if (HoveredTile && PC)
+		{
+			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
+			
+			// 매 틱 연산 방지를 위해 마우스가 '새로운 타일'로 넘어갔을 때만 경로 재부각
+			if (CurrentTilePos != LastHoveredTilePos)
+			{
+				LastHoveredTilePos = CurrentTilePos;
+				GridSystem->HighlightPath(PC->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+			}
 		}
 	}
 }
@@ -66,6 +131,7 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 				// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
 				FInputModeGameOnly InputModeDataGame;
 				SetInputMode(InputModeDataGame);
+				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 기지 모드로 전환"));
 				break;
 			}
 
@@ -79,6 +145,7 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 				FInputModeGameAndUI InputModeDataUI;
 				InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 				SetInputMode(InputModeDataUI);
+				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
 				break;
 			}
 	}
@@ -106,12 +173,32 @@ void APE_PlayerController::Move(const FInputActionValue& Value)
 
 void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 {
-	// 배틀 모드일 때 마우스 클릭 시 호출됨
+	if (!bIsMovementMode || !GridSystem) return;
+	UE_LOG(LogTemp, Warning, TEXT("APE_PlayerController::OnMouseClick"));
+
 	FHitResult HitResult;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
-		// 클릭한 타일이나 오브젝트 정보를 가져와 카드 타겟팅 로직 전개 가능
-		AActor* HitActor = HitResult.GetActor();
-		UE_LOG(LogTemp, Log, TEXT("배틀 클릭 타겟: %s"), HitActor ? *HitActor->GetName() : TEXT("None"));
+		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
+		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
+
+		if (TargetTile && PC && ValidRangeTiles.Contains(TargetTile))
+		{
+			// 이동 경로 추출
+			TArray<AACTile*> Path = GridSystem->CalculatePath(PC->GetGridPosition(), TargetTile->GetGridPosition());
+			
+			// 경로 타일들은 즉시 불빛 복구 (도착지만 빼고)
+			for (AACTile* Tile : Path)
+			{
+				if (Tile != TargetTile) Tile->SetHighlightState(ETileHighlightType::None);
+			}
+			
+			// 캐릭터에게 이동 명령 하달 및 모드 종료
+			PC->MoveAlongPath(Path); 
+			
+			bIsMovementMode = false;
+			ValidRangeTiles.Empty();
+			LastHoveredTilePos = FIntPoint(-999, -999);
+		}
 	}
 }

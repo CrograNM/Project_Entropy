@@ -17,10 +17,42 @@ AACTile::AACTile()
 void AACTile::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (TileMesh->GetMaterial(0))
+	{
+		DynamicMaterial = TileMesh->CreateDynamicMaterialInstance(0);
+	}
 }
 
 FVector AACTile::GetCenterWorldLocation() const
 {
-	// 타일 메쉬의 중심 월드 좌표를 반환하되, 캐릭터가 발을 딛는 높이(Z축 부모 위치 등)를 고려하여 반환
-	return GetActorLocation();
+	FVector Loc = GetActorLocation();
+	// Loc.Z += 50.f; 
+	return Loc;
+}
+
+void AACTile::SetHighlightState(ETileHighlightType NewState)
+{
+	if (!DynamicMaterial) return;
+
+	FLinearColor TargetColor; 
+
+	switch (NewState)
+	{
+	case ETileHighlightType::InRange:
+		TargetColor = InRangeColor;
+		break;
+	case ETileHighlightType::Hovered:
+		TargetColor = HoveredColor;
+		break;
+	case ETileHighlightType::Path:
+		TargetColor = PathColor;
+		break;
+	case ETileHighlightType::None:
+	default:
+		TargetColor = DefaultColor;
+		break;
+	}
+
+	DynamicMaterial->SetVectorParameterValue(EmissiveParamName, TargetColor);
 }
