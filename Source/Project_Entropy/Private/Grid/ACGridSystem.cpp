@@ -1,6 +1,5 @@
 // Copyright CrograNM
 
-// #include "Grid/ACTile.h"
 #include "Grid/ACGridSystem.h"
 
 AACGridSystem::AACGridSystem()
@@ -10,7 +9,7 @@ AACGridSystem::AACGridSystem()
 	TileSpacing = 100.f;
 	MaxWidth = 5;
 	MaxHeight = 5;
-	GridShapeShape = TEXT("Rectangle");
+	GridShape = EGridShape::Rectangle;
 }
 
 void AACGridSystem::BeginPlay()
@@ -32,17 +31,17 @@ void AACGridSystem::RegenerateGrid()
 		{
 			bool bShouldSpawn = false;
 
-			// 개발자가 설정한 도형 규칙에 따라 스폰 여부 필터링 (원형, 다이아몬드 등)
-			if (GridShapeShape == TEXT("Rectangle"))
+			// 도형 규칙에 따른 스폰 여부 필터링 (원형, 다이아몬드 등)
+			if (GridShape == EGridShape::Rectangle)
 			{
 				bShouldSpawn = true;
 			}
-			else if (GridShapeShape == TEXT("Diamond"))
+			else if (GridShape == EGridShape::Diamond)
 			{
-				// 마인크래프트 등에서 쓰이는 맨해튼 거리 공식(|X| + |Y| <= 범위)으로 다이아몬드 구현
+				// 맨해튼 거리 공식(|X| + |Y| <= 범위)으로 다이아몬드 구현
 				bShouldSpawn = (FMath::Abs(X) + FMath::Abs(Y)) <= MaxWidth;
 			}
-			else if (GridShapeShape == TEXT("Circle"))
+			else if (GridShape == EGridShape::Circle)
 			{
 				// 피타고라스 정리(정원형 공식)를 이용한 원형 범위 타일 추출
 				bShouldSpawn = (X*X + Y*Y) <= (MaxWidth * MaxWidth);
@@ -57,9 +56,8 @@ void AACGridSystem::RegenerateGrid()
 				
 				FActorSpawnParameters SpawnParams;
 				SpawnParams.Owner = this;
-				
-				AACTile* NewTile = GetWorld()->SpawnActor<AACTile>(TileClass, SpawnLoc, FRotator::ZeroRotator, SpawnParams);
-				if (NewTile)
+
+				if (AACTile* NewTile = GetWorld()->SpawnActor<AACTile>(TileClass, SpawnLoc, FRotator::ZeroRotator, SpawnParams))
 				{
 					NewTile->SetGridPosition(GridPos);
 #if WITH_EDITOR
@@ -74,7 +72,7 @@ void AACGridSystem::RegenerateGrid()
 
 void AACGridSystem::ClearGrid()
 {
-	for (auto& Pair : GridTiles)
+	for (const auto& Pair : GridTiles)
 	{
 		if (Pair.Value)
 		{
@@ -88,9 +86,9 @@ void AACGridSystem::ClearGrid()
 void AACGridSystem::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
-	// 디자이너 편의성: 에디터 인펙터 수치가 바뀌면 자동으로 그리드가 실시간 재시각화됨
+	// 편의성: 에디터 인펙터 수치가 바뀌면 자동으로 그리드가 실시간 재시각화됨
 	FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(AACGridSystem, GridShapeShape) || 
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AACGridSystem, GridShape) || 
 		PropertyName == GET_MEMBER_NAME_CHECKED(AACGridSystem, MaxWidth))
 	{
 		RegenerateGrid();

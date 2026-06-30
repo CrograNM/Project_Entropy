@@ -7,6 +7,14 @@
 #include "Grid/ACTile.h"
 #include "ACGridSystem.generated.h"
 
+UENUM (BlueprintType)
+enum class EGridShape : uint8
+{
+	Rectangle UMETA(DisplayName = "Rectangle"),
+	Diamond UMETA(DisplayName = "Diamond"),
+	Circle UMETA(DisplayName = "Circle")
+};
+
 UCLASS()
 class PROJECT_ENTROPY_API AACGridSystem : public AActor
 {
@@ -49,7 +57,7 @@ protected:
 
 	/** 다이아몬드, 원형 등 브러시 형태 선택 옵션 */
 	UPROPERTY(EditAnywhere, Category = "Grid Tool|Generator")
-	FString GridShapeShape; // "Rectangle", "Diamond", "Circle" 등
+	EGridShape GridShape;
 
 	/** 실제 전장에 배치된 타일들의 2차원 데이터 맵 (Key: 좌표, Value: 타일 액터) */
 	UPROPERTY(VisibleAnywhere, Category = "Grid Data")
