@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
+#include "Characters/PE_CharacterBase.h"
 #include "PE_PlayerCharacter.generated.h"
 
 class UACGridMovementComponent;
@@ -11,7 +11,7 @@ class USpringArmComponent;
 class UCameraComponent;
 
 UCLASS()
-class PROJECT_ENTROPY_API APE_PlayerCharacter : public ACharacter
+class PROJECT_ENTROPY_API APE_PlayerCharacter : public APE_CharacterBase
 {
 	GENERATED_BODY()
 
@@ -28,7 +28,6 @@ public:
 	/** --- Getter --- */
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE UCameraComponent* GetTopDownCamera() const { return TopDownCamera; }
-	FORCEINLINE UACGridMovementComponent* GetGridMovementComponent() const { return GridMovement; }
 	
 protected:
 	/** --- Camera --- */
@@ -36,8 +35,5 @@ protected:
 	TObjectPtr<USpringArmComponent> CameraBoom;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> TopDownCamera;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UACGridMovementComponent> GridMovement;
 };
 
