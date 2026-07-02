@@ -5,8 +5,12 @@
 -------------------------------------------
 <Core 아키텍처>
 
-GameMode (1개): 
-게임의 전반적인 상태를 총괄하는 APE_GameModeBase 하나만
+GameMode (N개): 
+게임의 전반적인 상태를 총괄하는 APE_GameModeBase 하나
+정석 설계: 맵마다 GameMode를 따로 분리
+	BP_BaseGameMode 	(기지 맵 전용)
+	BP_BattleGameMode 	(전투 맵 전용 - TurnManager 보유)
+	BP_ShopGameMode 	(상점 맵 전용)
 
 PlayerController (1개): 
 마우스 클릭, UI 인터랙션, 키보드 입력을 모두 수용하는 APE_PlayerController 하나만
@@ -15,6 +19,8 @@ IMC (N개로 분리):
 IMC_System: (일시정지)UI, 지도UI 키입력 등
 IMC_DirectMove: 기지/상점용 (WASD 이동, 상점 상호작용 키 등)
 IMC_Battle: 카드 배틀용 (마우스 클릭, 카드 단축키, 스페이스바 턴 종료 등)
+
+UGameInstance: 플레이어의 체력이나 덱 상태는 맵이 바뀌어도 유지되어야 하므로 게임 인스턴스나 다른 세션별 데이터를 저장하기
 
 -------------------------------------------
 <타일 기반 이동 시스템>
