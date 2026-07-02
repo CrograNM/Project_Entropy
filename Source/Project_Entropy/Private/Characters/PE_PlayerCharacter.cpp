@@ -3,7 +3,10 @@
 
 #include "Characters/PE_PlayerCharacter.h"
 #include "Camera/CameraComponent.h"
+#include "Components/ACStatComponent.h"
+#include "Core/PE_BattleGameMode.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 APE_PlayerCharacter::APE_PlayerCharacter()
 {
@@ -26,6 +29,27 @@ APE_PlayerCharacter::APE_PlayerCharacter()
 void APE_PlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (APE_BattleGameMode* BattleGM = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this)))
+	{
+		if (UPE_TurnManagerComponent* TurnManager = BattleGM->GetTurnManager())
+		{
+			TurnManager->OnPhaseChanged.AddDynamic(this, &APE_PlayerCharacter::OnBattlePhaseChanged);
+		}
+	}
+}
+
+void APE_PlayerCharacter::OnBattlePhaseChanged(EPEBattlePhase NewPhase)
+{
+	// 턴 매니저가 플레이어 턴의 시작을 알리면 즉시 AP를 최대로 리셋!
+	if (NewPhase == EPEBattlePhase::PlayerTurn)
+	{
+		if (StatComponent)
+		{
+			StatComponent->ResetAP();
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerCharacter] 내 턴 시작! AP가 %d로 모두 회복되었습니다."), StatComponent->GetCurrentAP());
+		}
+	}
 }
 
 void APE_PlayerCharacter::Tick(float DeltaTime)

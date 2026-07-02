@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Characters/PE_CharacterBase.h"
+#include "Core/PE_TurnManagerComponent.h"
 #include "PE_PlayerCharacter.generated.h"
 
 class UACGridMovementComponent;
@@ -20,7 +21,11 @@ public:
 	
 protected:
 	virtual void BeginPlay() override;
-
+	
+	/** 턴 매니저의 페이즈 변경 신호를 받을 콜백 함수 */
+	UFUNCTION()
+	void OnBattlePhaseChanged(EPEBattlePhase NewPhase);
+	
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;

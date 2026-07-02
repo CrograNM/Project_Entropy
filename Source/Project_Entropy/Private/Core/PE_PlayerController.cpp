@@ -5,6 +5,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACGridMovementComponent.h"
+#include "Components/ACStatComponent.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -65,9 +66,11 @@ void APE_PlayerController::ToggleMovementMode()
 	bIsMovementMode = !bIsMovementMode;
 
 	APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
-	if (bIsMovementMode && PC && PC->GetGridMovementComponent() && GridSystem)
+	if (bIsMovementMode && PC && PC->GetGridMovementComponent() && PC->GetStatComponent() && GridSystem)
 	{
-		ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), PlayerMoveRange);
+		const int32 Range = PC->GetStatComponent()->GetMoveRange();
+
+		ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
 	}
 	else if (GridSystem)
@@ -184,26 +187,29 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 	
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 타일: %s"), TargetTile ? *TargetTile->GetName() : TEXT("None"));
 		
-		if (TargetTile && PC && ValidRangeTiles.Contains(TargetTile))
+		if (TargetTile && PC && PC->GetGridMovementComponent() && PC->GetStatComponent() && ValidRangeTiles.Contains(TargetTile))
 		{
 			// 이동 경로 추출
 			TArray<AACTile*> Path = GridSystem->CalculatePath(PC->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
 			
-			// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
-			for (AACTile* Tile : ValidRangeTiles)
+			if (PC->GetStatComponent()->ConsumeAP(1)) // 이동에 필요한 AP 소모 (1AP)
 			{
-				if (Tile && Tile != TargetTile)
+				// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
+				for (AACTile* Tile : ValidRangeTiles)
 				{
-					Tile->SetHighlightState(ETileHighlightType::None);
+					if (Tile && Tile != TargetTile)
+					{
+						Tile->SetHighlightState(ETileHighlightType::None);
+					}
 				}
+			
+				// 캐릭터에게 이동 명령 하달 및 모드 종료
+				PC->GetGridMovementComponent()->MoveAlongPath(Path); 
+			
+				bIsMovementMode = false;
+				ValidRangeTiles.Empty();
+				LastHoveredTilePos = FIntPoint(-999, -999);
 			}
-			
-			// 캐릭터에게 이동 명령 하달 및 모드 종료
-			PC->GetGridMovementComponent()->MoveAlongPath(Path); 
-			
-			bIsMovementMode = false;
-			ValidRangeTiles.Empty();
-			LastHoveredTilePos = FIntPoint(-999, -999);
 		}
 	}
 }

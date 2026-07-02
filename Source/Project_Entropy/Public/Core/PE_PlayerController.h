@@ -60,7 +60,6 @@ private:
 	
 private:
 	bool bIsMovementMode = false;
-	int32 PlayerMoveRange = 3; // 예시 사거리
 
 	UPROPERTY()
 	TArray<AACTile*> ValidRangeTiles;

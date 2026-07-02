@@ -50,11 +50,14 @@ public:
 	void ResetAP();
 
 	/** --- Getter --- */
+	FORCEINLINE bool IsDead() const { return bIsDead; }
 	FORCEINLINE float GetCurrentHP() const { return CurrentHP; }
 	FORCEINLINE int32 GetCurrentAP() const { return CurrentAP; }
-	FORCEINLINE bool IsDead() const { return bIsDead; }
+	FORCEINLINE int32 GetMoveRange() const { return MoveRange; }
 
 protected:
+	bool bIsDead;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats|HP")
 	float MaxHP;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats|HP")
@@ -65,5 +68,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats|AP")
 	int32 CurrentAP;
 
-	bool bIsDead;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats|Movement")
+	int32 MoveRange = 4; // 기본 4칸
 };
