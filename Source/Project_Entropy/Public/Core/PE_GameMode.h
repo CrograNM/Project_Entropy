@@ -29,5 +29,6 @@ protected:
 	EPEGameState CurrentState;
 
 public:
+	// Base / Battle 상태 등 가져오기
 	FORCEINLINE EPEGameState GetCurrentState() const { return CurrentState; }
 };

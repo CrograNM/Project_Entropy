@@ -1,6 +1,7 @@
-GridMovement
+GridMovement - Base 에서는 애초에 무브 모드가 활성화되지 않도록 제한
 
 TurnManager
+Turn이 플레이어 턴에서 넘어가면 모든 조작이 비활성화 되고, 다른 조작이 셧다운 되도록하는 로직이 필요할듯
 
 GameMode / Battle GameMode
 

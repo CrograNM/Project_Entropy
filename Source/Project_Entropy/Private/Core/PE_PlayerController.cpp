@@ -20,24 +20,23 @@ APE_PlayerController::APE_PlayerController()
 void APE_PlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	// 최초 상태 설정 (여기서는 편의상 기지 모드로 시작한다고 가정)
-	SwitchInputMode(EPEGameState::Base);
+
+	// 게임 모드에서 인풋 모드를 변경 해주지만 한번 더 호출
+	if (APE_GameMode* GameMode = Cast<APE_GameMode>(UGameplayStatics::GetGameMode(this)))
+	{
+		SwitchInputMode(GameMode->GetCurrentState());
+	}
 	
 	// 현재 월드에 스폰되어 배치되어 있는 AACGridSystem 타입의 액터를 찾아 자동으로 연동
-	AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass());
-	if (FoundGridActor)
+	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
 	{
 		GridSystem = Cast<AACGridSystem>(FoundGridActor);
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::BeginPlay] 월드에서 GridSystem 연동 성공"));
-		SwitchInputMode(EPEGameState::Battle);
 	}
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::BeginPlay] 월드에 GridSystem 액터가 없음"));
-		SwitchInputMode(EPEGameState::Base);
 	}
-	
 }
 
 void APE_PlayerController::SetupInputComponent()
@@ -63,17 +62,20 @@ void APE_PlayerController::SetupInputComponent()
 
 void APE_PlayerController::ToggleMovementMode()
 {
-	bIsMovementMode = !bIsMovementMode;
+	if (!GridSystem) return;
+	if (CurrentInputMode != EPEGameState::Battle) return;
+	
+	bIsGridMoveActivated = !bIsGridMoveActivated;
 
 	APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
-	if (bIsMovementMode && PC && PC->GetGridMovementComponent() && PC->GetStatComponent() && GridSystem)
+	if (bIsGridMoveActivated && PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
 	{
 		const int32 Range = PC->GetStatComponent()->GetMoveRange();
 
 		ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
 	}
-	else if (GridSystem)
+	else
 	{
 		GridSystem->ClearAllHighlights();
 		ValidRangeTiles.Empty();
@@ -86,7 +88,7 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 
 	// --- 이동: 마우스 호버링 ---
-	if (!bIsMovementMode || !GridSystem) return;
+	if (!bIsGridMoveActivated || !GridSystem) return;
 
 	// 마우스 밑의 타일 레이캐스팅 감지
 	FHitResult HitResult;
@@ -113,6 +115,8 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 
 void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 {
+	CurrentInputMode = NewState;
+	
 	// 향상된 입력 서브시스템 가져오기
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!LocalPlayer) return;
@@ -177,7 +181,7 @@ void APE_PlayerController::Move(const FInputActionValue& Value)
 
 void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 {
-	if (!bIsMovementMode || !GridSystem) return;
+	if (!bIsGridMoveActivated || !GridSystem) return;
 
 	FHitResult HitResult;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
@@ -195,18 +199,13 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 			if (PC->GetStatComponent()->ConsumeAP(1)) // 이동에 필요한 AP 소모 (1AP)
 			{
 				// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
-				for (AACTile* Tile : ValidRangeTiles)
-				{
-					if (Tile && Tile != TargetTile)
-					{
-						Tile->SetHighlightState(ETileHighlightType::None);
-					}
-				}
+				GridSystem->ClearAllHighlights();
+				TargetTile->SetHighlightState(ETileHighlightType::Hovered);
 			
 				// 캐릭터에게 이동 명령 하달 및 모드 종료
 				PC->GetGridMovementComponent()->MoveAlongPath(Path); 
 			
-				bIsMovementMode = false;
+				bIsGridMoveActivated = false;
 				ValidRangeTiles.Empty();
 				LastHoveredTilePos = FIntPoint(-999, -999);
 			}

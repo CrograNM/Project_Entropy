@@ -14,6 +14,8 @@ void APE_BattleGameMode::BeginPlay()
 {
 	Super::BeginPlay();
 
+	CurrentState = EPEGameState::Battle; // 전투 모드로 상태 변경
+	
 	if (APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
 	{
 		PC->SwitchInputMode(EPEGameState::Battle);

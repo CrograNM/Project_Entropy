@@ -25,7 +25,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
 	void ToggleMovementMode();
 	
-	/** 외부에 의해 게임 모드가 바뀔 때 호출될 함수 */
+	/** 외부에 의해 게임 모드가 바뀔 때 호출될 함수, **이후 패키징 단계에서 단축키에서 제거해야함** */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchInputMode(EPEGameState NewState);
 
@@ -59,7 +59,10 @@ private:
 	void OnMouseClick(const FInputActionValue& Value);
 	
 private:
-	bool bIsMovementMode = false;
+	// Input Mode (Base/Battle)
+	EPEGameState CurrentInputMode = EPEGameState::Base; 
+	
+	bool bIsGridMoveActivated = false;
 
 	UPROPERTY()
 	TArray<AACTile*> ValidRangeTiles;
