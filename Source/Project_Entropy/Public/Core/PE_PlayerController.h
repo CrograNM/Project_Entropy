@@ -8,6 +8,7 @@
 #include "Grid/ACGridSystem.h"
 #include "PE_PlayerController.generated.h"
 
+class UPE_TurnManagerComponent;
 class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
@@ -23,7 +24,7 @@ public:
 
 	// 이동 모드 [On/Off], UI 버튼이나 단축키를 눌러 호출
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void ToggleMovementMode();
+	void ToggleGridMovementActivation();
 	
 	// 현재 진행 중인 조작(이동, 카드 타겟팅 등)을 일괄 취소/초기화
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
@@ -54,6 +55,10 @@ protected:
 	// 월드의 GridSystem 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
 	TObjectPtr<AACGridSystem> GridSystem;
+	
+	// 게임 모드의 TurnManager 참조
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
+	TObjectPtr<UPE_TurnManagerComponent> TurnManager;
 
 private:
 	// 기지 모드에서 키보드 이동 처리

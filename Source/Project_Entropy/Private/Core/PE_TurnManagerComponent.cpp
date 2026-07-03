@@ -2,6 +2,9 @@
 
 #include "Core/PE_TurnManagerComponent.h"
 
+#include "Core/PE_PlayerController.h"
+#include "Kismet/GameplayStatics.h"
+
 UPE_TurnManagerComponent::UPE_TurnManagerComponent()
 {
 	// 신호만 주고받으므로 틱 연산이 전혀 필요 없습니다. (최적화)
@@ -30,10 +33,16 @@ void UPE_TurnManagerComponent::StartBattle()
 
 void UPE_TurnManagerComponent::EndCurrentPhase()
 {
+	APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
 	// 현재 페이즈에 따라 다음 페이즈로 바통을 넘깁니다.
 	switch (CurrentPhase)
 	{
 	case EPEBattlePhase::PlayerTurn:
+		if (PC)
+		{
+			// 플레이어 턴 종료 시, 이동 모드가 켜져있다면 강제로 끄고 사거리 하이라이트를 초기화
+			PC->CancelCurrentAction();
+		}
 		ChangePhase(EPEBattlePhase::EnemyTurn);
 		break;
 

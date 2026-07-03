@@ -6,6 +6,7 @@
 #include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
+#include "Core/PE_BattleGameMode.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -22,20 +23,35 @@ void APE_PlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	// 게임 모드에서 인풋 모드를 변경 해주지만 한번 더 호출
-	if (APE_GameMode* GameMode = Cast<APE_GameMode>(UGameplayStatics::GetGameMode(this)))
+	APE_GameMode* GameMode = Cast<APE_GameMode>(UGameplayStatics::GetGameMode(this));
+	if (GameMode)
 	{
 		SwitchInputMode(GameMode->GetCurrentState());
 	}
 	
-	// 현재 월드에 스폰되어 배치되어 있는 AACGridSystem 타입의 액터를 찾아 자동으로 연동
-	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
+	// ----- 참조 초기화 -----
+	APE_BattleGameMode* BattleGameMode = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this));
+	if (BattleGameMode)
 	{
-		GridSystem = Cast<AACGridSystem>(FoundGridActor);
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::BeginPlay] 월드에서 GridSystem 연동 성공"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::BeginPlay] 월드에 GridSystem 액터가 없음"));
+		// AACGridSystem
+		if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
+		{
+			GridSystem = Cast<AACGridSystem>(FoundGridActor);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 월드에 GridSystem 액터가 없음"));
+		}
+		
+		// UPE_TurnManagerComponent
+		if (BattleGameMode->GetTurnManager())
+		{
+			TurnManager = BattleGameMode->GetTurnManager();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 턴 매니저가 존재하지 않음"));
+		}
 	}
 }
 
@@ -60,18 +76,17 @@ void APE_PlayerController::SetupInputComponent()
 	}
 }
 
-void APE_PlayerController::ToggleMovementMode()
+void APE_PlayerController::ToggleGridMovementActivation()
 {
+	// 필터링: 배틀모드, 플레이어 턴, GridSystem 존재 여부
 	if (!GridSystem) return;
 	if (CurrentInputMode != EPEGameState::Battle) return;
+	if (TurnManager->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
 	
-	if (bIsGridMoveActivated)
+	// 이동 모드 토글
+	if (!bIsGridMoveActivated)
 	{
-		CancelCurrentAction();
-	}
-	else
-	{
-		// 켜기 로직
+		// 이동 모드 활성화, 사거리 표시
 		bIsGridMoveActivated = true;
 		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
 		if (PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
@@ -80,6 +95,11 @@ void APE_PlayerController::ToggleMovementMode()
 			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
 			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
 		}
+	}
+	else
+	{
+		// 이동 모드 비활성화, 조작 초기화
+		CancelCurrentAction();
 	}
 }
 
@@ -241,6 +261,12 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 				bIsGridMoveActivated = false;
 				ValidRangeTiles.Empty();
 				LastHoveredTilePos = FIntPoint(-999, -999);
+			}
+			else
+			{	
+				// AP 부족 시 이동 취소
+				CancelCurrentAction();
+				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 이동 실패: AP 부족"));
 			}
 		}
 	}
