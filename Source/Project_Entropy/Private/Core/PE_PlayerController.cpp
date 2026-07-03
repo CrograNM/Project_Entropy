@@ -65,22 +65,47 @@ void APE_PlayerController::ToggleMovementMode()
 	if (!GridSystem) return;
 	if (CurrentInputMode != EPEGameState::Battle) return;
 	
-	bIsGridMoveActivated = !bIsGridMoveActivated;
-
-	APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
-	if (bIsGridMoveActivated && PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
+	if (bIsGridMoveActivated)
 	{
-		const int32 Range = PC->GetStatComponent()->GetMoveRange();
-
-		ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
+		CancelCurrentAction();
 	}
 	else
 	{
-		GridSystem->ClearAllHighlights();
-		ValidRangeTiles.Empty();
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 비활성화 - 하이라이트 초기화"));
+		// 켜기 로직
+		bIsGridMoveActivated = true;
+		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
+		if (PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
+		{
+			const int32 Range = PC->GetStatComponent()->GetMoveRange();
+			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
+		}
 	}
+}
+
+void APE_PlayerController::CancelCurrentAction()
+{
+	// 1. 이동 모드 활성화 상태라면 끄고 불빛을 초기화합니다.
+	if (bIsGridMoveActivated)
+	{
+		bIsGridMoveActivated = false;
+		if (GridSystem)
+		{
+			GridSystem->ClearAllHighlights();
+		}
+		ValidRangeTiles.Empty();
+		LastHoveredTilePos = FIntPoint(-999, -999);
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::CancelCurrentAction] 이동 조작이 취소되었습니다."));
+	}
+
+	// 2. [추후 추가될 기능]: 카드 타겟팅 취소 등
+	/*
+	if (bIsCardTargetingMode)
+	{
+		bIsCardTargetingMode = false;
+		// 카드 UI 원래 위치로 되돌리기 등...
+	}
+	*/
 }
 
 void APE_PlayerController::PlayerTick(float DeltaTime)
@@ -188,15 +213,22 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 	{
 		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
 		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
-	
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 타일: %s"), TargetTile ? *TargetTile->GetName() : TEXT("None"));
 		
+		// 유효한 타일이 아니거나 사거리 밖이면 이동 취소
+		if (!TargetTile || !ValidRangeTiles.Contains(TargetTile))
+		{
+			CancelCurrentAction();
+			return; 
+		}
+		
+		// 정상적인 사거리 내 타일을 클릭 시 이동 확정
 		if (TargetTile && PC && PC->GetGridMovementComponent() && PC->GetStatComponent() && ValidRangeTiles.Contains(TargetTile))
 		{
 			// 이동 경로 추출
 			TArray<AACTile*> Path = GridSystem->CalculatePath(PC->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
 			
-			if (PC->GetStatComponent()->ConsumeAP(1)) // 이동에 필요한 AP 소모 (1AP)
+			// 이동에 필요한 AP 소모 (1AP)
+			if (PC->GetStatComponent()->ConsumeAP(1))
 			{
 				// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
 				GridSystem->ClearAllHighlights();
@@ -205,6 +237,7 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 				// 캐릭터에게 이동 명령 하달 및 모드 종료
 				PC->GetGridMovementComponent()->MoveAlongPath(Path); 
 			
+				// 정상적으로 이동 '완료(초기화)' 처리
 				bIsGridMoveActivated = false;
 				ValidRangeTiles.Empty();
 				LastHoveredTilePos = FIntPoint(-999, -999);
