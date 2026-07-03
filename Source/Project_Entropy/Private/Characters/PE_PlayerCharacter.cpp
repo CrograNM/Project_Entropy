@@ -101,5 +101,14 @@ void APE_PlayerCharacter::RotateCamera(FVector2D RotateInput)
 
 void APE_PlayerCharacter::ResetCameraPosition()
 {
+	// 1. 팬(Pan)으로 이동했던 삼각대 위치를 캐릭터 중앙으로 복귀
 	CameraBase->SetRelativeLocation(FVector::ZeroVector);
+	
+	// 2. 마우스 드래그로 돌려놨던 삼각대의 좌우 회전(Yaw)을 정면으로 복귀
+	CameraBase->SetRelativeRotation(FRotator::ZeroRotator);
+	
+	// 3. 위아래로 꺾어놨던 줌(Pitch)을 초기 쿼터뷰 각도(-60도)로 복귀
+	CameraBoom->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f));
+
+	UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라가 초기 상태로 리셋되었습니다."));
 }

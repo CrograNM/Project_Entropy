@@ -91,6 +91,10 @@ void APE_PlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(IA_CameraRotate, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraRotate);
 		}
+		if (IA_CameraReset)
+		{
+			EnhancedInputComponent->BindAction(IA_CameraReset, ETriggerEvent::Completed, this, &APE_PlayerController::OnCameraReset);
+		}
 	}
 }
 
@@ -122,7 +126,13 @@ void APE_PlayerController::ToggleGridMovementActivation()
 
 void APE_PlayerController::CancelCurrentAction()
 {
-	// 1. 이동 모드 활성화 상태라면 끄고 불빛을 초기화합니다.
+	// 카메라 리셋
+	if (PlayerCharacter)
+	{
+		PlayerCharacter->ResetCameraPosition();
+	}
+	
+	// 이동 모드 취소
 	if (bIsGridMoveActivated)
 	{
 		bIsGridMoveActivated = false;
@@ -276,6 +286,9 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 				bIsGridMoveActivated = false;
 				ValidRangeTiles.Empty();
 				LastHoveredTilePos = FIntPoint(-999, -999);
+				
+				// 카메라 리셋
+				PlayerCharacter->ResetCameraPosition();
 			}
 			else
 			{	
@@ -306,5 +319,16 @@ void APE_PlayerController::OnCameraRotate(const FInputActionValue& Value)
 	if (IsValid(PlayerCharacter))
 	{
 		PlayerCharacter->RotateCamera(RotateVector);
+	}
+}
+
+void APE_PlayerController::OnCameraReset(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	if (IsValid(PlayerCharacter))
+	{
+		// 캐릭터 카메라 리셋 호출
+		PlayerCharacter->ResetCameraPosition();
 	}
 }
