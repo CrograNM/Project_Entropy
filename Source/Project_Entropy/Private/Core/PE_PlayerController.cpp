@@ -52,6 +52,16 @@ void APE_PlayerController::BeginPlay()
 		{
 			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 턴 매니저가 존재하지 않음"));
 		}
+		
+		// APE_PlayerCharacter
+		if (APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn()))
+		{
+			PlayerCharacter = PC;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 플레이어 캐릭터가 존재하지 않음"));
+		}
 	}
 }
 
@@ -62,16 +72,24 @@ void APE_PlayerController::SetupInputComponent()
 	// Enhanced Input Component로 캐스팅하여 액션 바인딩
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		// 1. 기지 이동 바인딩
+		// 1. 기지 모드 입력 바인딩
 		if (IA_Move)
 		{
 			EnhancedInputComponent->BindAction(IA_Move, ETriggerEvent::Triggered, this, &APE_PlayerController::Move);
 		}
 
-		// 2. 전투 마우스 클릭 바인딩
+		// 2. 전투 모드 입력 바인딩
 		if (IA_MouseClick)
 		{
 			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClick);
+		}
+		if (IA_CameraMove)
+		{
+			EnhancedInputComponent->BindAction(IA_CameraMove, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraMove);
+		}
+		if (IA_CameraRotate)
+		{
+			EnhancedInputComponent->BindAction(IA_CameraRotate, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraRotate);
 		}
 	}
 }
@@ -88,11 +106,10 @@ void APE_PlayerController::ToggleGridMovementActivation()
 	{
 		// 이동 모드 활성화, 사거리 표시
 		bIsGridMoveActivated = true;
-		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
-		if (PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
+		if (PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent())
 		{
-			const int32 Range = PC->GetStatComponent()->GetMoveRange();
-			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
+			const int32 Range = PlayerCharacter->GetStatComponent()->GetMoveRange();
+			ValidRangeTiles = GridSystem->ShowMovementRange(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), Range);
 			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
 		}
 	}
@@ -140,11 +157,10 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
 		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
-		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
 		
 		// UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 라인 트레이스 결과 %s"), *HitResult.GetActor()->GetName());
 		// UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 타일: %s"), HoveredTile ? *HoveredTile->GetName() : TEXT("None"));
-		if (HoveredTile && PC)
+		if (HoveredTile && PlayerCharacter)
 		{
 			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
 			
@@ -152,7 +168,7 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 			if (CurrentTilePos != LastHoveredTilePos)
 			{
 				LastHoveredTilePos = CurrentTilePos;
-				GridSystem->HighlightPath(PC->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+				GridSystem->HighlightPath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
 			}
 		}
 	}
@@ -232,7 +248,6 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
 		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
-		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn());
 		
 		// 유효한 타일이 아니거나 사거리 밖이면 이동 취소
 		if (!TargetTile || !ValidRangeTiles.Contains(TargetTile))
@@ -242,20 +257,20 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 		}
 		
 		// 정상적인 사거리 내 타일을 클릭 시 이동 확정
-		if (TargetTile && PC && PC->GetGridMovementComponent() && PC->GetStatComponent() && ValidRangeTiles.Contains(TargetTile))
+		if (TargetTile && PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent() && ValidRangeTiles.Contains(TargetTile))
 		{
 			// 이동 경로 추출
-			TArray<AACTile*> Path = GridSystem->CalculatePath(PC->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
+			TArray<AACTile*> Path = GridSystem->CalculatePath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
 			
 			// 이동에 필요한 AP 소모 (1AP)
-			if (PC->GetStatComponent()->ConsumeAP(1))
+			if (PlayerCharacter->GetStatComponent()->ConsumeAP(1))
 			{
 				// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
 				GridSystem->ClearAllHighlights();
 				TargetTile->SetHighlightState(ETileHighlightType::Hovered);
 			
 				// 캐릭터에게 이동 명령 하달 및 모드 종료
-				PC->GetGridMovementComponent()->MoveAlongPath(Path); 
+				PlayerCharacter->GetGridMovementComponent()->MoveAlongPath(Path); 
 			
 				// 정상적으로 이동 '완료(초기화)' 처리
 				bIsGridMoveActivated = false;
@@ -269,5 +284,27 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 이동 실패: AP 부족"));
 			}
 		}
+	}
+}
+
+void APE_PlayerController::OnCameraMove(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	FVector2D MoveVector = Value.Get<FVector2D>();
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->PanCamera(MoveVector);
+	}
+}
+
+void APE_PlayerController::OnCameraRotate(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	FVector2D RotateVector = Value.Get<FVector2D>();
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->RotateCamera(RotateVector);
 	}
 }

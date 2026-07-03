@@ -8,6 +8,7 @@
 #include "Grid/ACGridSystem.h"
 #include "PE_PlayerController.generated.h"
 
+class APE_PlayerCharacter;
 class UPE_TurnManagerComponent;
 class UInputMappingContext;
 class UInputAction;
@@ -52,6 +53,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_MouseClick; // 전투용 마우스 클릭 액션
 	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> IA_CameraMove;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> IA_CameraRotate;
+	
 	// 월드의 GridSystem 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
 	TObjectPtr<AACGridSystem> GridSystem;
@@ -59,13 +66,19 @@ protected:
 	// 게임 모드의 TurnManager 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
 	TObjectPtr<UPE_TurnManagerComponent> TurnManager;
+	
+	// 현재 플레이어 참조
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
+	TObjectPtr<APE_PlayerCharacter> PlayerCharacter = nullptr;
 
 private:
 	// 기지 모드에서 키보드 이동 처리
 	void Move(const FInputActionValue& Value);
 
-	// 전투 모드에서 마우스 클릭 처리
+	// 전투 모드 입력 처리
 	void OnMouseClick(const FInputActionValue& Value);
+	void OnCameraMove(const FInputActionValue& Value);
+	void OnCameraRotate(const FInputActionValue& Value);
 	
 private:
 	// Input Mode (Base/Battle)

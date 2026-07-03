@@ -12,14 +12,18 @@ APE_PlayerCharacter::APE_PlayerCharacter()
 {
  	PrimaryActorTick.bCanEverTick = true;
 	
+	CameraBase = CreateDefaultSubobject<USceneComponent>(TEXT("CameraBase"));
+	CameraBase->SetupAttachment(RootComponent);
+	CameraBase->SetUsingAbsoluteRotation(true);
+	
 	// 스프링암 컴포넌트 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-	CameraBoom->SetupAttachment(RootComponent);
+	CameraBoom->SetupAttachment(CameraBase);
 	CameraBoom->TargetArmLength = 1000.f; 
 	CameraBoom->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f)); 
-	CameraBoom->bDoCollisionTest = false;			// 카메라가 장애물에 가려져도 당겨지지 않도록 설정 (전술 뷰 유지)
-	CameraBoom->bUsePawnControlRotation = false;	// 컨트롤러 회전에 카메라가 돌아가지 않도록 고정
-
+	CameraBoom->bDoCollisionTest = false;
+	CameraBoom->bUsePawnControlRotation = false;
+	
 	// 카메라 컴포넌트 생성 및 설정
 	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -61,4 +65,41 @@ void APE_PlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+}
+
+void APE_PlayerCharacter::PanCamera(FVector2D PanInput)
+{
+	if (PanInput.IsNearlyZero()) return;
+
+	// 현재 카메라가 바라보는 방향을 기준으로 상하좌우 이동 벡터 계산 (Z축 무시)
+	FVector Forward = TopDownCamera->GetForwardVector();
+	Forward.Z = 0.f; 
+	Forward.Normalize();
+
+	FVector Right = TopDownCamera->GetRightVector();
+	Right.Z = 0.f; 
+	Right.Normalize();
+
+	FVector MoveDelta = (Forward * PanInput.Y + Right * PanInput.X) * CameraPanSpeed;
+	
+	// CameraBase의 위치를 이동시키면 카메라 전체가 캐릭터에서 멀어지며 팬(Pan) 됩니다.
+	CameraBase->AddWorldOffset(MoveDelta);
+}
+
+void APE_PlayerCharacter::RotateCamera(FVector2D RotateInput)
+{
+	if (RotateInput.IsNearlyZero()) return;
+
+	// 마우스 좌우 이동(X) -> CameraBase의 좌우 회전 (Yaw)
+	CameraBase->AddWorldRotation(FRotator(0.f, RotateInput.X * CameraRotationSpeed, 0.f));
+
+	// 마우스 상하 이동(Y) -> SpringArm의 상하 줌/각도 회전 (Pitch, 제한 범위 설정)
+	FRotator BoomRot = CameraBoom->GetRelativeRotation();
+	BoomRot.Pitch = FMath::Clamp(BoomRot.Pitch + (RotateInput.Y * CameraRotationSpeed), -85.f, -20.f);
+	CameraBoom->SetRelativeRotation(BoomRot);
+}
+
+void APE_PlayerCharacter::ResetCameraPosition()
+{
+	CameraBase->SetRelativeLocation(FVector::ZeroVector);
 }

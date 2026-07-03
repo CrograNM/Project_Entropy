@@ -34,11 +34,24 @@ public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE UCameraComponent* GetTopDownCamera() const { return TopDownCamera; }
 	
+	// 배틀 모드 카메라 조작 함수
+	void PanCamera(FVector2D PanInput);
+	void RotateCamera(FVector2D RotateInput);
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void ResetCameraPosition();
+	
 protected:
 	/** --- Camera --- */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USceneComponent> CameraBase;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> TopDownCamera;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
+	float CameraPanSpeed = 30.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
+	float CameraRotationSpeed = 2.f;
 };
 
