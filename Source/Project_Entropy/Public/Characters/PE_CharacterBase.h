@@ -24,6 +24,9 @@ public:
 	FORCEINLINE UACGridMovementComponent* GetGridMovementComponent() const { return GridMovement; }
 	FORCEINLINE UACStatComponent* GetStatComponent() const { return StatComponent; }
 
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	void SnapCharacterToNearestTile();
+	
 protected:
 	/** 스탯 컴포넌트의 OnDeath 델리게이트에 바인딩될 공통 사망 처리 함수 */
 	UFUNCTION()

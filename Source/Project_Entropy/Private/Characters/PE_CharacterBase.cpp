@@ -34,6 +34,11 @@ void APE_CharacterBase::BeginPlay()
 		StatComponent->OnDeath.AddDynamic(this, &APE_CharacterBase::HandleDeath);
 	}
 
+	SnapCharacterToNearestTile();
+}
+
+void APE_CharacterBase::SnapCharacterToNearestTile()
+{
 	// 모든 캐릭터(플레이어/적) 레벨 배치 시 가장 가까운 타일로 스냅
 	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
 	{
