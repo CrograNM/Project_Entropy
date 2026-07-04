@@ -99,6 +99,14 @@ void APE_PlayerCharacter::RotateCamera(FVector2D RotateInput)
 	CameraBoom->SetRelativeRotation(BoomRot);
 }
 
+void APE_PlayerCharacter::AdjustCameraHeight(float HeightInput)
+{
+	if (FMath::IsNearlyZero(HeightInput)) return;
+	
+	FVector MoveDelta = FVector(0.f, 0.f, HeightInput * CameraHeightSpeed);
+	CameraBase->AddWorldOffset(MoveDelta);
+}
+
 void APE_PlayerCharacter::ResetCameraPosition()
 {
 	if (bIsCameraFree)

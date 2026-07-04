@@ -37,6 +37,8 @@ public:
 	// 배틀 모드 카메라 조작 함수
 	void PanCamera(FVector2D PanInput);
 	void RotateCamera(FVector2D RotateInput);
+	void AdjustCameraHeight(float HeightInput);
+	
 	UFUNCTION(BlueprintCallable, Category = "Camera")
 	void ResetCameraPosition();
 	
@@ -62,6 +64,8 @@ protected:
 	float CameraPanSpeed = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
 	float CameraRotationSpeed = 2.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
+	float CameraHeightSpeed = 10.f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	bool bIsCameraFree = false;

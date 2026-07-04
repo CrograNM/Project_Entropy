@@ -62,6 +62,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_CameraReset;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> IA_CameraHeight;
+	
 	// 월드의 GridSystem 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
 	TObjectPtr<AACGridSystem> GridSystem;
@@ -83,6 +86,7 @@ private:
 	void OnCameraMove(const FInputActionValue& Value);
 	void OnCameraRotate(const FInputActionValue& Value);
 	void OnCameraReset(const FInputActionValue& Value);
+	void OnCameraHeight(const FInputActionValue& Value);
 	
 private:
 	// Input Mode (Base/Battle)

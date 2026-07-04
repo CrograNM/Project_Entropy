@@ -95,6 +95,10 @@ void APE_PlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(IA_CameraReset, ETriggerEvent::Completed, this, &APE_PlayerController::OnCameraReset);
 		}
+		if (IA_CameraHeight)
+		{
+			EnhancedInputComponent->BindAction(IA_CameraHeight, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraHeight);
+		}
 	}
 }
 
@@ -330,5 +334,17 @@ void APE_PlayerController::OnCameraReset(const FInputActionValue& Value)
 	{
 		// 캐릭터 카메라 리셋 호출
 		PlayerCharacter->ResetCameraPosition();
+	}
+}
+
+void APE_PlayerController::OnCameraHeight(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	// Axis1D 타입이므로 float 값으로 받아옴
+	float HeightInput = Value.Get<float>();
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->AdjustCameraHeight(HeightInput);
 	}
 }
