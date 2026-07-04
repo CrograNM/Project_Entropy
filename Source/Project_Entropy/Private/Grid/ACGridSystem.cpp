@@ -172,6 +172,37 @@ void AACGridSystem::ClearGrid()
 	GridTiles.Empty();
 }
 
+void AACGridSystem::GetGridWorldBounds(FVector& OutMin, FVector& OutMax) const
+{
+	// 타일이 하나도 없다면 기본값 반환
+	if (GridTiles.IsEmpty())
+	{
+		OutMin = FVector(-1000.f, -1000.f, 0.f);
+		OutMax = FVector(1000.f, 1000.f, 0.f);
+		return;
+	}
+
+	// 최대/최소값을 구하기 위해 초기값 설정
+	OutMin = FVector(MAX_FLT, MAX_FLT, MAX_FLT);
+	OutMax = FVector(-MAX_FLT, -MAX_FLT, -MAX_FLT);
+
+	// 모든 타일을 순회하며 외곽선(Bounds) 한계점을 갱신
+	for (const auto& Pair : GridTiles)
+	{
+		if (AACTile* Tile = Pair.Value)
+		{
+			FVector Loc = Tile->GetActorLocation();
+			OutMin.X = FMath::Min(OutMin.X, Loc.X);
+			OutMin.Y = FMath::Min(OutMin.Y, Loc.Y);
+			OutMin.Z = FMath::Min(OutMin.Z, Loc.Z);
+
+			OutMax.X = FMath::Max(OutMax.X, Loc.X);
+			OutMax.Y = FMath::Max(OutMax.Y, Loc.Y);
+			OutMax.Z = FMath::Max(OutMax.Z, Loc.Z);
+		}
+	}
+}
+
 #if WITH_EDITOR
 void AACGridSystem::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {

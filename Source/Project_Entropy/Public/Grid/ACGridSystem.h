@@ -53,7 +53,10 @@ public:
 	/** 전장의 모든 타일을 깔끔하게 지우는 함수 */
 	UFUNCTION(CallInEditor, Category = "Grid Tool")
 	void ClearGrid();
-
+	
+	UFUNCTION(BlueprintCallable, Category = "Grid Tool")
+	void GetGridWorldBounds(FVector& OutMin, FVector& OutMax) const;
+	
 protected:
 	/** 스폰할 타일 클래스 블루프린트 (BP_ACTile) */
 	UPROPERTY(EditAnywhere, Category = "Grid Setup")

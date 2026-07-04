@@ -6,6 +6,7 @@
 #include "Components/ACStatComponent.h"
 #include "Core/PE_BattleGameMode.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Grid/ACGridSystem.h"
 #include "Kismet/GameplayStatics.h"
 
 APE_PlayerCharacter::APE_PlayerCharacter()
@@ -34,11 +35,34 @@ void APE_PlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	// TurnManager의 페이즈 변경 신호를 구독하여 내 턴 시작 시 AP를 회복하도록 설정
 	if (APE_BattleGameMode* BattleGM = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this)))
 	{
 		if (UPE_TurnManagerComponent* TurnManager = BattleGM->GetTurnManager())
 		{
 			TurnManager->OnPhaseChanged.AddDynamic(this, &APE_PlayerCharacter::OnBattlePhaseChanged);
+		}
+	}
+	
+	// GridSystem을 찾아 타일 기반으로 카메라 한계 구역 세팅
+	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
+	{
+		if (AACGridSystem* GridSystem = Cast<AACGridSystem>(FoundGridActor))
+		{
+			FVector GridMin, GridMax;
+			GridSystem->GetGridWorldBounds(GridMin, GridMax);
+
+			// X, Y (상하좌우)는 타일 끝단 + 여유 공간(Padding)
+			CameraMinBound.X = GridMin.X - CameraBoundsPadding;
+			CameraMinBound.Y = GridMin.Y - CameraBoundsPadding;
+			CameraMaxBound.X = GridMax.X + CameraBoundsPadding;
+			CameraMaxBound.Y = GridMax.Y + CameraBoundsPadding;
+
+			// Z (위아래)는 타일 중 가장 낮은 높이(0) ~ 가장 높은 높이 + @
+			CameraMinBound.Z = GridMin.Z;
+			CameraMaxBound.Z = GridMax.Z + MaxCameraHeightOffset;
+
+			UE_LOG(LogTemp, Warning, TEXT("[Camera] 동적 카메라 구역 설정 완료."));
 		}
 	}
 }
@@ -84,6 +108,12 @@ void APE_PlayerCharacter::PanCamera(FVector2D PanInput)
 	
 	// CameraBase의 위치를 이동시키면 카메라 전체가 캐릭터에서 멀어지며 팬(Pan) 됩니다.
 	CameraBase->AddWorldOffset(MoveDelta);
+	
+	// 이동 후 카메라 위치를 GridSystem의 한계 범위 내로 제한
+	FVector ClampedLoc = CameraBase->GetComponentLocation();
+	ClampedLoc.X = FMath::Clamp(ClampedLoc.X, CameraMinBound.X, CameraMaxBound.X);
+	ClampedLoc.Y = FMath::Clamp(ClampedLoc.Y, CameraMinBound.Y, CameraMaxBound.Y);
+	CameraBase->SetWorldLocation(ClampedLoc);
 }
 
 void APE_PlayerCharacter::RotateCamera(FVector2D RotateInput)
@@ -105,6 +135,11 @@ void APE_PlayerCharacter::AdjustCameraHeight(float HeightInput)
 	
 	FVector MoveDelta = FVector(0.f, 0.f, HeightInput * CameraHeightSpeed);
 	CameraBase->AddWorldOffset(MoveDelta);
+	
+	// 이동 후 카메라 위치를 GridSystem의 한계 범위 내로 제한
+	FVector ClampedLoc = CameraBase->GetComponentLocation();
+	ClampedLoc.Z = FMath::Clamp(ClampedLoc.Z, CameraMinBound.Z, CameraMaxBound.Z);
+	CameraBase->SetWorldLocation(ClampedLoc);
 }
 
 void APE_PlayerCharacter::ResetCameraPosition()

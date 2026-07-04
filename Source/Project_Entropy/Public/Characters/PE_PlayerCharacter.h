@@ -60,14 +60,26 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> TopDownCamera;
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	bool bIsCameraFree = false;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
-	float CameraPanSpeed = 30.f;
+	float CameraPanSpeed = 15.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
 	float CameraRotationSpeed = 2.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
 	float CameraHeightSpeed = 10.f;
 	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-	bool bIsCameraFree = false;
+	// 타일 영역 끝에서 카메라가 얼마나 더 밖으로 나갈 수 있는지
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
+	float CameraBoundsPadding = 200.f;
+
+	// 타일 바닥(Z) 기준으로 카메라가 올라갈 수 있는 최고 높이
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
+	float MaxCameraHeightOffset = 1000.f;
+
+	// 동적 카메라 한계선 저장 변수
+	FVector CameraMinBound = FVector(-1000.f, -1000.f, 0.f);
+	FVector CameraMaxBound = FVector(1000.f, 1000.f, 1000.f);
 };
 
