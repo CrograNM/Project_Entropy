@@ -4,10 +4,10 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Characters/PE_PlayerCharacter.h"
+#include "Components/ACCameraControlComponent.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Core/PE_BattleGameMode.h"
-#include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
 
 APE_PlayerController::APE_PlayerController()
@@ -131,9 +131,9 @@ void APE_PlayerController::ToggleGridMovementActivation()
 void APE_PlayerController::CancelCurrentAction()
 {
 	// 카메라 리셋
-	if (PlayerCharacter)
+	if (PlayerCharacter && PlayerCharacter->GetCameraControlComponent())
 	{
-		PlayerCharacter->ResetCameraPosition();
+		PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
 	}
 	
 	// 이동 모드 취소
@@ -271,7 +271,7 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 		}
 		
 		// 정상적인 사거리 내 타일을 클릭 시 이동 확정
-		if (TargetTile && PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent() && ValidRangeTiles.Contains(TargetTile))
+		if (TargetTile && PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent() && PlayerCharacter->GetCameraControlComponent() && ValidRangeTiles.Contains(TargetTile))
 		{
 			// 이동 경로 추출
 			TArray<AACTile*> Path = GridSystem->CalculatePath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
@@ -292,7 +292,7 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 				LastHoveredTilePos = FIntPoint(-999, -999);
 				
 				// 카메라 리셋
-				PlayerCharacter->ResetCameraPosition();
+				PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
 			}
 			else
 			{	
@@ -309,9 +309,9 @@ void APE_PlayerController::OnCameraMove(const FInputActionValue& Value)
 	if (CurrentInputMode != EPEGameState::Battle) return;
 
 	FVector2D MoveVector = Value.Get<FVector2D>();
-	if (IsValid(PlayerCharacter))
+	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
 	{
-		PlayerCharacter->PanCamera(MoveVector);
+		PlayerCharacter->GetCameraControlComponent()->PanCamera(MoveVector);
 	}
 }
 
@@ -320,9 +320,9 @@ void APE_PlayerController::OnCameraRotate(const FInputActionValue& Value)
 	if (CurrentInputMode != EPEGameState::Battle) return;
 
 	FVector2D RotateVector = Value.Get<FVector2D>();
-	if (IsValid(PlayerCharacter))
+	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
 	{
-		PlayerCharacter->RotateCamera(RotateVector);
+		PlayerCharacter->GetCameraControlComponent()->RotateCamera(RotateVector);
 	}
 }
 
@@ -330,10 +330,10 @@ void APE_PlayerController::OnCameraReset(const FInputActionValue& Value)
 {
 	if (CurrentInputMode != EPEGameState::Battle) return;
 
-	if (IsValid(PlayerCharacter))
+	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
 	{
 		// 캐릭터 카메라 리셋 호출
-		PlayerCharacter->ResetCameraPosition();
+		PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
 	}
 }
 
@@ -343,8 +343,8 @@ void APE_PlayerController::OnCameraHeight(const FInputActionValue& Value)
 
 	// Axis1D 타입이므로 float 값으로 받아옴
 	float HeightInput = Value.Get<float>();
-	if (IsValid(PlayerCharacter))
+	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
 	{
-		PlayerCharacter->AdjustCameraHeight(HeightInput);
+		PlayerCharacter->GetCameraControlComponent()->AdjustCameraHeight(HeightInput);
 	}
 }
