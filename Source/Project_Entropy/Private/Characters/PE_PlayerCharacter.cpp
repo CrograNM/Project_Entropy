@@ -70,7 +70,11 @@ void APE_PlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 void APE_PlayerCharacter::PanCamera(FVector2D PanInput)
 {
 	if (PanInput.IsNearlyZero()) return;
-
+	if (!bIsCameraFree)
+	{
+		SetCameraFreeMode(true);
+	}
+	
 	// 현재 카메라가 바라보는 방향을 기준으로 상하좌우 이동 벡터 계산 (Z축 무시)
 	FVector Forward = TopDownCamera->GetForwardVector();
 	Forward.Z = 0.f; 
@@ -101,14 +105,42 @@ void APE_PlayerCharacter::RotateCamera(FVector2D RotateInput)
 
 void APE_PlayerCharacter::ResetCameraPosition()
 {
-	// 1. 팬(Pan)으로 이동했던 삼각대 위치를 캐릭터 중앙으로 복귀
+	if (bIsCameraFree)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Camera] 고정 모드 상태이므로 카메라 초기화를 무시합니다."));
+		return;
+	}
+	
 	CameraBase->SetRelativeLocation(FVector::ZeroVector);
-	
-	// 2. 마우스 드래그로 돌려놨던 삼각대의 좌우 회전(Yaw)을 정면으로 복귀
 	CameraBase->SetRelativeRotation(FRotator::ZeroRotator);
-	
-	// 3. 위아래로 꺾어놨던 줌(Pitch)을 초기 쿼터뷰 각도(-60도)로 복귀
 	CameraBoom->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f));
-
 	UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라가 초기 상태로 리셋되었습니다."));
+}
+
+void APE_PlayerCharacter::ToggleCameraFreeMode()
+{
+	SetCameraFreeMode(!bIsCameraFree);
+}
+
+void APE_PlayerCharacter::SetCameraFreeMode(bool bEnable)
+{
+	if (bIsCameraFree == bEnable) return;
+	
+	bIsCameraFree = bEnable;
+
+	if (bIsCameraFree)
+	{
+		FVector CurrentWorldLocation = CameraBase->GetComponentLocation();
+		CameraBase->SetUsingAbsoluteLocation(true);	// 부모의 위치와 상관없이 월드 좌표를 기준으로 이동
+		CameraBase->SetWorldLocation(CurrentWorldLocation);
+		
+		UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라 고정(Free) 모드가 켜졌습니다."));
+	}
+	else
+	{
+		CameraBase->SetUsingAbsoluteLocation(false);
+		ResetCameraPosition();
+		
+		UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라 플레이어 추적(Lock) 모드가 켜졌습니다."));
+	}
 }

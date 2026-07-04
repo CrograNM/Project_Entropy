@@ -40,6 +40,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Camera")
 	void ResetCameraPosition();
 	
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void ToggleCameraFreeMode();
+
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void SetCameraFreeMode(bool bEnable);
+
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	bool IsCameraFree() const { return bIsCameraFree; }
+	
 protected:
 	/** --- Camera --- */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
@@ -53,5 +62,8 @@ protected:
 	float CameraPanSpeed = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
 	float CameraRotationSpeed = 2.f;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	bool bIsCameraFree = false;
 };
 
