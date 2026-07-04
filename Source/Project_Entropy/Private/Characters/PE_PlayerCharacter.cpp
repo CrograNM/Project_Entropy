@@ -70,10 +70,6 @@ void APE_PlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 void APE_PlayerCharacter::PanCamera(FVector2D PanInput)
 {
 	if (PanInput.IsNearlyZero()) return;
-	if (!bIsCameraFree)
-	{
-		SetCameraFreeMode(true);
-	}
 	
 	// 현재 카메라가 바라보는 방향을 기준으로 상하좌우 이동 벡터 계산 (Z축 무시)
 	FVector Forward = TopDownCamera->GetForwardVector();
@@ -130,17 +126,16 @@ void APE_PlayerCharacter::SetCameraFreeMode(bool bEnable)
 
 	if (bIsCameraFree)
 	{
-		FVector CurrentWorldLocation = CameraBase->GetComponentLocation();
-		CameraBase->SetUsingAbsoluteLocation(true);	// 부모의 위치와 상관없이 월드 좌표를 기준으로 이동
-		CameraBase->SetWorldLocation(CurrentWorldLocation);
+		CameraBase->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 		
-		UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라 고정(Free) 모드가 켜졌습니다."));
+		UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라 모드: 자유"));
 	}
 	else
 	{
-		CameraBase->SetUsingAbsoluteLocation(false);
+		CameraBase->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+		
 		ResetCameraPosition();
 		
-		UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라 플레이어 추적(Lock) 모드가 켜졌습니다."));
+		UE_LOG(LogTemp, Warning, TEXT("[Camera] 카메라 모드: 플레이어 추적"));
 	}
 }
