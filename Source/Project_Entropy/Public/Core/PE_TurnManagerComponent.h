@@ -17,6 +17,8 @@ enum class EPEBattlePhase : uint8
 	BattleEnd        // 전투 종료 (승/패)
 };
 
+class APE_EnemyBase;
+
 // 턴 변경 이벤트 방송용 델리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPhaseChangedSignature, EPEBattlePhase, NewPhase);
 
@@ -48,7 +50,15 @@ protected:
 private:
 	/** 실제 페이즈 변경 및 델리게이트 방송을 처리하는 내부 함수 */
 	void ChangePhase(EPEBattlePhase NewPhase);
-
+	
+	void StartEnemyPhase();
+	
+	UFUNCTION()
+	void ProcessNextEnemy();
+	
+	UPROPERTY()
+	TArray<APE_EnemyBase*> EnemyQueue;
+	
 	UPROPERTY(VisibleAnywhere, Category = "Turn System")
 	EPEBattlePhase CurrentPhase;
 

@@ -13,3 +13,10 @@ GameMode / Battle GameMode
 -  현재 카메라 움직임 로직 구조를 컴포넌트로 분리할것 (CameraControllComponent 등)
 
 
+<적 AI / Enemy Turn 테스트>
+적 AI 초기형 더미 - 테스트 용도로 
+Enemy Turn으로 전환된 경우
+이동 거리 존재 - AP를 1 소모하여 플레이어 쪽으로 이동 거리만큼 이동
+공격 사거리 존재 - 플레이어가 근처인 경우 AP를 1 소모하여 공격
+
+적AI가 월드에 여러개인 경우 처리 방법 고민

@@ -2,6 +2,7 @@
 
 #include "Core/PE_TurnManagerComponent.h"
 
+#include "Characters/PE_EnemyBase.h"
 #include "Core/PE_PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -43,7 +44,7 @@ void UPE_TurnManagerComponent::EndCurrentPhase()
 			// 플레이어 턴 종료 시, 이동 모드가 켜져있다면 강제로 끄고 사거리 하이라이트를 초기화
 			PC->CancelCurrentAction();
 		}
-		ChangePhase(EPEBattlePhase::EnemyTurn);
+		StartEnemyPhase();
 		break;
 
 	case EPEBattlePhase::EnemyTurn:
@@ -74,4 +75,62 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 
 	// 이 델리게이트가 호출되면, 구독하고 있는 모든 객체가 일제히 반응합니다.
 	OnPhaseChanged.Broadcast(CurrentPhase);
+	
+	// -------
+	// 테스트를 위해 환경(Environment) 턴이 시작되면 즉시 종료하도록 설정 -> 아직 환경 턴 로직이 구현되지 않음
+	// -------
+	if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
+	{
+		EndCurrentPhase();
+	}
+}
+
+void UPE_TurnManagerComponent::StartEnemyPhase()
+{
+	ChangePhase(EPEBattlePhase::EnemyTurn);
+
+	EnemyQueue.Empty();
+	
+	TArray<AActor*> FoundEnemies;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), FoundEnemies);
+
+	for (AActor* Actor : FoundEnemies)
+	{
+		if (APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(Actor))
+		{
+			EnemyQueue.Add(Enemy);
+		}
+	}
+
+	// 수집 완료 후 첫 번째 적부터 순차 실행 시작
+	ProcessNextEnemy();
+}
+
+void UPE_TurnManagerComponent::ProcessNextEnemy()
+{
+	if (EnemyQueue.IsEmpty())
+	{
+		// 큐가 비었다면 모든 적이 행동을 마친 것이므로 환경(Environment) 턴으로 넘김
+		UE_LOG(LogTemp, Warning, TEXT("[TurnManager] 모든 적의 행동이 종료되었습니다."));
+		EndCurrentPhase(); 
+		return;
+	}
+
+	// 큐에서 맨 앞의 적을 하나 뽑아냄
+	APE_EnemyBase* NextEnemy = EnemyQueue[0];
+	EnemyQueue.RemoveAt(0);
+
+	if (NextEnemy)
+	{
+		// 이 적의 행동이 끝날 때 다시 나(TurnManager)의 ProcessNextEnemy를 호출하도록 1회용 콜백 연결
+		NextEnemy->OnTurnFinished.AddDynamic(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
+		
+		// 적 턴 시작 (이 안에서 비동기로 움직이고 공격한 뒤 OnTurnFinished를 Broadcast 함)
+		NextEnemy->StartTurn();
+	}
+	else
+	{
+		// 적이 이미 파괴되었거나 유효하지 않다면 다음 적으로 바로 스킵
+		ProcessNextEnemy();
+	}
 }
