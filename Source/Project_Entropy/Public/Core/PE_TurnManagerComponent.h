@@ -56,6 +56,9 @@ private:
 	UFUNCTION()
 	void ProcessNextEnemy();
 	
+	UFUNCTION()
+	void TriggerNextEnemyWithDelay();
+
 	UPROPERTY()
 	TArray<APE_EnemyBase*> EnemyQueue;
 	

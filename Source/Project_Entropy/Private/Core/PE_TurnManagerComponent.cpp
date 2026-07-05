@@ -5,6 +5,7 @@
 #include "Characters/PE_EnemyBase.h"
 #include "Core/PE_PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 
 UPE_TurnManagerComponent::UPE_TurnManagerComponent()
 {
@@ -75,14 +76,6 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 
 	// 이 델리게이트가 호출되면, 구독하고 있는 모든 객체가 일제히 반응합니다.
 	OnPhaseChanged.Broadcast(CurrentPhase);
-	
-	// -------
-	// 테스트를 위해 환경(Environment) 턴이 시작되면 즉시 종료하도록 설정 -> 아직 환경 턴 로직이 구현되지 않음
-	// -------
-	if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
-	{
-		EndCurrentPhase();
-	}
 }
 
 void UPE_TurnManagerComponent::StartEnemyPhase()
@@ -102,8 +95,8 @@ void UPE_TurnManagerComponent::StartEnemyPhase()
 		}
 	}
 
-	// 수집 완료 후 첫 번째 적부터 순차 실행 시작
-	ProcessNextEnemy();
+	// 다음 틱 부터 ProcessNextEnemy를 호출하여 적들의 행동을 순차적으로 처리
+	GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
 }
 
 void UPE_TurnManagerComponent::ProcessNextEnemy()
@@ -112,6 +105,7 @@ void UPE_TurnManagerComponent::ProcessNextEnemy()
 	{
 		// 큐가 비었다면 모든 적이 행동을 마친 것이므로 환경(Environment) 턴으로 넘김
 		UE_LOG(LogTemp, Warning, TEXT("[TurnManager] 모든 적의 행동이 종료되었습니다."));
+		CurrentPhase = EPEBattlePhase::EnemyTurn; // 상태 무결성 보장
 		EndCurrentPhase(); 
 		return;
 	}
@@ -120,17 +114,28 @@ void UPE_TurnManagerComponent::ProcessNextEnemy()
 	APE_EnemyBase* NextEnemy = EnemyQueue[0];
 	EnemyQueue.RemoveAt(0);
 
-	if (NextEnemy)
+	if (IsValid(NextEnemy))
 	{
-		// 이 적의 행동이 끝날 때 다시 나(TurnManager)의 ProcessNextEnemy를 호출하도록 1회용 콜백 연결
-		NextEnemy->OnTurnFinished.AddDynamic(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
+		// 이전 적이 등록했을 수 있는 델리게이트를 깔끔히 정리하여 중복 트리거를 방지합니다.
+		NextEnemy->OnTurnFinished.RemoveDynamic(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
 		
-		// 적 턴 시작 (이 안에서 비동기로 움직이고 공격한 뒤 OnTurnFinished를 Broadcast 함)
+		// 이번 적이 끝나면 다음 틱에 안전하게 ProcessNextEnemy가 예약되도록 람다 함수나 단일 타겟 바인딩을 활용합니다.
+		// 동기식 재귀 호출을 원천 차단하기 위해 델리게이트 수신 시 '한 프레임 미뤄서' 실행하도록 유도합니다.
+		NextEnemy->OnTurnFinished.AddUniqueDynamic(this, &UPE_TurnManagerComponent::TriggerNextEnemyWithDelay);
+		
+		// 적 턴 가동
 		NextEnemy->StartTurn();
 	}
 	else
 	{
-		// 적이 이미 파괴되었거나 유효하지 않다면 다음 적으로 바로 스킵
-		ProcessNextEnemy();
+		// 죽었거나 소멸한 적이라면 스택을 쌓지 않고 다음 틱에 다음 적 처리
+		GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
 	}
+}
+
+void UPE_TurnManagerComponent::TriggerNextEnemyWithDelay()
+{
+	// 이벤트가 발동한 직후, 즉시 ProcessNextEnemy를 실행하지 않고 
+	// 현재 함수 실행 스택이 완전히 해제된 '다음 틱'에 실행되도록 예약합
+	GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
 }
