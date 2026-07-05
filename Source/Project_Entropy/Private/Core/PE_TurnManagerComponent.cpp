@@ -76,6 +76,12 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 
 	// 이 델리게이트가 호출되면, 구독하고 있는 모든 객체가 일제히 반응합니다.
 	OnPhaseChanged.Broadcast(CurrentPhase);
+	
+	// 일단 환경 턴은 스킵
+	if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
+	{
+		EndCurrentPhase(); 
+	}
 }
 
 void UPE_TurnManagerComponent::StartEnemyPhase()
