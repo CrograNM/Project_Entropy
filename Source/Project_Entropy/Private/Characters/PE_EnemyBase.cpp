@@ -4,13 +4,17 @@
 #include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
+#include "Components/ACSkillComponent.h"
+#include "Core/PE_SkillBase.h"
 #include "Grid/ACGridSystem.h"
+#include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 
 APE_EnemyBase::APE_EnemyBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	// 적 식별용 메시나 머티리얼 세팅 등...
+
+	SkillComponent = CreateDefaultSubobject<UACSkillComponent>(TEXT("SkillComponent"));
 }
 
 void APE_EnemyBase::BeginPlay()
@@ -35,83 +39,92 @@ void APE_EnemyBase::StartTurn()
 	StatComponent->ResetAP(); // 턴 시작 시 AP 회복
 	UE_LOG(LogTemp, Warning, TEXT("[EnemyBase] %s 의 턴이 시작되었습니다."), *GetName());
 
-	ProcessAI();
+	// 사고 루프 가동
+	EvaluateAndTakeAction();
 }
 
-void APE_EnemyBase::ProcessAI()
+void APE_EnemyBase::EvaluateAndTakeAction()
 {
+	// 1. AP가 없거나 죽었다면 즉시 턴 종료
+	if (StatComponent->GetCurrentAP() <= 0 || StatComponent->IsDead())
+	{
+		FinishTurn();
+		return;
+	}
+	
 	APE_PlayerCharacter* Player = Cast<APE_PlayerCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
 	AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
 
-	if (!Player || !GridSystem || !StatComponent->ConsumeAP(1)) // 이동용 AP 1 소모
+	if (!Player || !GridSystem) 
 	{
-		FinishTurn(); // 플레이어나 그리드가 없거나 AP가 없으면 즉시 턴 종료
+		FinishTurn();
 		return;
 	}
-
+	
+	// 내 위치와 플레이어 위치 계산
 	FIntPoint MyPos = GridMovement->GetGridPosition();
 	FIntPoint PlayerPos = Player->GetGridMovementComponent()->GetGridPosition();
-
-	// 플레이어까지의 전체 경로 계산
-	TArray<AACTile*> FullPath = GridSystem->CalculatePath(MyPos, PlayerPos);
+	int32 DistanceToPlayer = FMath::Abs(MyPos.X - PlayerPos.X) + FMath::Abs(MyPos.Y - PlayerPos.Y);
 	
-	TArray<AACTile*> MovePath;
-	int32 MoveRange = StatComponent->GetMoveRange();
+	// 2. 첫 번째 스킬(무기)이 있는지 확인합니다.
+	if (SkillComponent->GetActiveSkills().Num() > 0)
+	{
+		UPE_SkillBase* MainSkill = SkillComponent->GetActiveSkills()[0];
+		AACTile* PlayerTile = GridSystem->GetTileAtPosition(PlayerPos);
 
-	// 플레이어 위치 바로 앞까지만(혹은 내 이동력 한계까지만) 경로를 자릅니다.
+		// [판단 1]: 거리가 닿고 AP가 충분하다면 공격!
+		if (DistanceToPlayer <= MainSkill->Range && StatComponent->GetCurrentAP() >= MainSkill->APCost)
+		{
+			// 타겟에게 스킬 발동 (내부에서 알아서 AP 차감됨)
+			if (SkillComponent->TryExecuteSkill(0, PlayerTile, Player))
+			{
+				// 스킬을 썼으므로, 남은 AP로 힐을 하거나 더 때릴 수 있는지 다시 스스로 재평가
+				EvaluateAndTakeAction(); 
+				return;
+			}
+		}
+	}
+	
+	// 3. [판단 2]: 때릴 수 없다면, 플레이어를 향해 이동
+	TArray<AACTile*> FullPath = GridSystem->CalculatePath(MyPos, PlayerPos);
+	TArray<AACTile*> MovePath;
+	
+	// 1 AP로 갈 수 있는 최대 거리는 온전히 내 MoveRange 스탯
+	int32 MoveRange = StatComponent->GetMoveRange();
+	
+	// 갈 수 있는 만큼 경로 자르기
 	for (int32 i = 0; i < FullPath.Num(); ++i)
 	{
-		// 플레이어가 서 있는 타일은 밟을 수 없으므로 직전에 멈춤
-		if (FullPath[i]->GetGridPosition() == PlayerPos) break;
+		if (FullPath[i]->GetGridPosition() == PlayerPos) break; // 플레이어 밟기 방지
 		
 		MovePath.Add(FullPath[i]);
-		if (MovePath.Num() >= MoveRange) break; // 이동력 한계 도달
+		if (MovePath.Num() >= MoveRange) break; // 1AP 이동력 한계까지만 자르기
 	}
-
+	
 	if (MovePath.Num() > 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[EnemyAI] %s 이(가) 플레이어를 향해 %d칸 이동합니다."), *GetName(), MovePath.Num());
-		GridMovement->MoveAlongPath(MovePath); // 이동 지시 
-		// (이후 이동이 완료되면 OnMovementCompleted 가 자동으로 호출됨)
+		// 거리에 상관없이(1칸이든 끝까지 가든) 이동이라는 '행동' 자체에 딱 1 AP만 소모합니다.
+		if (StatComponent->ConsumeAP(1))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[EnemyAI] %d칸 이동을 결심. (비용: 1 AP, 남은 AP: %d)"), MovePath.Num(), StatComponent->GetCurrentAP());
+			GridMovement->MoveAlongPath(MovePath);
+			// 걷기 시작! (완료되면 OnMovementCompleted 발동 후 다시 루프 진입)
+			return;
+		}
 	}
-	else
-	{
-		// 움직일 필요가 없거나 막혀있다면 바로 공격 페이즈로
-		EvaluateAttackAndEndTurn();
-	}
+
+	// 4. 할 수 있는 게 아무것도 없으면 턴 종료
+	FinishTurn();
 }
 
 void APE_EnemyBase::OnMovementCompleted()
 {
-	// 이동 컴포넌트의 콜백: 이동이 끝났으므로 공격 가능 여부 판단
-	EvaluateAttackAndEndTurn();
-}
-
-void APE_EnemyBase::EvaluateAttackAndEndTurn()
-{
-	APE_PlayerCharacter* Player = Cast<APE_PlayerCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-	if (Player && StatComponent && StatComponent->GetCurrentAP() >= 1)
-	{
-		FIntPoint MyPos = GridMovement->GetGridPosition();
-		FIntPoint PlayerPos = Player->GetGridMovementComponent()->GetGridPosition();
-
-		// 맨해튼 거리로 공격 사거리 확인
-		int32 DistanceToPlayer = FMath::Abs(MyPos.X - PlayerPos.X) + FMath::Abs(MyPos.Y - PlayerPos.Y);
-
-		if (DistanceToPlayer <= AttackRange)
-		{
-			StatComponent->ConsumeAP(1); // 공격용 AP 소모
-			
-			// TODO: 플레이어의 StatComponent->ApplyDamage() 호출 및 애니메이션 재생
-			UE_LOG(LogTemp, Error, TEXT("[EnemyAI] %s 이(가) 플레이어에게 쾅! (남은AP: %d)"), *GetName(), StatComponent->GetCurrentAP());
-		}
-	}
-
-	FinishTurn();
+	// 이동이 끝났으니, 이제 때릴 수 있는지 다시 루프를 굴립니다.
+	EvaluateAndTakeAction();
 }
 
 void APE_EnemyBase::FinishTurn()
 {
-	UE_LOG(LogTemp, Log, TEXT("[EnemyBase] %s 의 턴 종료."), *GetName());
+	UE_LOG(LogTemp, Log, TEXT("[EnemyBase] %s 의 행동 완료 및 턴 종료."), *GetName());
 	OnTurnFinished.Broadcast();
 }
