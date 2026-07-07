@@ -1,16 +1,7 @@
-GridMovement - Base 에서는 애초에 무브 모드가 활성화되지 않도록 제한
-
-TurnManager
-Turn이 플레이어 턴에서 넘어가면 모든 조작이 비활성화 되고, 다른 조작이 셧다운 되도록하는 로직이 필요할듯
-
-조작 비활성화 -> 필터링(Battle, PlayerTurn 등)으로 대체
-조작 셧다운 -> Cancel 함수 추가
-
-GameMode / Battle GameMode
-
-<카메라>
-배틀 모드 전용 카메라 이동 기능 -> (우클릭+WASD), (우클릭+드래그)로 전장 살피기 기능 추가?
--  현재 카메라 움직임 로직 구조를 컴포넌트로 분리할것 (CameraControllComponent 등)
+<제작 우선순위, 해야할 것>
+- 장애물 설치 + 이동 시스템 변형 (장애물 적용)
+- 카드 시스템 토대
+- 모델링, 애니메이션, VFX 테스트 및 적용
 
 
 <적 AI / Enemy Turn 테스트>
