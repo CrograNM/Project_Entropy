@@ -12,6 +12,12 @@ AACTile::AACTile()
 
 	// 마우스 클릭 레이캐스트가 감지될 수 있도록 콜리전 프로파일 설정
 	TileMesh->SetCollisionProfileName(TEXT("BlockAll"));
+	
+	// 장애물 메쉬 초기화 (기본적으로 숨김 처리)
+	ObstacleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ObstacleMesh"));
+	ObstacleMesh->SetupAttachment(RootComponent);
+	ObstacleMesh->SetVisibility(false);
+	ObstacleMesh->SetCollisionProfileName(TEXT("NoCollision"));
 }
 
 void AACTile::BeginPlay()
@@ -55,4 +61,20 @@ void AACTile::SetHighlightState(ETileHighlightType NewState)
 	}
 
 	DynamicMaterial->SetVectorParameterValue(EmissiveParamName, TargetColor);
+}
+
+void AACTile::SetObstacle(bool bInObstacle)
+{
+	bIsObstacle = bInObstacle;
+	
+	if (ObstacleMesh)
+	{
+		ObstacleMesh->SetVisibility(bIsObstacle);
+	}
+	
+	// 장애물이 생기면 기본 하이라이트로 초기화
+	if (bIsObstacle)
+	{
+		SetHighlightState(ETileHighlightType::None);
+	}
 }

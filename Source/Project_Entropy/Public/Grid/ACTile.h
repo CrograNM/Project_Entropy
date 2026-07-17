@@ -34,10 +34,25 @@ public:
 	/** 타일의 하이라이트 상태를 변경하여 이미시브 컬러를 제어하는 함수 */
 	void SetHighlightState(ETileHighlightType NewState);
 	
+	// 장애물 시스템 관련 함수
+	UFUNCTION(BlueprintCallable, Category = "Tile|Obstacle")
+	bool IsObstacle() const { return bIsObstacle; }
+
+	UFUNCTION(BlueprintCallable, Category = "Tile|Obstacle")
+	void SetObstacle(bool bInObstacle);
+	
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile")
 	TObjectPtr<UStaticMeshComponent> TileMesh;
 
+	// 장애물용 보조 메쉬 컴포넌트
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|Obstacle")
+	TObjectPtr<UStaticMeshComponent> ObstacleMesh;
+
+	// 장애물 상태 변수
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|State")
+	bool bIsObstacle = false;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|Data")
 	FIntPoint GridPosition;
 	
