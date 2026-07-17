@@ -6,25 +6,77 @@
 #include "Grid/ACTile.h"
 #include "GameFramework/PlayerController.h"
 
-void UPE_DebugMapToolWidget::SetBrushType(EPEDebugBrushType NewBrush)
+void UPE_DebugMapToolWidget::NativeConstruct()
 {
-	CurrentBrush = NewBrush;
-	
+	Super::NativeConstruct();
+
+	// 위젯 생성 시 CheatManager의 델리게이트를 구독하여 외부 비활성화 신호를 감지
 	if (APlayerController* PC = GetOwningPlayer())
 	{
 		if (UPE_CheatManager* CM = Cast<UPE_CheatManager>(PC->CheatManager))
 		{
-			// 브러시가 None이면 툴 비활성화, 다른 브러시면 활성화
-			bool bIsToolActive = (CurrentBrush != EPEDebugBrushType::None);
-			CM->SetMapToolActive(bIsToolActive);
+			CM->OnMapToolStateChanged.AddDynamic(this, &UPE_DebugMapToolWidget::OnCheatManagerStateChanged);
 		}
+	}
+}
+
+void UPE_DebugMapToolWidget::SetEditModeActive(bool bActive)
+{
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		if (UPE_CheatManager* CM = Cast<UPE_CheatManager>(PC->CheatManager))
+		{
+			CM->SetMapToolActive(bActive);
+		}
+	}
+}
+
+// 외부에서 강제로 상태가 바뀌었을 때 
+void UPE_DebugMapToolWidget::OnCheatManagerStateChanged(bool bIsActive)
+{
+	bIsEditMode = bIsActive;
+	OnEditModeStateChangedUI(bIsActive); // 블루프린트 체크박스 갱신 호출
+
+	// 모드가 꺼지면 칠해뒀던 임시 호버링 색상을 삭제
+	if (!bIsEditMode && LastHoveredTile.IsValid())
+	{
+		LastHoveredTile->SetHighlightState(ETileHighlightType::None);
+		LastHoveredTile.Reset();
+	}
+}
+
+void UPE_DebugMapToolWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!bIsEditMode) return;
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) return;
+
+	FHitResult HitResult;
+	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+	AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
+
+	// 마우스가 새로운 타일로 넘어갔을 때만 처리
+	if (HoveredTile != LastHoveredTile.Get())
+	{
+		if (LastHoveredTile.IsValid())
+		{
+			LastHoveredTile->SetHighlightState(ETileHighlightType::None); // 이전 타일 복구
+		}
+
+		if (HoveredTile)
+		{
+			HoveredTile->SetHighlightState(ETileHighlightType::Hovered); // 새 타일 강조
+		}
+		LastHoveredTile = HoveredTile;
 	}
 }
 
 FReply UPE_DebugMapToolWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	// 브러시가 'None'이라면 이벤트 처리를 포기(Unhandled)하여, 뒤에 있는 PlayerController에게 클릭 이벤트가 넘어가게 둠
-	if (CurrentBrush == EPEDebugBrushType::None)
+	if (!bIsEditMode)
 	{
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
@@ -45,14 +97,17 @@ FReply UPE_DebugMapToolWidget::NativeOnMouseButtonDown(const FGeometry& InGeomet
 			// 타일 상태 변경 조작
 			switch (CurrentBrush)
 			{
+			case EPEDebugBrushType::Reset:
+				// TODO: ClickedTile->ResetTileState();
+				break;
 			case EPEDebugBrushType::Obstacle:
 				ClickedTile->SetObstacle(!ClickedTile->IsObstacle()); // 토글(On/Off)
 				break;
 			case EPEDebugBrushType::Water:
-				// TODO: ClickedTile->SetTileElement(ETileElement::Water); 
+				// TODO: ClickedTile->AddTileElement(ETileElement::Water); 
 				break;
 			case EPEDebugBrushType::Fire:
-				// TODO: ClickedTile->SetTileElement(ETileElement::Fire);
+				// TODO: ClickedTile->AddTileElement(ETileElement::Fire); 
 				break;
 			}
 

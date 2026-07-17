@@ -75,4 +75,6 @@ void UPE_CheatManager::SetMapToolActive(bool bActive)
 			UE_LOG(LogTemp, Warning, TEXT("[Cheat] 디버그 맵 툴 활성화: 플레이어 조작을 차단합니다."));
 		}
 	}
+	
+	OnMapToolStateChanged.Broadcast(bIsMapToolActive);
 }
