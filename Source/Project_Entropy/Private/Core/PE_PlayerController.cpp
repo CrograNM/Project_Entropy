@@ -107,6 +107,12 @@ void APE_PlayerController::SetupInputComponent()
 
 void APE_PlayerController::ToggleGridMovementActivation()
 {
+	// 맵 툴이 켜져 있다면 이동 모드 진입을 차단
+	if (UPE_CheatManager* CM = Cast<UPE_CheatManager>(CheatManager))
+	{
+		if (CM->IsMapToolActive()) return; 
+	}
+	
 	// 필터링: 배틀모드, 플레이어 턴, GridSystem 존재 여부
 	if (!GridSystem) return;
 	if (CurrentInputMode != EPEGameState::Battle) return;

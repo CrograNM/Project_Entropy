@@ -7,11 +7,32 @@ public class Project_Entropy : ModuleRules
 	public Project_Entropy(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core", 
+			"CoreUObject", 
+			"Engine", 
+			"InputCore", 
+			"EnhancedInput"
+		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
-
+		// UI (UMG & Slate) 모듈
+		PrivateDependencyModuleNames.AddRange(new string[] { 
+			"UMG", 
+			"Slate", 
+			"SlateCore" 
+		});
+		
+		// AI 및 네비게이션 모듈
+		/*
+		PrivateDependencyModuleNames.AddRange(new string[] {
+		    "AIModule",
+		    "NavigationSystem",
+		    "GameplayTasks"
+		});
+		*/
+		
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

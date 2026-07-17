@@ -2,6 +2,7 @@
 
 #include "Core/PE_CheatManager.h"
 #include "Components/ACStatComponent.h"
+#include "Core/PE_PlayerController.h"
 #include "GameFramework/PlayerController.h"
 
 UACStatComponent* UPE_CheatManager::GetPlayerStatComponent() const
@@ -58,5 +59,20 @@ void UPE_CheatManager::SetMoveRange(int32 NewRange)
 	{
 		Stat->SetMoveRange(NewRange);
 		UE_LOG(LogTemp, Warning, TEXT("[Cheat] 플레이어 이동 사거리를 %d(으)로 변경했습니다."), NewRange);
+	}
+}
+
+void UPE_CheatManager::SetMapToolActive(bool bActive)
+{
+	bIsMapToolActive = bActive;
+
+	// 툴이 켜지는 순간, 플레이어의 모든 조작(이동 모드, 호버링 등)을 강제로 취소
+	if (bIsMapToolActive)
+	{
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetOuterAPlayerController()))
+		{
+			PC->CancelCurrentAction();
+			UE_LOG(LogTemp, Warning, TEXT("[Cheat] 디버그 맵 툴 활성화: 플레이어 조작을 차단합니다."));
+		}
 	}
 }
