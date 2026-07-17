@@ -98,7 +98,9 @@ FReply UPE_DebugMapToolWidget::NativeOnMouseButtonDown(const FGeometry& InGeomet
 			switch (CurrentBrush)
 			{
 			case EPEDebugBrushType::Reset:
-				// TODO: ClickedTile->ResetTileState();
+				// TODO: Reset 브러시 선택 시, 클릭한 타일을 초기 상태로 되돌린다.
+				//ClickedTile->ClearTile();
+				ClickedTile->SetObstacle(false);
 				break;
 			case EPEDebugBrushType::Obstacle:
 				ClickedTile->SetObstacle(!ClickedTile->IsObstacle()); // 토글(On/Off)

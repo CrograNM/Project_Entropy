@@ -25,7 +25,7 @@ class PROJECT_ENTROPY_API UPE_DebugMapToolWidget : public UUserWidget
 public:
 	// 브러시 선택
 	UFUNCTION(BlueprintCallable, Category = "Map Tool")
-	void SetBrushType(EPEDebugBrushType NewBrush) { CurrentBrush = NewBrush; }
+	void SetBrushType(EPEDebugBrushType NewBrush) { CurrentBrush = NewBrush; OnBrushTypeChangedUI(NewBrush); }
 
 	// 편집 모드를 On/Off 하는 함수
 	UFUNCTION(BlueprintCallable, Category = "Map Tool")
@@ -38,9 +38,13 @@ protected:
 	/** 마우스 클릭을 가로채는 핵심 UMG 함수 */
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	
-	/** CheatManager에서 툴이 꺼졌을 때 블루프린트 체크박스 UI를 갱신하라고 던져주는 이벤트 */
+	/** OnCheatManagerStateChange의 UI 갱신용 블루프린트 이벤트 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Map Tool")
 	void OnEditModeStateChangedUI(bool bIsActive);
+	
+	/** 브러시 타입 변경 시 블루프린트 UI 갱신 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Map Tool")
+	void OnBrushTypeChangedUI(EPEDebugBrushType NewBrush);
 	
 private:
 	/** 치트 매니저의 상태 변경 신호를 받을 콜백 */
