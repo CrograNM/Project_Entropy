@@ -8,6 +8,7 @@
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Core/PE_BattleGameMode.h"
+#include "Core/PE_CheatManager.h"
 #include "Kismet/GameplayStatics.h"
 
 APE_PlayerController::APE_PlayerController()
@@ -16,6 +17,8 @@ APE_PlayerController::APE_PlayerController()
 	bShowMouseCursor = true;
 	bEnableClickEvents = true;
 	bEnableMouseOverEvents = true;
+	
+	CheatClass = UPE_CheatManager::StaticClass();
 }
 
 void APE_PlayerController::BeginPlay()

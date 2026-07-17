@@ -19,6 +19,22 @@ class PROJECT_ENTROPY_API UACStatComponent : public UActorComponent
 public:
 	UACStatComponent();
 
+	/* --- Setter --- */
+	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
+	void SetMaxHP(float InMaxHP) { MaxHP = InMaxHP; OnHPChanged.Broadcast(CurrentHP, MaxHP, 0.f); }
+	
+	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
+	void SetHP(float InHP) { CurrentHP = FMath::Clamp(InHP, 0.f, MaxHP); OnHPChanged.Broadcast(CurrentHP, MaxHP, 0.f); }
+	
+	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
+	void SetMaxAP(int32 InMaxAP) { MaxAP = InMaxAP; OnAPChanged.Broadcast(CurrentAP, MaxAP, 0); }
+	
+	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
+	void SetAP(int32 InAP) { CurrentAP = InAP; OnAPChanged.Broadcast(CurrentAP, MaxAP, 0); }
+	
+	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
+	void SetMoveRange(int32 InRange) { MoveRange = InRange; }
+
 protected:
 	virtual void BeginPlay() override;
 
