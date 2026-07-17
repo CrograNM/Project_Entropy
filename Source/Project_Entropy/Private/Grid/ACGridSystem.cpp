@@ -1,6 +1,7 @@
 // Copyright CrograNM
 
 #include "Grid/ACGridSystem.h"
+#include "Containers/Queue.h"
 
 AACGridSystem::AACGridSystem()
 {
@@ -23,41 +24,109 @@ TArray<AACTile*> AACGridSystem::ShowMovementRange(FIntPoint CenterPos, int32 Ran
 	ClearAllHighlights();
 	CurrentRangeTiles.Empty();
 
-	for (auto& Pair : GridTiles)
+	// 타일을 밟으며 퍼져나가는 BFS (너비 우선 탐색) 로직 적용
+	TQueue<TPair<FIntPoint, int32>> Queue;
+	TSet<FIntPoint> Visited;
+
+	Queue.Enqueue(TPair<FIntPoint, int32>(CenterPos, 0));
+	Visited.Add(CenterPos);
+
+	FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
+
+	while (!Queue.IsEmpty())
 	{
-		FIntPoint TilePos = Pair.Key;
-		// 맨해튼 거리 공식 (|x1 - x2| + |y1 - y2|)으로 사각형/마름모 형태 범위 추출
-		int32 Distance = FMath::Abs(CenterPos.X - TilePos.X) + FMath::Abs(CenterPos.Y - TilePos.Y);
-		
-		if (Distance <= Range && Distance > 0) // 자기 자신 제외
+		TPair<FIntPoint, int32> CurrentNode;
+		Queue.Dequeue(CurrentNode);
+
+		FIntPoint CurrentPos = CurrentNode.Key;
+		int32 CurrentCost = CurrentNode.Value;
+
+		// 타일을 찾아서 하이라이트 (시작점 자신은 시각화에서 뺄 수 있지만 경로 탐색을 위해 맵에는 포함)
+		if (AACTile* Tile = GetTileAtPosition(CurrentPos))
 		{
-			Pair.Value->SetHighlightState(ETileHighlightType::InRange);
-			CurrentRangeTiles.Add(Pair.Value);
+			if (CurrentCost > 0) // 시작점(나 자신) 하이라이트 제외
+			{
+				Tile->SetHighlightState(ETileHighlightType::InRange);
+				CurrentRangeTiles.Add(Tile);
+			}
+		}
+
+		// 이동력(Range) 한계에 도달하면 더 이상 이 길로는 뻗어나가지 않음
+		if (CurrentCost >= Range) continue;
+
+		for (const FIntPoint& Dir : Directions)
+		{
+			FIntPoint NeighborPos = CurrentPos + Dir;
+
+			if (!Visited.Contains(NeighborPos))
+			{
+				AACTile* NeighborTile = GetTileAtPosition(NeighborPos);
+				
+				// 이웃 타일이 존재하고, '장애물이 아닐 때만' 이동 가능 구역으로 취급
+				if (NeighborTile && !NeighborTile->IsObstacle())
+				{
+					Visited.Add(NeighborPos);
+					Queue.Enqueue(TPair<FIntPoint, int32>(NeighborPos, CurrentCost + 1));
+				}
+			}
 		}
 	}
+
 	return CurrentRangeTiles;
 }
 
 TArray<AACTile*> AACGridSystem::CalculatePath(FIntPoint StartPos, FIntPoint EndPos)
 {
 	TArray<AACTile*> Path;
-	// 프로토타입용 단순 직선 축 이동 알고리즘 (추후 장애물 인식을 위해 A* 알고리즘으로 확장 가능)
-	FIntPoint Current = StartPos;
 	
-	while (Current != EndPos)
+	// 장애물을 우회하는 BFS 기반 최단거리 길찾기 알고리즘
+	if (StartPos == EndPos) return Path;
+
+	TQueue<FIntPoint> Queue;
+	TMap<FIntPoint, FIntPoint> CameFrom; // <현재 위치, 나를 발견한 이전 위치>
+
+	Queue.Enqueue(StartPos);
+	CameFrom.Add(StartPos, StartPos);
+
+	FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
+	bool bFound = false;
+
+	while (!Queue.IsEmpty())
 	{
-		if (Current.X != EndPos.X)
+		FIntPoint Current;
+		Queue.Dequeue(Current);
+
+		if (Current == EndPos)
 		{
-			Current.X += (EndPos.X > Current.X) ? 1 : -1;
+			bFound = true;
+			break;
 		}
-		else if (Current.Y != EndPos.Y)
+
+		for (const FIntPoint& Dir : Directions)
 		{
-			Current.Y += (EndPos.Y > Current.Y) ? 1 : -1;
+			FIntPoint NextPos = Current + Dir;
+			AACTile* NextTile = GetTileAtPosition(NextPos);
+
+			// 다음 칸이 장애물이 아니고, 아직 방문하지 않은 칸이어야 함
+			if (NextTile && !NextTile->IsObstacle() && !CameFrom.Contains(NextPos))
+			{
+				CameFrom.Add(NextPos, Current);
+				Queue.Enqueue(NextPos);
+			}
 		}
-		
-		AACTile* NextTile = GetTileAtPosition(Current);
-		if (NextTile) Path.Add(NextTile);
 	}
+
+	// 경로를 찾았다면 EndPos부터 StartPos까지 거꾸로 추적하여 배열 생성
+	if (bFound)
+	{
+		FIntPoint Curr = EndPos;
+		while (Curr != StartPos)
+		{
+			Path.Insert(GetTileAtPosition(Curr), 0); // 배열의 맨 앞에 밀어넣어 순서를 뒤집음 (Start->End)
+			Curr = CameFrom[Curr];
+		}
+	}
+	
 	return Path;
 }
 

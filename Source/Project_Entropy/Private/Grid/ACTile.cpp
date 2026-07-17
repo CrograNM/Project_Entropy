@@ -78,3 +78,21 @@ void AACTile::SetObstacle(bool bInObstacle)
 		SetHighlightState(ETileHighlightType::None);
 	}
 }
+
+// 에디터 프로퍼티 변경 감지 로직
+#if WITH_EDITOR
+void AACTile::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// 어떤 변수가 변경되었는지 이름(FName)을 가져옵니다.
+	FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+
+	// 변경된 변수가 'bIsObstacle'인지 확인합니다.
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AACTile, bIsObstacle))
+	{
+		// 시각적 메쉬 갱신 및 하이라이트 초기화 함수 호출
+		SetObstacle(bIsObstacle);
+	}
+}
+#endif

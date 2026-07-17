@@ -41,6 +41,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Tile|Obstacle")
 	void SetObstacle(bool bInObstacle);
 	
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+	
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile")
 	TObjectPtr<UStaticMeshComponent> TileMesh;
@@ -50,7 +54,7 @@ protected:
 	TObjectPtr<UStaticMeshComponent> ObstacleMesh;
 
 	// 장애물 상태 변수
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|State")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tile|State")
 	bool bIsObstacle = false;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|Data")
