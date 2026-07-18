@@ -45,4 +45,18 @@ private:
 
 	/** 안전하게 턴 매니저에게 다음 순서를 넘김 */
 	void FinishTurn();
+
+	/** AI 행동 딜레이(시각적 효과 주기)용 타이머 핸들 */
+	FTimerHandle ActionDelayTimerHandle;
+
+	/** 대기 후 이동할 경로 임시 저장 */
+	UPROPERTY()
+	TArray<class AACTile*> PendingMovePath;
+
+	/** 딜레이 이후 실제 이동 실행 */
+	void ExecutePendingMovement();
+
+	/** 이동 딜레이를 주기 위한 시간 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Behavior")
+	float MovementDelay = 0.5f;
 };
