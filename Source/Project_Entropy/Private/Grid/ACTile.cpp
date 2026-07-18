@@ -66,6 +66,7 @@ void AACTile::SetHighlightState(ETileHighlightType NewState)
 	}
 
 	DynamicMaterial->SetVectorParameterValue(EmissiveParamName, TargetColor);
+	DynamicMaterial->SetScalarParameterValue(InsideOpacityParamName, TargetColor == DefaultColor ? 0.0f : InsideOpacityValue);
 }
 
 void AACTile::SetObstacle(bool bInObstacle)

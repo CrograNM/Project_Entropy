@@ -66,7 +66,13 @@ protected:
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Tile|Visual")
 	FName EmissiveParamName = TEXT("EmissiveColor");
-	
+
+	UPROPERTY(EditDefaultsOnly, Category = "Tile|Visual")
+	FName InsideOpacityParamName = TEXT("InsideOpacity");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	float InsideOpacityValue = 0.15f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor DefaultColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f); 
 	
