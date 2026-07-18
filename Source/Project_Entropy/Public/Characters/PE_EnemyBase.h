@@ -34,6 +34,10 @@ protected:
 	// 적 AI의 스킬과 무기를 담당할 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UACSkillComponent> SkillComponent;
+
+	/** 이동 딜레이를 주기 위한 시간 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Behavior")
+	float MovementDelay = 0.5f;
 	
 private:
 	/** AI의 행동 판단 루프 (AP가 소진될 때까지 스스로 계속 호출됨) */
@@ -55,8 +59,4 @@ private:
 
 	/** 딜레이 이후 실제 이동 실행 */
 	void ExecutePendingMovement();
-
-	/** 이동 딜레이를 주기 위한 시간 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Behavior")
-	float MovementDelay = 0.5f;
 };
