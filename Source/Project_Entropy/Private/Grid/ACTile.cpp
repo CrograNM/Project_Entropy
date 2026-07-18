@@ -54,7 +54,12 @@ void AACTile::SetHighlightState(ETileHighlightType NewState)
 	case ETileHighlightType::Path:
 		TargetColor = PathColor;
 		break;
+	case ETileHighlightType::SkillTarget:
+		TargetColor = SkillTargetColor;
+		break;
 	case ETileHighlightType::None:
+		TargetColor = DefaultColor;
+		break;
 	default:
 		TargetColor = DefaultColor;
 		break;

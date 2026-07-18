@@ -37,7 +37,7 @@ protected:
 
 	/** 이동 딜레이를 주기 위한 시간 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Behavior")
-	float MovementDelay = 0.5f;
+	float ActionDelay = 0.5f;
 	
 private:
 	/** AI의 행동 판단 루프 (AP가 소진될 때까지 스스로 계속 호출됨) */
@@ -59,4 +59,15 @@ private:
 
 	/** 딜레이 이후 실제 이동 실행 */
 	void ExecutePendingMovement();
+
+	/** --- 스킬 대기 --- */
+	int32 PendingSkillIndex = -1;
+
+	UPROPERTY()
+	TObjectPtr<class AACTile> PendingSkillTargetTile;
+
+	UPROPERTY()
+	TObjectPtr<class APE_CharacterBase> PendingSkillTargetCharacter;
+
+	void ExecutePendingSkill();
 };

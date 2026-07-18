@@ -12,7 +12,8 @@ enum class ETileHighlightType : uint8
 	None,
 	InRange,    // 이동 사거리 내 타일 (은은한 불빛)
 	Hovered,    // 마우스가 올라간 도착 타일 (강한 불빛)
-	Path        // 이동 경로 상의 타일들 (경로 불빛)
+	Path,       // 이동 경로 상의 타일들 (경로 불빛)
+	SkillTarget // 스킬 사용 방향/목표 타일 (위험 불빛)
 };
 
 UCLASS()
@@ -77,4 +78,7 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor PathColor = FLinearColor(0.0f, 1.0f, 0.8f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor SkillTargetColor = FLinearColor(1.0f, 0.2f, 0.2f, 1.0f);
 };
