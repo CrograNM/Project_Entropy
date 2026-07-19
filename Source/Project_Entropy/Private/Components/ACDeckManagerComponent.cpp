@@ -120,36 +120,59 @@ void UACDeckManagerComponent::ShuffleDiscardToDraw()
 	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
 }
 
+// ... (기존 코드 유지) ...
+
 void UACDeckManagerComponent::UpdateHandLayout()
 {
 	int32 CardCount = HandCards.Num();
 	if (CardCount == 0) return;
 
-	// 카드가 한 장일 때는 중앙(0), 여러 장일 때는 대칭 오프셋을 구함
-	float OffsetX = (CardCount - 1) * CardSpacing * -0.5f;
+	// 1. 동적 간격(Spacing) 및 압축 비율 계산
+	float CurrentSpacing = BaseCardSpacing;
+	float DesiredWidth = (CardCount - 1) * BaseCardSpacing;
+	float SqueezeRatio = 0.f; // 0.0 (안 좁아짐) ~ 1.0 (최대로 좁아짐)
+
+	// 카드가 많아져서 최대 너비를 초과하면 간격을 좁힘
+	if (DesiredWidth > MaxHandWidth && CardCount > 1)
+	{
+		CurrentSpacing = MaxHandWidth / (CardCount - 1);
+		SqueezeRatio = 1.f - (CurrentSpacing / BaseCardSpacing);
+	}
+
+	// 2. 전체 손패의 시작점(가장 왼쪽) 오프셋 계산
+	float OffsetY = (CardCount - 1) * CurrentSpacing * -0.5f;
 
 	for (int32 i = 0; i < CardCount; ++i)
 	{
 		APE_CardActor* Card = HandCards[i];
 		if (!Card) continue;
 
-		// 1. 좌우(X축) 간격 계산
-		float TargetX = OffsetX + (i * CardSpacing);
+		// --- 위치(Location) 계산 ---
 
-		// 2. 상하(Y축, 아치형 궤적) 계산: 중심에서 멀어질수록 아래로 내려감 (포물선 y = -x^2 형태)
-		// 중심을 0으로 맞춘 Normalized Index (-1.0 ~ 1.0)
+		// 깊이(X축): 나중에 뽑은 카드(오른쪽)가 미세하게 앞쪽에 배치되어 겹치도록 설정
+		float TargetX = i * DepthSpacing;
+
+		// 좌우(Y축): 줄어든 간격(CurrentSpacing)을 반영하여 배치
+		float TargetY = OffsetY + (i * CurrentSpacing);
+
+		// 상하(Z축): 중심에서 멀어질수록 아래로 내려가는 아치형 포물선 궤적
 		float NormalizedIndex = (CardCount > 1) ? ((float)i / (CardCount - 1)) * 2.f - 1.f : 0.f;
-		float TargetY = -FMath::Abs(NormalizedIndex * NormalizedIndex) * ArchCurveHeight;
+		float TargetZ = -FMath::Abs(NormalizedIndex * NormalizedIndex) * ArchCurveHeight;
 
-		// 3. 회전(부채꼴) 계산: 좌측 카드는 오른쪽으로, 우측 카드는 왼쪽으로 기울어짐
+		// --- 회전(Rotation) 계산 ---
+
+		// 부채꼴 회전(Roll)
 		float TargetRoll = NormalizedIndex * FanAngle;
+
+		// 카드가 압축될수록(SqueezeRatio 상승) 도미노처럼 비스듬히 겹쳐지는 회전(Yaw) 추가
+		float TargetYaw = SqueezeRatio * SqueezeTiltAngle;
 
 		// 최종 목표 로컬 Transform 생성
 		FTransform TargetTransform;
-		TargetTransform.SetLocation(FVector(0.f, TargetX, TargetY));
-		TargetTransform.SetRotation(FRotator(0.f, TargetRoll, 0.f).Quaternion());
+		TargetTransform.SetLocation(FVector(TargetX, TargetY, TargetZ));
+		TargetTransform.SetRotation(FRotator(0.f, TargetYaw, TargetRoll).Quaternion());
 
-		// C++에서 위치를 즉시 세팅하지 않고, Card 액터에게 "이 위치로 부드럽게 이동해!"라고 명령
-		// Card->MoveToTargetTransform(TargetTransform); 
+		// 4. 카드 액터에게 목표 Transform으로 이동하도록 지시
+		Card->MoveToTargetTransform(TargetTransform);
 	}
 }

@@ -9,6 +9,7 @@
 APE_CardActor::APE_CardActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickInterval = 0.033f; // 약 30fps로 Tick 최적화
 
 	// 1. 메쉬 컴포넌트 (루트)
 	CardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CardMesh"));
@@ -30,6 +31,41 @@ APE_CardActor::APE_CardActor()
 	VFXComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("VFXComponent"));
 	VFXComponent->SetupAttachment(RootComponent);
 	VFXComponent->SetAutoActivate(false);
+}
+
+void APE_CardActor::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// 목표를 향해 이동 중일 때만 연산 수행
+	if (bIsMovingToTarget)
+	{
+		FVector CurrentLocation = GetActorLocation();
+		FRotator CurrentRotation = GetActorRotation();
+
+		FVector TargetLocation = TargetTransform.GetLocation();
+		FRotator TargetRotator = TargetTransform.GetRotation().Rotator();
+
+		// 부드러운 위치 및 회전 보간 (VInterpTo, RInterpTo)
+		FVector NewLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, MoveInterpSpeed);
+		FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotator, DeltaTime, MoveInterpSpeed);
+
+		SetActorLocationAndRotation(NewLocation, NewRotation);
+
+		// 목표에 거의 도달했다면(오차 1.0f 이하) 이동 연산을 종료하여 성능 최적화
+		if (FVector::DistSquared(NewLocation, TargetLocation) < 1.0f &&
+			CurrentRotation.Equals(TargetRotator, 1.0f))
+		{
+			SetActorLocationAndRotation(TargetLocation, TargetRotator); // 오차 보정을 위해 완벽히 스냅
+			bIsMovingToTarget = false;
+		}
+	}
+}
+
+void APE_CardActor::MoveToTargetTransform(const FTransform& InTargetTransform)
+{
+	TargetTransform = InTargetTransform;
+	bIsMovingToTarget = true; // 이동 시작
 }
 
 void APE_CardActor::BeginPlay()

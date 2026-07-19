@@ -76,11 +76,20 @@ protected:
 
 	// --- 레이아웃(정렬) 세팅값 ---
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
-	float CardSpacing = 120.f; // 카드 간격
+	float BaseCardSpacing = 120.f; // 카드가 적을 때의 기본 간격
 
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
-	float ArchCurveHeight = 20.f; // 둥근 아치형의 높이 (값이 클수록 둥글어짐)
+	float MaxHandWidth = 800.f; // 손패가 차지할 수 있는 최대 너비 (이 값을 넘으면 간격이 압축됨)
 
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
-	float FanAngle = 5.f; // 카드가 부채꼴로 벌어지는 각도
+	float DepthSpacing = 2.f; // 카드가 겹칠 때 깜빡임(Z-Fighting)을 막기 위한 앞뒤 간격차
+
+	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
+	float ArchCurveHeight = 15.f; // 둥근 아치형의 높이
+
+	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
+	float FanAngle = 5.f; // 카드가 부채꼴로 벌어지는 각도 (Roll)
+
+	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
+	float SqueezeTiltAngle = 15.f; // 간격이 좁아질 때 카드가 비스듬히 눕혀지는 최대 각도 (Yaw)
 };
