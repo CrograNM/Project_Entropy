@@ -43,23 +43,36 @@ void APE_CardActor::Tick(float DeltaTime)
 		FVector CurrentLocation = RootComponent->GetRelativeLocation();
 		FRotator CurrentRotation = RootComponent->GetRelativeRotation();
 
-		FVector TargetLocation = TargetRelativeTransform.GetLocation();
+		// 원래 자리를 기본 목표로 설정
+		FVector FinalTargetLocation = TargetRelativeTransform.GetLocation();
+
+		// 호버링 중이라면 목표 위치를 수정
+		if (bIsHovered)
+		{
+			FinalTargetLocation += HoverOffset;
+		}
+
 		FRotator TargetRotator = TargetRelativeTransform.GetRotation().Rotator();
 
 		// 보간 연산
-		FVector NewLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, MoveInterpSpeed);
+		FVector NewLocation = FMath::VInterpTo(CurrentLocation, FinalTargetLocation, DeltaTime, MoveInterpSpeed);
 		FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotator, DeltaTime, MoveInterpSpeed);
 
 		// 계산된 상대 좌표 적용
 		SetActorRelativeLocation(NewLocation);
 		SetActorRelativeRotation(NewRotation);
 
-		if (FVector::DistSquared(NewLocation, TargetLocation) < 1.0f &&
-			CurrentRotation.Equals(TargetRotator, 1.0f))
+		// 도착 판정 최적화
+		if (FVector::DistSquared(NewLocation, FinalTargetLocation) < TransformTolerance &&
+			CurrentRotation.Equals(TargetRotator, TransformTolerance))
 		{
-			SetActorRelativeLocation(TargetLocation);
+			SetActorRelativeLocation(FinalTargetLocation);
 			SetActorRelativeRotation(TargetRotator);
-			bIsMovingToTarget = false;
+
+			if (!bIsHovered)
+			{
+				bIsMovingToTarget = false;
+			}
 		}
 	}
 }
@@ -100,6 +113,10 @@ void APE_CardActor::InitializeCard(UPE_CardData* InCardData)
 
 void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor)
 {
+	// 호버링 트리거: 이동 연산을 즉시 시작하여 호버링 오프셋 적용
+	bIsHovered = bIsHighlighted;
+	bIsMovingToTarget = true;
+
 	if (!DynamicMaterial) return;
 
 	// 하이라이트 On/Off (0.0 or 1.0)
