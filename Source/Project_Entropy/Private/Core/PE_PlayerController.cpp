@@ -10,6 +10,9 @@
 #include "Core/PE_BattleGameMode.h"
 #include "Core/PE_CheatManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/ACDeckManagerComponent.h"
+#include "Components/ACCardInteractionComponent.h"
+#include "Cards/PE_CardData.h"
 
 APE_PlayerController::APE_PlayerController()
 {
@@ -19,6 +22,12 @@ APE_PlayerController::APE_PlayerController()
 	bEnableMouseOverEvents = true;
 	
 	CheatClass = UPE_CheatManager::StaticClass();
+
+	// 상호작용 컴포넌트 부착
+	CardInteractionComp = CreateDefaultSubobject<UACCardInteractionComponent>(TEXT("CardInteractionComp"));
+
+	// 덱 매니저 컴포넌트 부착
+	DeckManagerComp = CreateDefaultSubobject<UACDeckManagerComponent>(TEXT("DeckManagerComp"));
 }
 
 void APE_PlayerController::BeginPlay()
@@ -66,6 +75,12 @@ void APE_PlayerController::BeginPlay()
 			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 플레이어 캐릭터가 존재하지 않음"));
 		}
 	}
+
+	// 테스트용 덱 데이터가 설정되어 있다면 덱 매니저 초기화 진행
+	if (DeckManagerComp && TestStartingDeck.Num() > 0)
+	{
+		DeckManagerComp->InitializeDeck(TestStartingDeck);
+	}
 }
 
 void APE_PlayerController::SetupInputComponent()
@@ -101,6 +116,16 @@ void APE_PlayerController::SetupInputComponent()
 		if (IA_CameraHeight)
 		{
 			EnhancedInputComponent->BindAction(IA_CameraHeight, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraHeight);
+		}
+
+		// 카드 상호작용 컴포넌트 입력 바인딩
+		if (IA_MouseClick)
+		{
+			// 클릭 시작 (Pressed) -> 카드 잡기 시도
+			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClickStarted);
+
+			// 클릭 종료 (Released) -> 카드 놓기 시도
+			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Completed, this, &APE_PlayerController::OnMouseClickCompleted);
 		}
 	}
 }
@@ -355,5 +380,33 @@ void APE_PlayerController::OnCameraHeight(const FInputActionValue& Value)
 	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
 	{
 		PlayerCharacter->GetCameraControlComponent()->AdjustCameraHeight(HeightInput);
+	}
+}
+
+void APE_PlayerController::OnMouseClickStarted(const FInputActionValue& Value)
+{
+	// 기존 이동/타일 클릭 로직 전에, 카드를 잡을 수 있는지 상호작용 컴포넌트에 우선 권한을 넘김
+	if (CardInteractionComp)
+	{
+		CardInteractionComp->GrabCard();
+	}
+
+	// TODO: 카드를 잡지 못했을 경우에만 기존 Grid 이동 로직(OnMouseClick) 실행하도록 분기 처리 필요
+}
+
+void APE_PlayerController::OnMouseClickCompleted(const FInputActionValue& Value)
+{
+	if (CardInteractionComp)
+	{
+		CardInteractionComp->ReleaseCard();
+	}
+}
+
+void APE_PlayerController::OnTestDrawCard()
+{
+	if (DeckManagerComp)
+	{
+		// D 키를 누를 때마다 1장씩 드로우 테스트
+		DeckManagerComp->DrawCards(1);
 	}
 }

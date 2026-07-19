@@ -13,6 +13,9 @@ class UPE_TurnManagerComponent;
 class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
+class UACCardInteractionComponent;
+class UACDeckManagerComponent;
+class UPE_CardData;
 
 UCLASS()
 class PROJECT_ENTROPY_API APE_PlayerController : public APlayerController
@@ -34,6 +37,9 @@ public:
 	// 외부에 의해 게임 모드가 바뀔 때 호출될 함수, **이후 패키징 단계에서 단축키에서 제거해야함**
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchInputMode(EPEGameState NewState);
+
+	UFUNCTION(BlueprintCallable, Category = "Test")
+	void OnTestDrawCard();
 
 protected:
 	virtual void BeginPlay() override;
@@ -77,6 +83,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
 	TObjectPtr<APE_PlayerCharacter> PlayerCharacter = nullptr;
 
+	// 카드 상호작용 전담 컴포넌트
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UACCardInteractionComponent> CardInteractionComp;
+
+	/** 덱/손패 관리 컴포넌트 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UACDeckManagerComponent> DeckManagerComp;
+
+	/** [테스트용] 시작 시 주입할 임시 카드 데이터들 */
+	UPROPERTY(EditDefaultsOnly, Category = "Test")
+	TArray<TObjectPtr<UPE_CardData>> TestStartingDeck;
+
 private:
 	// 기지 모드에서 키보드 이동 처리
 	void Move(const FInputActionValue& Value);
@@ -88,6 +106,10 @@ private:
 	void OnCameraReset(const FInputActionValue& Value);
 	void OnCameraHeight(const FInputActionValue& Value);
 	
+	// 카드 상호작용 입력 처리
+	void OnMouseClickStarted(const FInputActionValue& Value);
+	void OnMouseClickCompleted(const FInputActionValue& Value);
+
 private:
 	// Input Mode (Base/Battle)
 	EPEGameState CurrentInputMode = EPEGameState::Base; 

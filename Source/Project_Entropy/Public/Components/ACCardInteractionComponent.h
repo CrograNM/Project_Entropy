@@ -1,0 +1,51 @@
+// Copyright CrograNM
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "ACCardInteractionComponent.generated.h"
+
+class APE_CardActor;
+
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+class PROJECT_ENTROPY_API UACCardInteractionComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	UACCardInteractionComponent();
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+	/** 마우스 왼쪽 버튼 클릭 시 호출 (잡기) */
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
+	void GrabCard();
+
+	/** 마우스 왼쪽 버튼 뗐을 때 호출 (놓기/시전) */
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
+	void ReleaseCard();
+
+protected:
+	virtual void BeginPlay() override;
+
+private:
+	/** 마우스 호버링 감지 처리 */
+	void ProcessHovering();
+
+	/** 드래그 중인 카드의 3D 위치 업데이트 */
+	void ProcessDragging();
+
+	UPROPERTY()
+	TObjectPtr<APE_CardActor> HoveredCard;
+
+	UPROPERTY()
+	TObjectPtr<APE_CardActor> GrabbedCard;
+
+	/** 드래그 시 카메라 렌즈로부터 카드가 떨어져 있을 거리 (깊이) */
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
+	float DragDepth = 150.f;
+
+	/** 드래그 시 카드가 마우스를 따라가는 보간 속도 (찰진 느낌 조절) */
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
+	float DragInterpSpeed = 15.f;
+};
