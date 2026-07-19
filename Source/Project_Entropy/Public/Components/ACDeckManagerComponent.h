@@ -92,4 +92,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
 	float SqueezeTiltAngle = 15.f; // 간격이 좁아질 때 카드가 비스듬히 눕혀지는 최대 각도 (Yaw)
+
+	/**	
+		손패 오프셋 - 카메라 렌즈를 기준으로 손패 묶음이 위치할 기본 3D 오프셋 (상대 좌표)
+		* X: 렌즈 앞으로의 거리 (예: 50.f)
+		* Y: 좌우 오프셋 (보통 0)
+		* Z: 상하 오프셋 (화면 아래쪽이므로 보통 -30.f 등 음수값) 
+	*/
+	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
+	FTransform BaseHandOffset = FTransform(FRotator(0.f, 0.f, 0.f), FVector(50.f, 0.f, -30.f));
 };

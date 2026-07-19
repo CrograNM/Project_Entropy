@@ -64,7 +64,7 @@ public:
 	TObjectPtr<UPE_CardData> GetCardData() const { return CardData; }
 
 	UFUNCTION(BlueprintCallable, Category = "Card|Movement")
-	void MoveToTargetTransform(const FTransform& InTargetTransform);
+	void MoveToTargetTransform(const FTransform& InTargetRelativeTransform);
 
 protected:
 	virtual void BeginPlay() override;
@@ -100,8 +100,8 @@ private:
 	/** 현재 카드가 목표를 향해 이동 중인지 여부 */
 	bool bIsMovingToTarget = false;
 
-	/** 도달해야 할 최종 3D 좌표 및 회전값 */
-	FTransform TargetTransform;
+	/** 도달해야 할 최종 상대 좌표 및 회전값 */
+	FTransform TargetRelativeTransform;
 
 	/** 카드가 날아가는 속도 (값이 클수록 빠르고 딱딱하게, 작을수록 부드럽게 이동) */
 	UPROPERTY(EditDefaultsOnly, Category = "Card|Movement")

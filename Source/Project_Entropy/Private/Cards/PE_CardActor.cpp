@@ -37,34 +37,36 @@ void APE_CardActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 목표를 향해 이동 중일 때만 연산 수행
-	if (bIsMovingToTarget)
+	if (bIsMovingToTarget && RootComponent)
 	{
-		FVector CurrentLocation = GetActorLocation();
-		FRotator CurrentRotation = GetActorRotation();
+		// '부모 기준 상대 좌표'를 가져옴
+		FVector CurrentLocation = RootComponent->GetRelativeLocation();
+		FRotator CurrentRotation = RootComponent->GetRelativeRotation();
 
-		FVector TargetLocation = TargetTransform.GetLocation();
-		FRotator TargetRotator = TargetTransform.GetRotation().Rotator();
+		FVector TargetLocation = TargetRelativeTransform.GetLocation();
+		FRotator TargetRotator = TargetRelativeTransform.GetRotation().Rotator();
 
-		// 부드러운 위치 및 회전 보간 (VInterpTo, RInterpTo)
+		// 보간 연산
 		FVector NewLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, MoveInterpSpeed);
 		FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotator, DeltaTime, MoveInterpSpeed);
 
-		SetActorLocationAndRotation(NewLocation, NewRotation);
+		// 계산된 상대 좌표 적용
+		SetActorRelativeLocation(NewLocation);
+		SetActorRelativeRotation(NewRotation);
 
-		// 목표에 거의 도달했다면(오차 1.0f 이하) 이동 연산을 종료하여 성능 최적화
 		if (FVector::DistSquared(NewLocation, TargetLocation) < 1.0f &&
 			CurrentRotation.Equals(TargetRotator, 1.0f))
 		{
-			SetActorLocationAndRotation(TargetLocation, TargetRotator); // 오차 보정을 위해 완벽히 스냅
+			SetActorRelativeLocation(TargetLocation);
+			SetActorRelativeRotation(TargetRotator);
 			bIsMovingToTarget = false;
 		}
 	}
 }
 
-void APE_CardActor::MoveToTargetTransform(const FTransform& InTargetTransform)
+void APE_CardActor::MoveToTargetTransform(const FTransform& InTargetRelativeTransform)
 {
-	TargetTransform = InTargetTransform;
+	TargetRelativeTransform = InTargetRelativeTransform;
 	bIsMovingToTarget = true; // 이동 시작
 }
 
