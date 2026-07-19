@@ -44,18 +44,19 @@ void APE_CardActor::Tick(float DeltaTime)
 		FRotator CurrentRotation = RootComponent->GetRelativeRotation();
 
 		// 원래 자리를 기본 목표로 설정
-		FVector FinalTargetLocation = TargetRelativeTransform.GetLocation();
+		FVector TargetLocation = TargetRelativeTransform.GetLocation();
+		FRotator TargetRotator = TargetRelativeTransform.GetRotation().Rotator();
 
 		// 호버링 중이라면 목표 위치를 수정
 		if (bIsHovered)
 		{
-			FinalTargetLocation += HoverOffset;
+			TargetLocation += HoverOffset;
+			TargetRotator = FRotator::ZeroRotator; // 기본값으로 초기화 (호버링 시 회전은 0으로)
 		}
 
-		FRotator TargetRotator = TargetRelativeTransform.GetRotation().Rotator();
 
 		// 보간 연산
-		FVector NewLocation = FMath::VInterpTo(CurrentLocation, FinalTargetLocation, DeltaTime, MoveInterpSpeed);
+		FVector NewLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, MoveInterpSpeed);
 		FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotator, DeltaTime, MoveInterpSpeed);
 
 		// 계산된 상대 좌표 적용
@@ -63,10 +64,10 @@ void APE_CardActor::Tick(float DeltaTime)
 		SetActorRelativeRotation(NewRotation);
 
 		// 도착 판정 최적화
-		if (FVector::DistSquared(NewLocation, FinalTargetLocation) < TransformTolerance &&
+		if (FVector::DistSquared(NewLocation, TargetLocation) < TransformTolerance &&
 			CurrentRotation.Equals(TargetRotator, TransformTolerance))
 		{
-			SetActorRelativeLocation(FinalTargetLocation);
+			SetActorRelativeLocation(TargetLocation);
 			SetActorRelativeRotation(TargetRotator);
 
 			if (!bIsHovered)
