@@ -23,6 +23,7 @@ enum class EPECardVisualState : uint8
 	Discarding  UMETA(DisplayName = "Discarding, 버려지는 중 (빛 알갱이 산화)")
 };
 
+/** 3D 공간 상에 존재할 카드 액터 */
 UCLASS()
 class PROJECT_ENTROPY_API APE_CardActor : public AActor
 {
