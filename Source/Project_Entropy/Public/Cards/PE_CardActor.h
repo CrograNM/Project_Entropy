@@ -58,6 +58,9 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayDiscardAnimation(FVector DiscardPileWorldLocation);
 
+	/** --- Getter --- */
+	TObjectPtr<UPE_CardData> GetCardData() const { return CardData; }
+
 protected:
 	virtual void BeginPlay() override;
 

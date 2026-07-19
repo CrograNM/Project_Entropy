@@ -1,8 +1,10 @@
 // Copyright CrograNM
 
 #include "Components/ACDeckManagerComponent.h"
-#include "Card/PE_CardActor.h"
-#include "Card/PE_CardData.h"
+#include "Cards/PE_CardActor.h"
+#include "Cards/PE_CardData.h"
+#include "Kismet/GameplayStatics.h"
+#include "Core/PE_RunManagerSubsystem.h"
 
 UACDeckManagerComponent::UACDeckManagerComponent()
 {
@@ -81,7 +83,7 @@ void UACDeckManagerComponent::DiscardCard(APE_CardActor* CardToDiscard)
 
 	// 1. 손패에서 제거하고 무덤에 데이터 추가
 	HandCards.Remove(CardToDiscard);
-	DiscardPile.Add(CardToDiscard->GetCardData()); // CardActor에 GetCardData() Getter가 있다고 가정
+	DiscardPile.Add(CardToDiscard->GetCardData());
 
 	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
 

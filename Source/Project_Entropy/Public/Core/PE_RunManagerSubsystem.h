@@ -15,9 +15,13 @@ class PROJECT_ENTROPY_API UPE_RunManagerSubsystem : public UGameInstanceSubsyste
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	/** 게임 시작 시 새로운 런의 시드를 주입하고 난수 생성기를 초기화합니다. */
-	UFUNCTION(BlueprintCallable, Category = "Run|Random")
-	void StartNewRunWithSeed(int32 NewSeed);
+	/** [게임시작] 무작위 시드로 완전히 새로운 런을 시작합니다. (일반런) */
+	UFUNCTION(BlueprintCallable, Category = "Run|System")
+	void StartRandomRun();
+
+	/** [게임시작] 유저가 입력한 특정 시드를 기반으로 런을 시작합니다. (시드런) */
+	UFUNCTION(BlueprintCallable, Category = "Run|System")
+	void StartSeededRun(const FString& SeedString);
 
 	/** 시드 기반 랜덤 정수 반환 (Min <= 반환값 <= Max) */
 	UFUNCTION(BlueprintPure, Category = "Run|Random")
@@ -32,8 +36,12 @@ public:
 	bool GetRandomBool() const;
 
 	/** 현재 런의 시드 번호 확인 (UI 표시용 등) */
-	UFUNCTION(BlueprintPure, Category = "Run")
+	UFUNCTION(BlueprintPure, Category = "Run|State")
 	int32 GetCurrentSeed() const { return CurrentSeed; }
+
+	/** 현재 런의 시드를 문자열 포맷(예: 8자리 헥사코드)으로 반환 (UI 표시용) */
+	UFUNCTION(BlueprintPure, Category = "Run|State")
+	FString GetCurrentSeedAsString() const;
 
 private:
 	UPROPERTY()

@@ -7,12 +7,36 @@ void UPE_RunManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 }
 
-void UPE_RunManagerSubsystem::StartNewRunWithSeed(int32 NewSeed)
+void UPE_RunManagerSubsystem::StartRandomRun()
 {
-	CurrentSeed = NewSeed;
+	// 현재 기기의 시간(Ticks)과 기존 랜덤 함수를 섞어 최대한 예측 불가능한 시드 생성
+	int32 GeneratedSeed = FMath::Rand() ^ FDateTime::Now().GetTicks();
+
+	CurrentSeed = GeneratedSeed;
 	RunRandomStream.Initialize(CurrentSeed);
 
-	UE_LOG(LogTemp, Warning, TEXT("[RunManager] 새로운 런 시작. 현재 시드: %d"), CurrentSeed);
+	UE_LOG(LogTemp, Warning, TEXT("[RunManager] 무작위 런 시작. 생성된 시드: %d"), CurrentSeed);
+}
+
+void UPE_RunManagerSubsystem::StartSeededRun(const FString& SeedString)
+{
+	// 입력된 문자열의 공백을 제거하고 대문자로 통일
+	FString CleanString = SeedString.TrimStartAndEnd().ToUpper();
+
+	// 문자열이 비어있다면 무작위 런으로 대체
+	if (CleanString.IsEmpty())
+	{
+		StartRandomRun();
+		return;
+	}
+
+	// 문자열을 고유한 정수 해시(CRC32)로 변환하여 시드로 사용
+	int32 HashedSeed = FCrc::StrCrc32(*CleanString);
+
+	CurrentSeed = HashedSeed;
+	RunRandomStream.Initialize(CurrentSeed);
+
+	UE_LOG(LogTemp, Warning, TEXT("[RunManager] 시드 기반 런 시작. 원본 문자열: %s, 변환된 시드: %d"), *CleanString, CurrentSeed);
 }
 
 int32 UPE_RunManagerSubsystem::GetRandomIntInRange(int32 Min, int32 Max) const
@@ -29,4 +53,9 @@ float UPE_RunManagerSubsystem::GetRandomFloatInRange(float Min, float Max) const
 bool UPE_RunManagerSubsystem::GetRandomBool() const
 {
 	return (RunRandomStream.RandRange(0, 1) == 1);
+}
+
+FString UPE_RunManagerSubsystem::GetCurrentSeedAsString() const
+{
+	return FString::Printf(TEXT("%08X"), CurrentSeed);
 }
