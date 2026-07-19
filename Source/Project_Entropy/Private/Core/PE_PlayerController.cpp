@@ -146,8 +146,16 @@ void APE_PlayerController::ToggleGridMovementActivation()
 	// 이동 모드 토글
 	if (!bIsGridMoveActivated)
 	{
-		// 이동 모드 활성화, 사거리 표시
+		// 이동 모드 활성화
 		bIsGridMoveActivated = true;
+
+		// 카드 상호작용 비활성화
+		if (CardInteractionComp)
+		{
+			CardInteractionComp->SetInteractionEnabled(false);
+		}
+
+		// 이동 범위 표시
 		if (PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent())
 		{
 			const int32 Range = PlayerCharacter->GetStatComponent()->GetMoveRange();
@@ -174,6 +182,13 @@ void APE_PlayerController::CancelCurrentAction()
 	if (bIsGridMoveActivated)
 	{
 		bIsGridMoveActivated = false;
+
+		// 카드 상호작용 재활성화
+		if (CardInteractionComp)
+		{
+			CardInteractionComp->SetInteractionEnabled(true);
+		}
+
 		if (GridSystem)
 		{
 			GridSystem->ClearAllHighlights();
@@ -197,22 +212,16 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
-	// --- 이동: 마우스 호버링 ---
+	// 이동 모드: 마우스 호버링 - 타일 감지 및 경로 하이라이트
 	if (!bIsGridMoveActivated || !GridSystem) return;
-
-	// 마우스 밑의 타일 레이캐스팅 감지
 	FHitResult HitResult;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
 		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
-		
-		// UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 라인 트레이스 결과 %s"), *HitResult.GetActor()->GetName());
-		// UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::PlayerTick] 타일: %s"), HoveredTile ? *HoveredTile->GetName() : TEXT("None"));
 		if (HoveredTile && PlayerCharacter)
 		{
 			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
 			
-			// 매 틱 연산 방지를 위해 마우스가 '새로운 타일'로 넘어갔을 때만 경로 재부각
 			if (CurrentTilePos != LastHoveredTilePos)
 			{
 				LastHoveredTilePos = CurrentTilePos;
@@ -385,6 +394,8 @@ void APE_PlayerController::OnCameraHeight(const FInputActionValue& Value)
 
 void APE_PlayerController::OnMouseClickStarted(const FInputActionValue& Value)
 {
+	if (bIsGridMoveActivated) return;
+
 	// 기존 이동/타일 클릭 로직 전에, 카드를 잡을 수 있는지 상호작용 컴포넌트에 우선 권한을 넘김
 	if (CardInteractionComp)
 	{

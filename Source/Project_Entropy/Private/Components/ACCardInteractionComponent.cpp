@@ -8,6 +8,7 @@
 UACCardInteractionComponent::UACCardInteractionComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickInterval = 0.022222f; // 약 45fps로 Tick 최적화
 }
 
 void UACCardInteractionComponent::BeginPlay()
@@ -18,6 +19,8 @@ void UACCardInteractionComponent::BeginPlay()
 void UACCardInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!bIsInteractionEnabled) return;
 
 	// 카드를 쥐고 있다면 드래그 로직, 아니라면 호버링 탐색
 	if (GrabbedCard)
@@ -85,6 +88,8 @@ void UACCardInteractionComponent::ProcessDragging()
 
 void UACCardInteractionComponent::GrabCard()
 {
+	if (!bIsInteractionEnabled) return;
+
 	if (HoveredCard)
 	{
 		GrabbedCard = HoveredCard;
@@ -117,5 +122,27 @@ void UACCardInteractionComponent::ReleaseCard()
 		*/
 
 		GrabbedCard = nullptr;
+	}
+}
+
+void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
+{
+	bIsInteractionEnabled = bEnabled;
+
+	// 비활성화될 때, 쥐고 있거나 호버링 중인 카드가 있다면 즉시 취소 처리
+	if (!bIsInteractionEnabled)
+	{
+		if (HoveredCard)
+		{
+			HoveredCard->SetHighlightState(false);
+			HoveredCard = nullptr;
+		}
+
+		if (GrabbedCard)
+		{
+			ReleaseCard();
+		}
+
+		// TODO: 시전 준비 중이던 카드가 있다면 시전 취소 처리
 	}
 }

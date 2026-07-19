@@ -25,10 +25,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
 	void ReleaseCard();
 
+	// 상호작용 가능 여부를 설정 (이동 모드 시 차단용)
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void SetInteractionEnabled(bool bEnabled);
+
+	bool IsInteractionEnabled() const { return bIsInteractionEnabled; }
+
 protected:
 	virtual void BeginPlay() override;
 
 private:
+	// 상호작용 가능 여부 (이동 모드 등에서 카드 상호작용을 차단할 때 false로 설정)
+	bool bIsInteractionEnabled = true;
+
 	/** 마우스 호버링 감지 처리 */
 	void ProcessHovering();
 

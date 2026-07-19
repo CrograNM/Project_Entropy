@@ -9,7 +9,7 @@
 APE_CardActor::APE_CardActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.033f; // 약 30fps로 Tick 최적화
+	PrimaryActorTick.TickInterval = 0.022222f; // 약 45fps로 Tick 최적화
 
 	// 1. 메쉬 컴포넌트 (루트)
 	CardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CardMesh"));
