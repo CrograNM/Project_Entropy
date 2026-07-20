@@ -90,6 +90,9 @@ protected:
 
 	// --- 레이아웃(정렬) 세팅값 ---
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
+	int32 MaxHandSize = 10;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
 	float BaseCardSpacing = 120.f; // 카드가 적을 때의 기본 간격
 
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")

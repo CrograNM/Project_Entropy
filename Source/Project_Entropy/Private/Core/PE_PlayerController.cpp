@@ -444,11 +444,11 @@ void APE_PlayerController::OnCameraControlCompleted(const FInputActionValue& Val
 	bShowMouseCursor = true;
 }
 
-void APE_PlayerController::OnTestDrawCard()
+void APE_PlayerController::OnTestDrawCard(int32 Count)
 {
 	if (DeckManagerComp)
 	{
-		// D 키를 누를 때마다 1장씩 드로우 테스트
-		DeckManagerComp->DrawCards(1);
+		// D 키를 누를 때마다 드로우 테스트
+		DeckManagerComp->DrawCards(Count);
 	}
 }

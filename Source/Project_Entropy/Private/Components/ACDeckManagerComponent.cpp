@@ -6,6 +6,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Core/PE_RunManagerSubsystem.h"
 #include "Camera/CameraComponent.h"
+#include "Core/PE_PlayerController.h"
 
 UACDeckManagerComponent::UACDeckManagerComponent()
 {
@@ -41,7 +42,20 @@ void UACDeckManagerComponent::DrawCards(int32 Count)
 {
 	if (!CardActorClass || Count <= 0) return;
 
-	for (int32 i = 0; i < Count; ++i)
+	int32 CurrentHandSize = HandCards.Num();
+	if (CurrentHandSize >= MaxHandSize)
+	{
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetOwner()))
+		{
+			PC->ShowToastMessage(FText::FromString(TEXT("더 이상 카드를 뽑을 수 없습니다.")));
+		}
+		return;
+	}
+
+	int32 AvailableSpace = MaxHandSize - CurrentHandSize;
+	int32 ActualDrawCount = FMath::Min(Count, AvailableSpace);
+
+	for (int32 i = 0; i < ActualDrawCount; ++i)
 	{
 		// 뽑을 카드가 없다면 무덤을 섞음
 		if (DrawPile.IsEmpty())
@@ -84,6 +98,14 @@ void UACDeckManagerComponent::DrawCards(int32 Count)
 
 			// TODO: NewCardActor->PlayDrawAnimation(...) 호출 
 			// (오른쪽으로 쌓이며 빛 알갱이가 카드로 변하는 연출 지시)
+		}
+	}
+
+	if (ActualDrawCount < Count)
+	{
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetOwner()))
+		{
+			PC->ShowToastMessage(FText::FromString(TEXT("공간 부족, 일부 카드만 뽑았습니다.")));
 		}
 	}
 

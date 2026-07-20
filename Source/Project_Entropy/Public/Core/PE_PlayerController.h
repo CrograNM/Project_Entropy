@@ -39,7 +39,10 @@ public:
 	void SwitchInputMode(EPEGameState NewState);
 
 	UFUNCTION(BlueprintCallable, Category = "Test")
-	void OnTestDrawCard();
+	void OnTestDrawCard(int32 Count);
+
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "UI")
+	void ShowToastMessage(const FText& Message);
 
 protected:
 	virtual void BeginPlay() override;
