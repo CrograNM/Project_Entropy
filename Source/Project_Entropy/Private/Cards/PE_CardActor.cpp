@@ -1,6 +1,8 @@
 // Copyright CrograNM
 
 #include "Cards/PE_CardActor.h"
+#include "Components/SceneComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "NiagaraComponent.h"
@@ -11,25 +13,29 @@ APE_CardActor::APE_CardActor()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickInterval = 0.022222f; // 약 45fps로 Tick 최적화
 
-	// 1. 메쉬 컴포넌트 (루트)
+	// 루트 씬 생성 (레이아웃의 위치를 담당)
+	RootScene = CreateDefaultSubobject<USceneComponent>(TEXT("RootScene"));
+	RootComponent = RootScene;
+
+	// 박스 충돌체 (마우스 입력을 받으며, 루트에 고정되어 절대 튀어나오지 않음)
+	CollisionBox = CreateDefaultSubobject<UBoxComponent>(TEXT("CollisionBox"));
+	CollisionBox->SetupAttachment(RootComponent);
+	CollisionBox->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+
+	// 카드 메쉬 (시각적 역할만 수행하며, 충돌은 끕니다)
 	CardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CardMesh"));
-	RootComponent = CardMesh;
-
-	// 마우스 클릭(Raycast)을 감지해야 하므로 블록 처리
-	CardMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-
-	// 카메라에 파묻히지 않도록 렌더링 옵션 (CustomDepth를 활용하여 최상단 렌더링 가능)
+	CardMesh->SetupAttachment(RootComponent);
+	CardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision); // 메쉬의 충돌 방해 금지
 	CardMesh->SetRenderCustomDepth(true);
 
-	// 2. 3D 위젯 컴포넌트 (이름, AP, 설명 등 텍스트 표시용)
+	// UI와 VFX는 CardMesh에 부착
 	CardUIWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("CardUIWidget"));
-	CardUIWidget->SetupAttachment(RootComponent);
+	CardUIWidget->SetupAttachment(CardMesh);
 	CardUIWidget->SetWidgetSpace(EWidgetSpace::World);
-	CardUIWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision); // UI는 클릭을 방해하지 않음
+	CardUIWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// 3. VFX 파티클 컴포넌트 (빛 알갱이, 마법진 등)
 	VFXComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("VFXComponent"));
-	VFXComponent->SetupAttachment(RootComponent);
+	VFXComponent->SetupAttachment(CardMesh);
 	VFXComponent->SetAutoActivate(false);
 }
 
@@ -37,43 +43,67 @@ void APE_CardActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (bIsMovingToTarget && RootComponent)
+	if (!bIsMovingToTarget || !RootComponent) return;
+	
+	// '부모 기준 상대 좌표'를 가져옴
+	FVector CurrentRootLoc = RootComponent->GetRelativeLocation();
+	FRotator CurrentRootRot = RootComponent->GetRelativeRotation();
+	
+	// 원래 자리를 기본 목표로 설정
+	FVector TargetRootLoc = TargetRelativeTransform.GetLocation();
+	FRotator TargetRootRot = TargetRelativeTransform.GetRotation().Rotator();
+	
+	// 보간 연산
+	FVector NewRootLoc = FMath::VInterpTo(CurrentRootLoc, TargetRootLoc, DeltaTime, MoveInterpSpeed);
+	FRotator NewRootRot = FMath::RInterpTo(CurrentRootRot, TargetRootRot, DeltaTime, MoveInterpSpeed);
+	
+	// 계산된 상대 좌표 적용
+	SetActorRelativeLocation(NewRootLoc);
+	SetActorRelativeRotation(NewRootRot);
+
+	// --- [호버링 이동] CardMesh만 오프셋과 회전을 조절 ---
+	FVector CurrentMeshLoc = CardMesh->GetRelativeLocation();
+	FRotator CurrentMeshRot = CardMesh->GetRelativeRotation();
+
+	// 평상시 메쉬의 목표는 자기 자리(0,0,0)를 유지하는 것
+	FVector TargetMeshLoc = FVector::ZeroVector;
+	FRotator TargetMeshRot = FRotator::ZeroRotator;
+
+	if (bIsHovered)
 	{
-		// '부모 기준 상대 좌표'를 가져옴
-		FVector CurrentLocation = RootComponent->GetRelativeLocation();
-		FRotator CurrentRotation = RootComponent->GetRelativeRotation();
+		// 마우스를 올렸을 때는 팝업 오프셋을 적용
+		TargetMeshLoc = HoverOffset;
 
-		// 원래 자리를 기본 목표로 설정
-		FVector TargetLocation = TargetRelativeTransform.GetLocation();
-		FRotator TargetRotator = TargetRelativeTransform.GetRotation().Rotator();
+		// 부모(Root)가 부채꼴 모양으로 꺾여있으므로, 그 반대로 회전해야 결과적으로 카메라 정면.
+		TargetMeshRot = TargetRelativeTransform.GetRotation().Inverse().Rotator();
+	}
 
-		// 호버링 중이라면 목표 위치를 수정
-		if (bIsHovered)
+	FVector NewMeshLoc = FMath::VInterpTo(CurrentMeshLoc, TargetMeshLoc, DeltaTime, MoveInterpSpeed);
+	FRotator NewMeshRot = FMath::RInterpTo(CurrentMeshRot, TargetMeshRot, DeltaTime, MoveInterpSpeed);
+
+	CardMesh->SetRelativeLocation(NewMeshLoc);
+	CardMesh->SetRelativeRotation(NewMeshRot);
+
+	// --- [도착 판정] Root와 Mesh가 모두 목표에 도달했는지 확인 ---
+	bool bRootArrived = FVector::DistSquared(NewRootLoc, TargetRootLoc) < TransformTolerance &&
+		CurrentRootRot.Equals(TargetRootRot, TransformTolerance);
+
+	bool bMeshArrived = FVector::DistSquared(NewMeshLoc, TargetMeshLoc) < TransformTolerance &&
+		CurrentMeshRot.Equals(TargetMeshRot, TransformTolerance);
+
+	if (bRootArrived && bMeshArrived)
+	{
+		// 스냅을 통한 미세 오차 보정
+		SetActorRelativeLocation(TargetRootLoc);
+		SetActorRelativeRotation(TargetRootRot);
+
+		CardMesh->SetRelativeLocation(TargetMeshLoc);
+		CardMesh->SetRelativeRotation(TargetMeshRot);
+
+		// 호버링 중이 아닐 때만 틱 연산을 정지하여 성능을 최적화합니다.
+		if (!bIsHovered)
 		{
-			TargetLocation += HoverOffset;
-			TargetRotator = FRotator::ZeroRotator; // 기본값으로 초기화 (호버링 시 회전은 0으로)
-		}
-
-
-		// 보간 연산
-		FVector NewLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, MoveInterpSpeed);
-		FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotator, DeltaTime, MoveInterpSpeed);
-
-		// 계산된 상대 좌표 적용
-		SetActorRelativeLocation(NewLocation);
-		SetActorRelativeRotation(NewRotation);
-
-		// 도착 판정 최적화
-		if (FVector::DistSquared(NewLocation, TargetLocation) < TransformTolerance &&
-			CurrentRotation.Equals(TargetRotator, TransformTolerance))
-		{
-			SetActorRelativeLocation(TargetLocation);
-			SetActorRelativeRotation(TargetRotator);
-
-			if (!bIsHovered)
-			{
-				bIsMovingToTarget = false;
-			}
+			bIsMovingToTarget = false;
 		}
 	}
 }
@@ -94,21 +124,19 @@ void APE_CardActor::BeginPlay()
 	}
 }
 
+
+// TODO: CardUIWidget 내부의 UserWidget(UPE_CardWidget)을 가져와서 
+// CardData->CardName, CardData->CostAP 등을 텍스트 박스에 쏴주는 로직 추가
 void APE_CardActor::InitializeCard(UPE_CardData* InCardData)
 {
 	if (!InCardData) return;
 
 	CardData = InCardData;
 
-	// TODO: CardUIWidget 내부의 UserWidget(UPE_CardWidget)을 가져와서 
-	// CardData->CardName, CardData->CostAP 등을 텍스트 박스에 쏴주는 로직 추가
-
 	if (DynamicMaterial && CardData->CardArt)
 	{
-		// 머티리얼에 카드 일러스트 텍스처 적용
 		DynamicMaterial->SetTextureParameterValue(TEXT("CardArt"), CardData->CardArt);
 	}
-
 	UE_LOG(LogTemp, Warning, TEXT("[CardActor] %s 카드 생성 및 초기화 완료"), *CardData->CardName.ToString());
 }
 

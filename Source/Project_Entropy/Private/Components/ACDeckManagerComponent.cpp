@@ -158,7 +158,8 @@ void UACDeckManagerComponent::UpdateHandLayout()
 	{
 		APE_CardActor* Card = HandCards[i];
 		if (!Card) continue;
-
+		if (Card == DraggedCard) continue;
+		
 		// --- 위치(Location) 계산 ---
 
 		// 깊이(X축): 나중에 뽑은 카드(오른쪽)가 미세하게 앞쪽에 배치되어 겹치도록 설정
@@ -189,5 +190,29 @@ void UACDeckManagerComponent::UpdateHandLayout()
 
 		// 카드에게 '상대 좌표계'에서의 이동을 명령
 		Card->MoveToTargetTransform(FinalRelativeTransform);
+	}
+}
+
+void UACDeckManagerComponent::ReorderHandCards(APE_CardActor* InDraggedCard, APE_CardActor* TargetCard)
+{
+	if (!InDraggedCard || !TargetCard || InDraggedCard == TargetCard) return;
+
+	int32 OldIndex = HandCards.Find(InDraggedCard);
+	int32 TargetIndex = HandCards.Find(TargetCard);
+
+	if (OldIndex != INDEX_NONE && TargetIndex != INDEX_NONE)
+	{
+		// 1. 드래그 중인 카드를 배열에서 잠시 뺍니다.
+		HandCards.RemoveAt(OldIndex);
+
+		// 2. 빠진 후 타겟 카드의 새로운 인덱스를 찾습니다.
+		int32 NewTargetIndex = HandCards.Find(TargetCard);
+
+		// 3. 우측으로 드래그했으면 타겟의 오른쪽(뒤)에, 좌측으로 했으면 타겟의 왼쪽(앞)에 삽입(Insert)합니다.
+		int32 InsertIndex = (OldIndex < TargetIndex) ? NewTargetIndex + 1 : NewTargetIndex;
+		HandCards.Insert(InDraggedCard, InsertIndex);
+
+		// 4. 재배치된 배열을 바탕으로 나머지 카드들의 위치를 갱신합니다.
+		UpdateHandLayout();
 	}
 }

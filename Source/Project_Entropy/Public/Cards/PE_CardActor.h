@@ -10,6 +10,7 @@ class UPE_CardData;
 class UStaticMeshComponent;
 class UWidgetComponent;
 class UNiagaraComponent;
+class UBoxComponent;
 
 /** 카드의 현재 3D 공간 상 상태 */
 UENUM(BlueprintType)
@@ -78,15 +79,18 @@ protected:
 
 	// --- 컴포넌트 ---
 
-	/** 카드의 3D 형태 (클릭 충돌체 역할 포함) */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> RootScene;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoxComponent> CollisionBox;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> CardMesh;
 
-	/** 카드 위에 띄울 텍스트, 아이콘 (3D 위젯) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> CardUIWidget;
 
-	/** 마법진, 빛 알갱이 등을 재생할 범용 파티클 컴포넌트 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNiagaraComponent> VFXComponent;
 

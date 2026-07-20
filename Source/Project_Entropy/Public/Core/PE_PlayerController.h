@@ -83,13 +83,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
 	TObjectPtr<APE_PlayerCharacter> PlayerCharacter = nullptr;
 
+	// 덱/손패 관리 컴포넌트
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UACDeckManagerComponent> DeckManagerComp;
+
 	// 카드 상호작용 전담 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UACCardInteractionComponent> CardInteractionComp;
-
-	/** 덱/손패 관리 컴포넌트 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UACDeckManagerComponent> DeckManagerComp;
 
 	/** [테스트용] 시작 시 주입할 임시 카드 데이터들 */
 	UPROPERTY(EditDefaultsOnly, Category = "Test")

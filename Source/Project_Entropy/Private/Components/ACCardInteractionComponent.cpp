@@ -1,6 +1,7 @@
 // Copyright CrograNM
 
 #include "Components/ACCardInteractionComponent.h"
+#include "Components/ACDeckManagerComponent.h"
 #include "Cards/PE_CardActor.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -69,22 +70,40 @@ void UACCardInteractionComponent::ProcessDragging()
 	APlayerController* PC = Cast<APlayerController>(GetOwner());
 	if (!PC || !GrabbedCard) return;
 
+	// [정렬 스왑 로직] - 마우스 아래에 다른 카드가 있는지 확인
+	FHitResult HitResult;
+	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+	APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
+	if (HitCard && HitCard != GrabbedCard)
+	{
+		// 다른 카드를 감지했다면 즉시 배열 인덱스를 밀어내고 레이아웃을 갱신합니다.
+		if (UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>())
+		{
+			DeckManager->ReorderHandCards(GrabbedCard, HitCard);
+		}
+	}
+
+	// [드래그 이동 로직] - 마우스의 월드 좌표를 카메라 상대 좌표로 변환하여 부드럽게 이동
 	FVector WorldLocation, WorldDirection;
-	// 마우스의 2D 화면 좌표를 3D 공간의 방향 벡터로 변환 (Deproject)
 	if (PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection))
 	{
-		// 카메라 위치에서 마우스 방향으로 DragDepth 만큼 떨어진 곳이 목표 3D 좌표
-		FVector TargetLocation = WorldLocation + (WorldDirection * DragDepth);
+		// 카메라로부터 DragDepth만큼 떨어진 월드 목표 좌표
+		FVector TargetWorldLoc = WorldLocation + (WorldDirection * DragDepth);
+		FRotator TargetWorldRot = PC->PlayerCameraManager->GetCameraRotation();
+		FTransform TargetWorldTransform(TargetWorldRot, TargetWorldLoc);
 
-		// VInterpTo를 사용해 찰지게 마우스를 따라오도록 보간 (Juicy 연출)
-		FVector NewLocation = FMath::VInterpTo(GrabbedCard->GetActorLocation(), TargetLocation, GetWorld()->GetDeltaSeconds(), DragInterpSpeed);
+		// 플레이어 카메라의 트랜스폼 가져오기
+		FTransform CameraTransform = PC->PlayerCameraManager->GetTransform();
 
-		// 약간 비스듬하게 눕혀지는 회전 효과 추가 시 더욱 역동적
-		FRotator TargetRotation = PC->PlayerCameraManager->GetCameraRotation();
+		// 월드 좌표 -> 카메라 기준 로컬(Relative) 좌표로 변환
+		FTransform RelativeTargetTransform = TargetWorldTransform.GetRelativeTransform(CameraTransform);
 
-		GrabbedCard->SetActorLocationAndRotation(NewLocation, TargetRotation);
+		// SetActorLocation이 아닌, 카드 액터 자체의 보간 함수에 목표점 하달
+		GrabbedCard->MoveToTargetTransform(RelativeTargetTransform);
 	}
 }
+
 
 void UACCardInteractionComponent::GrabCard()
 {
@@ -93,10 +112,13 @@ void UACCardInteractionComponent::GrabCard()
 	if (HoveredCard)
 	{
 		GrabbedCard = HoveredCard;
-		// 드래그 중일 때는 다른 UI나 타일에 방해받지 않도록 충돌체 임시 비활성화
-		GrabbedCard->SetActorEnableCollision(false);
+		GrabbedCard->SetActorEnableCollision(false); // 드래그 시 충돌 비활성화 (레이캐스트 방해 방지)
 
-		UE_LOG(LogTemp, Warning, TEXT("카드 잡기: %s"), *GrabbedCard->GetName());
+		// 드래그 중인 카드를 DeckManager에 등록 (강제 정렬 무효화)
+		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
+		{
+			DeckManager->SetDraggedCard(GrabbedCard);
+		}
 	}
 }
 
@@ -104,22 +126,14 @@ void UACCardInteractionComponent::ReleaseCard()
 {
 	if (GrabbedCard)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("카드 놓기: %s"), *GrabbedCard->GetName());
+		GrabbedCard->SetActorEnableCollision(true);	// 드래그 종료 시 충돌 활성화
 
-		// 충돌체 원상 복구
-		GrabbedCard->SetActorEnableCollision(true);
-
-		// TODO: 현재 마우스 위치가 '전장(적/타일)'인지 '허공'인지 레이캐스트로 2차 검사
-		// 1. 적절한 사용 위치라면: Card->PlayCastingReadyAnimation() 및 스킬 발동 대기 상태 진입
-		// 2. 사용 불가 위치라면: 취소 처리
-
-		// 임시 취소 처리: 덱 매니저의 UpdateHandLayout()을 호출하면 알아서 원래 아치형 자리로 돌아감
-		/*
+		// TODO: 사용 불가 위치(허공 등)라면 취소 처리 -> 원래 손패 자리로 복귀
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
-			DeckManager->UpdateHandLayout();
+			DeckManager->SetDraggedCard(nullptr); // 드래그 해제
+			DeckManager->UpdateHandLayout();      // 비워져 있던 원래 자기 자리로 스르륵 돌아감
 		}
-		*/
 
 		GrabbedCard = nullptr;
 	}
