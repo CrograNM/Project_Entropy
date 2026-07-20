@@ -43,18 +43,13 @@ public:
 	void UpdateHandLayout();
 
 public:
-	/** [Drag] 드래그 중인 카드를 등록하여 강제 정렬(UpdateHandLayout)에서 제외합니다. */
+	/** [Drag] - 드래그 중인 카드 등록 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
 	void SetDraggedCard(APE_CardActor* InCard) { DraggedCard = InCard; }
 
-	/** [Drag] 두 카드의 배열 내 순서를 밀어내기(Shift) 방식으로 재배치합니다. */
+	/** [Drag] - 카드 재배치 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
 	void ReorderHandCards(APE_CardActor* InDraggedCard, APE_CardActor* TargetCard);
-
-private:
-	// [Drag] 현재 마우스로 잡고 있는 카드 (레이아웃 자동 정렬에서 무시됨)
-	UPROPERTY()
-	TObjectPtr<APE_CardActor> DraggedCard;
 
 public:
 	// --- 이벤트 방송국 (블루프린트 UI나 3D 카드더미 액터가 구독할 이벤트) ---
@@ -118,4 +113,9 @@ protected:
 	*/
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Layout")
 	FTransform BaseHandOffset = FTransform(FRotator(0.f, 0.f, 0.f), FVector(50.f, 0.f, -30.f));
+
+private:
+	// [Drag] 현재 마우스로 잡고 있는 카드 (레이아웃 자동 정렬에서 무시됨)
+	UPROPERTY()
+	TObjectPtr<APE_CardActor> DraggedCard;
 };

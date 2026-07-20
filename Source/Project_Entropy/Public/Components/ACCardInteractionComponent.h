@@ -50,6 +50,9 @@ private:
 	UPROPERTY()
 	TObjectPtr<APE_CardActor> GrabbedCard;
 
+	UPROPERTY()
+	TObjectPtr<APE_CardActor> HoveredCardDuringDrag;
+
 	/** 드래그 시 카메라 렌즈로부터 카드가 떨어져 있을 거리 (깊이) */
 	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
 	float DragDepth = 150.f;
@@ -58,7 +61,8 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
 	float DragInterpSpeed = 15.f;
 
-	// 스왑 지터링(무한 자리바꿈) 방지를 위한 변수
-	UPROPERTY()
-	TObjectPtr<APE_CardActor> HoveredCardDuringDrag;
+	// 시전 대기(타겟팅) 상태일 때 카드가 고정될 카메라 기준 상대 좌표 (좌측 중앙쯤)
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
+	FTransform CastingReadyOffset = FTransform(FRotator(0.f, 15.f, 10.f), FVector(50.f, -20.f, -10.f));
+
 };

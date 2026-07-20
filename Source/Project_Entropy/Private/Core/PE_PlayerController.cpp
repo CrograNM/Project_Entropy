@@ -341,7 +341,13 @@ void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
 				bIsGridMoveActivated = false;
 				ValidRangeTiles.Empty();
 				LastHoveredTilePos = FIntPoint(-999, -999);
-				
+
+				// 카드 상호작용 재활성화
+				if (CardInteractionComp)
+				{
+					CardInteractionComp->SetInteractionEnabled(true);
+				}
+
 				// 카메라 리셋
 				PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
 			}
