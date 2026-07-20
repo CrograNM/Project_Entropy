@@ -57,4 +57,8 @@ private:
 	/** 드래그 시 카드가 마우스를 따라가는 보간 속도 (찰진 느낌 조절) */
 	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
 	float DragInterpSpeed = 15.f;
+
+	// 스왑 지터링(무한 자리바꿈) 방지를 위한 변수
+	UPROPERTY()
+	TObjectPtr<APE_CardActor> HoveredCardDuringDrag;
 };

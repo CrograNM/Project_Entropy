@@ -75,12 +75,17 @@ void UACCardInteractionComponent::ProcessDragging()
 	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
 
 	APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
-	if (HitCard && HitCard != GrabbedCard)
+	if (HitCard != HoveredCardDuringDrag)
 	{
-		// 다른 카드를 감지했다면 즉시 배열 인덱스를 밀어내고 레이아웃을 갱신합니다.
-		if (UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>())
+		HoveredCardDuringDrag = HitCard;
+
+		// 실제 새로운 카드에 '진입(Enter)' 했을 때만 스왑
+		if (HoveredCardDuringDrag != nullptr && HoveredCardDuringDrag != GrabbedCard)
 		{
-			DeckManager->ReorderHandCards(GrabbedCard, HitCard);
+			if (UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>())
+			{
+				DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
+			}
 		}
 	}
 
@@ -136,6 +141,9 @@ void UACCardInteractionComponent::ReleaseCard()
 		}
 
 		GrabbedCard = nullptr;
+
+		// 드래그가 끝났으므로 감지 상태 초기화
+		HoveredCardDuringDrag = nullptr;
 	}
 }
 
@@ -156,6 +164,8 @@ void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
 		{
 			ReleaseCard();
 		}
+
+		HoveredCardDuringDrag = nullptr;
 
 		// TODO: 시전 준비 중이던 카드가 있다면 시전 취소 처리
 	}
