@@ -1,0 +1,86 @@
+<Card System>
+
+카드 시스템에 대한 대대적인 공사 진행.
+프로젝트의 코드를 더 진행하기 전에 토대를 완성 한 이후 진행하는 것이 더 효율적이라고 판단.
+해당 문서를 기반으로 카드 시스템 및 상호작용 구조 개편. (기획이자 구현 방향성)
+
+-------------------------------------------
+#Element
+
+카드 속성: [불, 물, 땅, 바람 / 얼음, 번개, 빛, 어둠] - (일반/특수) 
+카드 속성 구조
+CardElemental (또는 SkillElemental)
+{
+	CE_Normal Fire				( CardElemental->CE_Normal->Fire )	
+	CE_Normal Water				
+	CE_Normal Earth			
+	CE_Normal Wind			
+
+	CE_Special Ice			
+	CE_Special Lightning	
+	CE_Special Light		
+	CE_Special Dark			
+}
+
+지형 속성: [불, 물, 땅] / [증발(불+물), 진흙(물+땅)] / [불지옥, 해일, 지진, 얼어붙은 땅, 폭풍, 성역, 심연] - (일반 / 복합 / 특수)
+지형 속성 구조: 
+TileElemental
+{
+	TE_Normal Fire				( TileElemental->TE_Normal->Fire )
+	TE_Normal Water			
+	TE_Normal Earth		
+	
+	TE_Complex Evaporation	
+	TE_Complex Mud		
+	
+	TE_Special Hellfire		
+	TE_Special Tsunami		
+	TE_Special Earthquake	
+	TE_Special FrozenGround	
+	TE_Special Storm		
+	TE_Special Sanctuary	
+	TE_Special Abyss		
+}
+
+-------------------------------------------
+#Skill
+
+소모 AP
+지정 범위: 타일 기준 범위(사거리) 존재, 장애물 판단 필요(장애물 지정 불가)
+지정 방식: Tile(타일 지정 - 1x1, 1x5, 십자가, 3x3 등 다양한 범위 지원), Snap(대상 지정 - 적군 지정, 아군 지정, 자신 지정)
+발동 타입: 타일 지정 투사체, 대상 지정 투사체, 타일 지정 즉발, 대상 지정 즉발
+
+내용물(로직): 공격, 방어, 버프, 디버프, 회복, 소환 등 다양한 스킬 내용물 지원 --> 베이스 클래스를 상속받아 하위 스킬 클래스에서 구현?
+내용물(설명): 로직에 대한 설명 텍스트를 직접 입력 (포맷이 가능하도록 구현 필요)
+
+원하는 개발 방식: 스킬의 공격력 등 수치를 에디터에서 직접 입력 가능하도록 구현하고 싶음. 해당 수치는 텍스트에 자동으로 포맷되어 카드 설명에 표시되도록 구현, 실시간으로도 적용.
+
+-------------------------------------------
+#Card Data
+
+카드의 정보를 담은 데이터 에셋 클래스.
+ID, 이름, 카드 이미지, 카드 속성, 카드 등급, 카드 가격, 카드 타입, 지정 방식, 카드설명 등의 정보
+
+ID: 카드 고유 ID
+이름: 카드 이름
+카드 이미지: 카드에 표시될 이미지
+
+카드 속성: CardElemental
+카드 등급: Common, Rare, Epic, Legendary 등 다양한 카드 등급 지원 --> Widget에서 일반, 코팅, 반짝이, 홀로그램 등으로 카드 등급 표현 가능
+
+소모 AP  --> 스킬 소모 AP를 따라간다.
+카드 타입 --> 스킬 타입을 따라간다.		공격, 방어, 버프, 디버프, 회복, 소환 등 다양한 카드 타입 지원
+지정 방식 --> 스킬 지정 방식을 따라간다.	Tile(타일 지정 - 1x1, 1x5, 십자가, 3x3 등 다양한 범위 지원), Snap(대상 지정 - 적군 지정, 아군 지정, 자신 지정)
+카드 설명 --> 스킬 텍스트를 따라간다 or 직접 입력
+
+-------------------------------------------
+#Card Actor
+
+게임 내 카드의 외형 및 상호작용을 담당하는 액터 클래스. --> 데이터에 따라서 특별한 커스텀 없이 자동적으로 카드의 외형이 변경될 수 있도록 설계. 
+Card Data, Mesh, Material, Widget(전체 카드 이미지), VFX/SFX
+
+Mesh -> Material : Card Data에서 가져온 카드 속성에 따라 메쉬의 머티리얼을 변경
+카드 코팅 Material : Card Data에서 가져온 카드 등급에 따라 코팅 머티리얼을 변경 (Widget의 위에 덮어 씌울 수 있어야함. 가능한가?)
+VFX/SFX: 시전 대기 중 표시될 마법진, 발동 시 표시될 이펙트, 발동 시 재생될 사운드 등 --> Skill Data 또는 Card Data에 삽입된 VFX/SFX를 가져와서 재생
+Widget: 카드 이미지, 카드 속성, 카드 등급, 카드 설명 등을 표시하는 위젯. --> Card Data에서 가져온 정보를 기반으로 위젯의 내용을 자동으로 변경
+

@@ -1,8 +1,4 @@
 <Card System>
 
-PlayerController
-ㄴDeckManagerComponent
-ㄴCardInteractionComponent
-
-CardData
-CardActor
+카드 시스템에 대한 대대적인 공사 진행.
+프로젝트의 코드를 더 진행하기 전에 토대를 완성한 이후 진행하는 것이 더 효율적이라고 판단.
