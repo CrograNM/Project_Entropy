@@ -57,7 +57,10 @@ protected:
 	TObjectPtr<UInputAction> IA_Move; // 기지용 이동 액션
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInputAction> IA_MouseClick; // 전투용 마우스 클릭 액션
+	TObjectPtr<UInputAction> IA_MouseL; // 전투용 마우스 클릭 액션
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> IA_MouseR;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_CameraMove;
@@ -110,6 +113,10 @@ private:
 	void OnMouseClickStarted(const FInputActionValue& Value);
 	void OnMouseClickCompleted(const FInputActionValue& Value);
 
+	// 카메라 회전 시 마우스 커서 표시 제어
+	void OnCameraControlStarted(const FInputActionValue& Value);
+	void OnCameraControlCompleted(const FInputActionValue& Value);
+
 private:
 	// Input Mode (Base/Battle)
 	EPEGameState CurrentInputMode = EPEGameState::Base; 
@@ -120,4 +127,7 @@ private:
 	TArray<AACTile*> ValidRangeTiles;
 
 	FIntPoint LastHoveredTilePos = FIntPoint(-999, -999);
+
+	float StoredMouseX = 0.f;
+	float StoredMouseY = 0.f;
 };

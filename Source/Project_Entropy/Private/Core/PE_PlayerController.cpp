@@ -97,9 +97,15 @@ void APE_PlayerController::SetupInputComponent()
 		}
 
 		// 2. 전투 모드 입력 바인딩
-		if (IA_MouseClick)
+		if (IA_MouseL)
 		{
-			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClick);
+			EnhancedInputComponent->BindAction(IA_MouseL, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClick);
+		}
+		if (IA_MouseR)
+		{
+			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Started, this, &APE_PlayerController::OnCameraControlStarted);
+			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Completed, this, &APE_PlayerController::OnCameraControlCompleted);
+			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Canceled, this, &APE_PlayerController::OnCameraControlCompleted);
 		}
 		if (IA_CameraMove)
 		{
@@ -107,6 +113,7 @@ void APE_PlayerController::SetupInputComponent()
 		}
 		if (IA_CameraRotate)
 		{
+
 			EnhancedInputComponent->BindAction(IA_CameraRotate, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraRotate);
 		}
 		if (IA_CameraReset)
@@ -119,13 +126,13 @@ void APE_PlayerController::SetupInputComponent()
 		}
 
 		// 카드 상호작용 컴포넌트 입력 바인딩
-		if (IA_MouseClick)
+		if (IA_MouseL)
 		{
 			// 클릭 시작 (Pressed) -> 카드 잡기 시도
-			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClickStarted);
+			EnhancedInputComponent->BindAction(IA_MouseL, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClickStarted);
 
 			// 클릭 종료 (Released) -> 카드 놓기 시도
-			EnhancedInputComponent->BindAction(IA_MouseClick, ETriggerEvent::Completed, this, &APE_PlayerController::OnMouseClickCompleted);
+			EnhancedInputComponent->BindAction(IA_MouseL, ETriggerEvent::Completed, this, &APE_PlayerController::OnMouseClickCompleted);
 		}
 	}
 }
@@ -267,9 +274,10 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 				{
 					Subsystem->AddMappingContext(IMC_Battle, 0);
 				}
-				// 배틀 모드: 마우스가 UI(카드)와 전장을 자유롭게 넘나들어야 하므로 GameAndUI 모드로 설정
+				// 배틀 모드: GameAndUI, 마우스 커서가 기본적으로 보이도록 설정
 				FInputModeGameAndUI InputModeDataUI;
 				InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+				InputModeDataUI.SetHideCursorDuringCapture(false);
 				SetInputMode(InputModeDataUI);
 				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
 				break;
@@ -351,6 +359,8 @@ void APE_PlayerController::OnCameraMove(const FInputActionValue& Value)
 {
 	if (CurrentInputMode != EPEGameState::Battle) return;
 
+	bShowMouseCursor = false;
+
 	FVector2D MoveVector = Value.Get<FVector2D>();
 	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
 	{
@@ -361,6 +371,8 @@ void APE_PlayerController::OnCameraMove(const FInputActionValue& Value)
 void APE_PlayerController::OnCameraRotate(const FInputActionValue& Value)
 {
 	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	bShowMouseCursor = false;
 
 	FVector2D RotateVector = Value.Get<FVector2D>();
 	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
@@ -411,6 +423,25 @@ void APE_PlayerController::OnMouseClickCompleted(const FInputActionValue& Value)
 	{
 		CardInteractionComp->ReleaseCard();
 	}
+}
+
+void APE_PlayerController::OnCameraControlStarted(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	GetMousePosition(StoredMouseX, StoredMouseY);
+
+	bShowMouseCursor = false;
+}
+
+// 카메라 회전 종료 시 
+void APE_PlayerController::OnCameraControlCompleted(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	SetMouseLocation(FMath::RoundToInt(StoredMouseX), FMath::RoundToInt(StoredMouseY));
+
+	bShowMouseCursor = true;
 }
 
 void APE_PlayerController::OnTestDrawCard()
