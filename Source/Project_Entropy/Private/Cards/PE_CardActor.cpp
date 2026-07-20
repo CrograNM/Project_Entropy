@@ -28,6 +28,11 @@ APE_CardActor::APE_CardActor()
 	CardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision); // 메쉬의 충돌 방해 금지
 	CardMesh->SetRenderCustomDepth(true);
 
+	// 라이팅 채널 분리 (월드 빛 무시, 전용 빛만 받음)
+	CardMesh->LightingChannels.bChannel0 = false; // 월드 디렉셔널 라이트 무시
+	CardMesh->LightingChannels.bChannel1 = true;  // 3D UI 전용 라이트 채널 활성화
+	CardMesh->bCastDynamicShadow = true;          // 카드끼리 그림자 드리우기 허용
+
 	// UI와 VFX는 CardMesh에 부착
 	CardUIWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("CardUIWidget"));
 	CardUIWidget->SetupAttachment(CardMesh);
