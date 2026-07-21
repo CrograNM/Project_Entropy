@@ -154,7 +154,7 @@ void UACCardInteractionComponent::ReleaseCard()
 
 				// 즉발 스킬 / 타겟팅 스킬 분기
 				// [임시] - CardType이 Power(버프/즉발)면 즉시 사용, Attack(공격)이면 타겟팅 대기로 가정
-				if (CardData && CardData->CardType == EPECardType::Power)
+				if (false)
 				{
 					// [즉발 스킬 처리]
 					UE_LOG(LogTemp, Warning, TEXT("즉시 시전!: %s"), *CardData->CardName.ToString());

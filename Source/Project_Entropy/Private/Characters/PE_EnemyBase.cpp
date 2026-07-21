@@ -5,7 +5,7 @@
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Components/ACSkillComponent.h"
-#include "CardSystem/PE_SkillBase.h"
+#include "CardSystem/PE_SkillData.h"
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -69,13 +69,13 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 	// 2. 첫 번째 스킬(무기)이 있는지 확인합니다.
 	if (SkillComponent->GetActiveSkills().Num() > 0)
 	{
-		UPE_SkillBase* MainSkill = SkillComponent->GetActiveSkills()[0];
+		UPE_SkillData* MainSkill = SkillComponent->GetActiveSkills()[0];
 		AACTile* PlayerTile = GridSystem->GetTileAtPosition(PlayerPos);
 
 		// [판단 1]: 거리가 닿고 AP가 충분하다면 공격!
-		if (DistanceToPlayer <= MainSkill->Range && StatComponent->GetCurrentAP() >= MainSkill->APCost)
+		if (DistanceToPlayer <= MainSkill->BaseRange && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[EnemyAI] 플레이어 공격 결심. (비용: %d AP, 남은 AP: %d)"), MainSkill->APCost, StatComponent->GetCurrentAP());
+			UE_LOG(LogTemp, Log, TEXT("[EnemyAI] 플레이어 공격 결심. (비용: %d AP, 남은 AP: %d)"), MainSkill->BaseAPCost, StatComponent->GetCurrentAP());
 
 			// 스킬 범위 시각화 (스킬의 사거리만큼 붉은색 표시)
 			// 현재는 단순하게 시전자 위치부터 타겟 위치까지의 범위를 하이라이트
