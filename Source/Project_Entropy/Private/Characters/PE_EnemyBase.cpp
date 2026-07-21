@@ -5,7 +5,7 @@
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Components/ACSkillComponent.h"
-#include "Core/PE_SkillBase.h"
+#include "CardSystem/PE_SkillBase.h"
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"

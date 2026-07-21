@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Core/PE_SkillBase.h"
+#include "CardSystem/PE_SkillBase.h"
 #include "PE_Skill_MeleeAttack.generated.h"
 
 UCLASS()

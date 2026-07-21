@@ -12,7 +12,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Components/ACDeckManagerComponent.h"
 #include "Components/ACCardInteractionComponent.h"
-#include "Cards/PE_CardData.h"
+#include "CardSystem/PE_CardData.h"
 
 APE_PlayerController::APE_PlayerController()
 {

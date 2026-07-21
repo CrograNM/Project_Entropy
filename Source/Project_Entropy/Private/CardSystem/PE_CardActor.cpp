@@ -1,12 +1,12 @@
 // Copyright CrograNM
 
-#include "Cards/PE_CardActor.h"
+#include "CardSystem/PE_CardActor.h"
+#include "CardSystem/PE_CardData.h"
 #include "Components/SceneComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "NiagaraComponent.h"
-#include "Cards/PE_CardData.h"
 
 APE_CardActor::APE_CardActor()
 {

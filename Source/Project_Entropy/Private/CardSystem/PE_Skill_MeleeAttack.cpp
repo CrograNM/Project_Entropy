@@ -1,6 +1,6 @@
 // Copyright CrograNM
 
-#include "Skills/PE_Skill_MeleeAttack.h"
+#include "CardSystem/PE_Skill_MeleeAttack.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Components/ACStatComponent.h"
 #include "Kismet/GameplayStatics.h"

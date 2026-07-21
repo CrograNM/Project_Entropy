@@ -1,6 +1,6 @@
 // Copyright CrograNM
 
-#include "Core/PE_SkillBase.h"
+#include "CardSystem/PE_SkillBase.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Grid/ACTile.h"
 

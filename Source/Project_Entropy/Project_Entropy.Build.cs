@@ -8,24 +8,22 @@ public class Project_Entropy : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		
+		// Public
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core", 
 			"CoreUObject", 
 			"Engine", 
 			"InputCore", 
-			"EnhancedInput"
-		});
+			"EnhancedInput",
+            "GameplayTags"
+        });
 
-		// UI (UMG & Slate) 모듈
-		PrivateDependencyModuleNames.AddRange(new string[] { 
+        // Private
+        PrivateDependencyModuleNames.AddRange(new string[] { 
 			"UMG", 
 			"Slate", 
-			"SlateCore" 
-		});
-
-        // VFX (Niagara) 모듈
-        PrivateDependencyModuleNames.AddRange(new string[] {
+			"SlateCore",
             "Niagara"
         });
 

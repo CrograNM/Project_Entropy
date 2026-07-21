@@ -2,10 +2,10 @@
 
 #include "Components/ACCardInteractionComponent.h"
 #include "Components/ACDeckManagerComponent.h"
-#include "Cards/PE_CardActor.h"
+#include "CardSystem/PE_CardActor.h"
+#include "CardSystem/PE_CardData.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
-#include "Cards/PE_CardData.h"
 
 UACCardInteractionComponent::UACCardInteractionComponent()
 {

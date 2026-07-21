@@ -1,7 +1,7 @@
 // Copyright CrograNM
 
 #include "Components/ACSkillComponent.h"
-#include "Core/PE_SkillBase.h"
+#include "CardSystem/PE_SkillBase.h"
 #include "Components/ACStatComponent.h"
 #include "Characters/PE_CharacterBase.h"
 

@@ -1,12 +1,12 @@
 // Copyright CrograNM
 
 #include "Components/ACDeckManagerComponent.h"
-#include "Cards/PE_CardActor.h"
-#include "Cards/PE_CardData.h"
-#include "Kismet/GameplayStatics.h"
-#include "Core/PE_RunManagerSubsystem.h"
-#include "Camera/CameraComponent.h"
 #include "Core/PE_PlayerController.h"
+#include "Core/PE_RunManagerSubsystem.h"
+#include "CardSystem/PE_CardActor.h"
+#include "CardSystem/PE_CardData.h"
+#include "Camera/CameraComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 UACDeckManagerComponent::UACDeckManagerComponent()
 {
