@@ -21,13 +21,14 @@ public:
 	virtual UWorld* GetWorld() const override;
 
 	/**
-	 * 스킬 실행 함수 (C++에서 호출하고 BP에서 세부 연출 및 데미지 처리를 구현)
-	 * @param Instigator 스킬을 사용한 주체 (플레이어 또는 몬스터)
-	 * @param Target 액터 대상 (Snap 방식일 경우)
-	 * @param TargetLocation 타일 좌표 (Tile 방식일 경우)
-	 * @param InSkillData 이 스킬을 실행하게 만든 원본 스킬 데이터 (데미지, 이펙트 참조용)
-	 * @param CalculatedDamage 마석 등이 연산 완료된 최종 데미지
+	 * 1단계 [발동]: 애니메이션 재생, 투사체 스폰 등을 처리합니다.
 	 */
 	UFUNCTION(BlueprintNativeEvent, Category = "Skill|Execution")
 	void ExecuteSkill(AActor* Instigator, AActor* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage);
+
+	/**
+	 * 2단계 [적중]: 실제 데미지, 힐, 버프 등을 적용합니다. (모션 종료나 투사체 도착 시 호출됨)
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Skill|Execution")
+	void ApplySkillEffect(AActor* Instigator, AActor* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage);
 };

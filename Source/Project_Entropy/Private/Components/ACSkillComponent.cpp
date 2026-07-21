@@ -35,6 +35,7 @@ bool UACSkillComponent::TryExecuteSkill(int32 SkillIndex, AACTile* TargetTile, A
 {
 	if (!ActiveSkills.IsValidIndex(SkillIndex) || !OwnerStatComponent) return false;
 
+	UE_LOG(LogTemp, Warning, TEXT("[SkillSystem] 스킬 시도: %d"), SkillIndex);
 	UPE_SkillData* SkillData = ActiveSkills[SkillIndex];
 
 	// 몬스터 등이 기본 스킬을 쓸 때는 마석 연산이 없으므로, 데이터 에셋의 BaseDamage를 그대로 넘깁니다.

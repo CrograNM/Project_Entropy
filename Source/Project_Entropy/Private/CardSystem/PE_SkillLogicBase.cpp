@@ -20,6 +20,8 @@ UWorld* UPE_SkillLogicBase::GetWorld() const
 
 void UPE_SkillLogicBase::ExecuteSkill_Implementation(AActor* Instigator, AActor* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
 {
-	// 이 함수는 BP_Skill_Projectile 등 자식 블루프린트에서 오버라이드하여 사용합니다.
-	// 순수 가상함수로 두지 않고 기본 구현을 비워둡니다.
+}
+
+void UPE_SkillLogicBase::ApplySkillEffect_Implementation(AActor* Instigator, AActor* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
+{
 }
