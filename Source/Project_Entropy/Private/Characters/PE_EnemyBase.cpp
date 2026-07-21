@@ -91,6 +91,7 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 
 			GetWorldTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_EnemyBase::ExecutePendingSkill, ActionDelay, false);
 
+			return;
 		}
 	}
 	

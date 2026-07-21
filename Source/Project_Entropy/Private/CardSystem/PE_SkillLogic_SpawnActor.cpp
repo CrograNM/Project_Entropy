@@ -39,6 +39,8 @@ void UPE_SkillLogic_SpawnActor::ApplySkillEffect_Implementation(AActor* Instigat
 {
 	if (!Target || !Instigator || !InSkillData) return;
 
+	UE_LOG(LogTemp, Warning, TEXT("[SkillLogic] Apply SkillEffect!"));
+
 	// 3. 적중 (Hit) 처리
 	UGameplayStatics::ApplyDamage(Target, CalculatedDamage, Instigator->GetInstigatorController(), Instigator, UDamageType::StaticClass());
 

@@ -43,10 +43,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UAudioComponent> ActionSFXComponent;
 
-	// 적중 시 파괴될 것인가? (투사체 = true / 장판 = false 등)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Action")
-	bool bDestroyOnHit = true;
-
 private:
 	UPROPERTY()
 	TObjectPtr<UPE_SkillLogicBase> SkillLogicInstance;

@@ -30,9 +30,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Logic")
 	EPESkillTargetType TargetType;
 
-	// (필요하면) 중간 과정에 스폰되어 판정 로직에 사용될 액터 클래스
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Logic")
+	// ---- 스킬 액터 (투사체, 장판 등) 및 물리/동작 설정
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
 	TSubclassOf<APE_SkillActionActor> SkillActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
+	bool bDestroyOnHit = true;		// true: 투사체(맞으면 파괴), false: 장판(계속 유지)
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
+	float ProjectileSpeed = 800.f;	// 0이면 장판처럼 제자리에 고정됨
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
+	float ProjectileGravity = 0.f;	// 포물선 곡사 여부 (0이면 직사)
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
+	bool bIsHoming = false;			// 타겟을 끝까지 쫓아가는 유도탄 여부
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor", meta = (EditCondition = "bIsHoming"))
+	float HomingAcceleration = 2000.f;	// 유도 꺾임 성능, bIsHoming이 true일 때만 적용됨
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Element")
 	FGameplayTag ElementTag;
