@@ -7,88 +7,97 @@
 -------------------------------------------
 #Element
 
-카드 속성: [불, 물, 땅, 바람 / 얼음, 번개, 빛, 어둠] - (일반/특수) 
-카드 속성 구조
-CardElemental (또는 SkillElemental)
-{
-	CE_Normal Fire				( CardElemental->CE_Normal->Fire )	
-	CE_Normal Water				
-	CE_Normal Earth			
-	CE_Normal Wind			
+Element.Normal.Fire 등의 게임플레이 태그 활용
 
-	CE_Special Ice			
-	CE_Special Lightning	
-	CE_Special Light		
-	CE_Special Dark			
+카드 속성: [불, 물, 땅, 바람 / 얼음, 번개, 빛, 어둠] - (일반/특수) 
+Card Element 태그 종류
+{
+	Element.Normal.Fire
+	Element.Normal.Water
+	Element.Normal.Earth			
+	Element.Normal.Wind			
+
+	Element.Special.Ice			
+	Element.Special.Lightning	
+	Element.Special.Light		
+	Element.Special.Dark			
 }
 
 지형 속성: [불, 물, 땅] / [증발(불+물), 진흙(물+땅)] / [불지옥, 해일, 지진, 얼어붙은 땅, 폭풍, 성역, 심연] - (일반 / 복합 / 특수)
-지형 속성 구조: 
-TileElemental
+Tile Element 태그 종류
 {
-	TE_Normal Fire				( TileElemental->TE_Normal->Fire )
-	TE_Normal Water			
-	TE_Normal Earth		
+	Element.Normal.Fire			(태그가 카드, 지형에 혼용됨)
+	Element.Normal.Water			
+	Element.Normal.Earth		
 	
-	TE_Complex Evaporation	
-	TE_Complex Mud		
+	Element.Complex.Evaporation	
+	Element.Complex.Mud		
 	
-	TE_Special Hellfire		
-	TE_Special Tsunami		
-	TE_Special Earthquake	
-	TE_Special FrozenGround	
-	TE_Special Storm		
-	TE_Special Sanctuary	
-	TE_Special Abyss		
+	Element.Special.Hellfire		
+	Element.Special.Tsunami		
+	Element.Special.Earthquake	
+	Element.Special.FrozenGround	
+	Element.Special.Storm		
+	Element.Special.Sanctuary	
+	Element.Special.Abyss		
 }
 
 -------------------------------------------
-#Skill
+#Skill Data
 
-소모 AP
-지정 범위: 타일 기준 범위(사거리) 존재, 장애물 판단 필요(장애물 지정 불가)
-지정 방식: Tile(타일 지정 - 1x1, 1x5, 십자가, 3x3 등 다양한 범위 지원), Snap(대상 지정 - 적군 지정, 아군 지정, 자신 지정)
-발동 타입: 타일 지정 투사체, 대상 지정 투사체, 타일 지정 즉발, 대상 지정 즉발
-
-내용물(로직): 공격, 방어, 버프, 디버프, 회복, 소환 등 다양한 스킬 내용물 지원 --> 베이스 클래스를 상속받아 하위 스킬 클래스에서 구현?
-내용물(설명): 로직에 대한 설명 텍스트를 직접 입력 (포맷이 가능하도록 구현 필요)
-
-원하는 개발 방식: 스킬의 공격력 등 수치를 에디터에서 직접 입력 가능하도록 구현하고 싶음. 해당 수치는 텍스트에 자동으로 포맷되어 카드 설명에 표시되도록 구현, 실시간으로도 적용.
+SkillID:	스킬 고유 ID (SK_Fireball 등)
+LogicClass:	이 스킬을 실행할 실제 로직 클래스, 행위별로 분리 (예: Projectile, AreaOfEffect, Buff 등)
+TargetType:	Tile(타일 지정 - 1x1, 1x5, 십자가, 3x3 등 다양한 범위 지원), Snap(대상 지정 - 적군 지정, 아군 지정, 자신 지정)
+			즉발 처리 -> Tile+전체범위, Snap+전체대상, Snap+자신, Snap+무작위 지정 등 다양한 즉발 처리 구분
+ElementTag:	스킬 속성 태그 (Element.Normal.Fire 등)
+BaseDamage, BaseHeal 등 기초 수치
+BaseAPCost:	스킬 발동 시 소모되는 AP 수치
+Range:		타일 기준 범위(사거리) 존재, 장애물 판단 필요(장애물 지정 불가)
+VFX/SFX:	발동 이펙트, 투사체 파티클, 사운드 등
 
 -------------------------------------------
 #Card Data
 
-카드의 정보를 담은 데이터 에셋 클래스.
-ID, 이름, 카드 이미지, 카드 속성, 카드 등급, 카드 가격, 카드 타입, 지정 방식, 카드설명 등의 정보
+카드의 정보를 담은 데이터 에셋 클래스, 스킬 데이터의 포장
+ID, 이름, 카드 이미지, 카드 등급, 카드 가격, 카드설명 등의 메타(Meta) 정보
 
-ID: 카드 고유 ID
-이름: 카드 이름
-카드 이미지: 카드에 표시될 이미지
-
-카드 속성: CardElemental
-카드 등급: Common, Rare, Epic, Legendary 등 다양한 카드 등급 지원 --> Widget에서 일반, 코팅, 반짝이, 홀로그램 등으로 카드 등급 표현 가능
-
-소모 AP  --> 스킬 소모 AP를 따라간다.
-카드 타입 --> 스킬 타입을 따라간다.		공격, 방어, 버프, 디버프, 회복, 소환 등 다양한 카드 타입 지원
-지정 방식 --> 스킬 지정 방식을 따라간다.	Tile(타일 지정 - 1x1, 1x5, 십자가, 3x3 등 다양한 범위 지원), Snap(대상 지정 - 적군 지정, 아군 지정, 자신 지정)
-카드 설명 --> 스킬 텍스트를 따라간다 or 직접 입력
+CardID: 고유 식별자 (예: CD_Fireball_Basic)
+CardName: 카드 이름
+CardDescription: 카드 설명 (수치들은 FText::Format을 활용)
+CardArt: 카드 일러스트 (UI용)
+Rarity: 등급 (Common, Rare 등 - 테두리 코팅 머티리얼 결정용)
+SkillData: 이 카드가 발동할 스킬 데이터
+SkillDataToCast: 이 카드를 냈을 때 발동할 스킬 데이터 에셋의 포인터 (참조)
 
 -------------------------------------------
 #Card Actor
 
-게임 내 카드의 외형 및 상호작용을 담당하는 액터 클래스. --> 데이터에 따라서 특별한 커스텀 없이 자동적으로 카드의 외형이 변경될 수 있도록 설계(또는 블루프린트로 카드마다 일일히 조정). 
+게임 내 카드의 외형 및 상호작용을 담당하는 액터 클래스. --> 데이터에 따라서 특별한 커스텀 없이 자동적으로 카드의 외형이 변경될 수 있도록 설계 
 Card Data, Mesh, Material, Widget(전체 카드 이미지), VFX/SFX
 
-Mesh -> Material : Card Data에서 가져온 카드 속성에 따라 메쉬의 머티리얼을 변경
-카드 코팅 Material : Card Data에서 가져온 카드 등급에 따라 코팅 머티리얼을 변경 (Widget의 위에 덮어 씌울 수 있어야함. 가능한가?)
-VFX/SFX: 시전 대기 중 표시될 마법진, 발동 시 표시될 이펙트, 발동 시 재생될 사운드 등 --> Skill Data 또는 Card Data에 삽입된 VFX/SFX를 가져와서 재생
-Widget: 카드 이미지, 카드 속성, 카드 등급, 카드 설명 등을 표시하는 위젯. --> Card Data에서 가져온 정보를 기반으로 위젯의 내용을 자동으로 변경
+Mesh -> Material :	Card Data에서 가져온 카드 속성에 따라 메쉬의 머티리얼을 변경
+Effect Material :	Card Data에서 가져온 카드 등급에 따라 코팅 머티리얼을 변경 
+					(Retainer Box 활용으로 Panner(홀로그램), Fresnel(무지개 반사광) 등을 구현한 머티리얼 인스턴스)
 
-마석: 스킬 서식 모디파이어, 스킬의 수치 조정 또는 투사체를 여러개 발사하는 등의 정보가 담겨야함. --> 인게임 내에서 추가되는 요소임
+VFX/SFX:			시전 대기 중 표시될 마법진, 발동 시 표시될 이펙트, 발동 시 재생될 사운드 등 
+					--> Card Data->Skill Data에 삽입된 VFX/SFX를 가져와서 재생
 
-*게임 도중의 카드 액터들이 디스크에 기록되어야하며, 마석 여부, 종류도 기록된다.
-*런 종료 시 해당 런에서 사용된 카드 액터들의 정보가 디스크에 기록되어야하며, 마석 여부, 종류도 기록된다.
-*런을 중간에 종료하고, 다시 불러올 때, 기록된 카드 액터들의 정보가 불러와져야함. (마석 여부, 종류도 불러와져야함)
+Widget:				카드 이미지, 카드 속성, 카드 등급, 카드 설명 등을 표시하는 위젯. 
+					--> Card Data 및 Card Data의 Skill Data에서 가져온 정보를 기반으로 위젯의 내용을 자동으로 변경
+
+-------------------------------------------
+#Card Instance 개념
+
+인게임에서 플레이어가 소유중인 카드 액터들의 인스턴스 (디스크에 해당 인스턴스들의 정보가 저장된다).
+- Card Data
+- 마석(Modifier): 스킬 서식 모디파이어, 스킬의 수치 조정 또는 투사체를 여러개 발사하는 등의 정보가 담겨야함. 
+	--> 인게임 내에서 추가되는 요소임
+
+--> 인게임에서 데미지를 계산할 때 원본 Data + 마석 수치 + 각종 유물, 버프 수치를 합산하여 반환시켜서 Widget에 표시될 수 있도록 구현
+	해당 반환 값은 스킬 발동 시에도 적용되어야함. (즉, 마석이 붙은 카드로 스킬을 발동하면 마석 수치가 적용된 데미지가 나와야함)
+
+*런 중간중간 사용중인 카드들의 정보가 디스크에 기록되어야하며, 마석 여부, 종류도 기록된다.
+*런을 중간에 종료하고, 다시 불러올 때, 기록된 카드들의 정보가 불러와져야함.
 
 ===========================================
 ##Card Interaction
