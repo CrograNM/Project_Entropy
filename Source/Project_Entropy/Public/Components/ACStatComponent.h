@@ -51,7 +51,7 @@ public:
 
 	/** --- 체력 제어 --- */
 	UFUNCTION(BlueprintCallable, Category = "Stats|HP")
-	void ApplyDamage(float Amount);
+	void TakeDamage(float Amount);
 
 	UFUNCTION(BlueprintCallable, Category = "Stats|HP")
 	void Heal(float Amount);

@@ -27,6 +27,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement")
 	void SnapCharacterToNearestTile();
 	
+	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+
 protected:
 	/** 스탯 컴포넌트의 OnDeath 델리게이트에 바인딩될 공통 사망 처리 함수 */
 	UFUNCTION()

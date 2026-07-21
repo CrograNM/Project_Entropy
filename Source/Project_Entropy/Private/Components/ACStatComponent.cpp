@@ -20,7 +20,7 @@ void UACStatComponent::BeginPlay()
 	CurrentAP = MaxAP;
 }
 
-void UACStatComponent::ApplyDamage(float Amount)
+void UACStatComponent::TakeDamage(float Amount)
 {
 	if (bIsDead || Amount <= 0.f) return;
 
@@ -32,7 +32,7 @@ void UACStatComponent::ApplyDamage(float Amount)
 		bIsDead = true;
 		OnDeath.Broadcast();
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[UACStatComponent::ApplyDamage] 체력 감소: %f, 현재 HP: %f"), Amount, CurrentHP);
+	UE_LOG(LogTemp, Warning, TEXT("[UACStatComponent::TakeDamage] 체력 감소: %f, 현재 HP: %f"), Amount, CurrentHP);
 }
 
 void UACStatComponent::Heal(float Amount)

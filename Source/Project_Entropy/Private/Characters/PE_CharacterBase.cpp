@@ -75,6 +75,29 @@ void APE_CharacterBase::SnapCharacterToNearestTile()
 	}
 }
 
+float APE_CharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
+{
+	// 1. 부모 클래스의 기본 데미지 처리 (반드시 호출)
+	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+
+	if (ActualDamage > 0.f && StatComponent)
+	{
+		// 2. StatComponent에게 실제 데미지를 전달하여 체력을 깎음
+		// (UACStatComponent 내부에 TakeDamage 함수가 구현되어 있다고 가정합니다)
+		StatComponent->TakeDamage(ActualDamage);
+
+		UE_LOG(LogTemp, Warning, TEXT("[%s]가 %f 의 데미지를 받았습니다!"), *GetName(), ActualDamage);
+
+		// 3. 만약 체력이 0 이하가 되었다면 사망 처리 로직 호출
+		if (StatComponent->IsDead())
+		{
+			// Die(); 
+		}
+	}
+
+	return ActualDamage;
+}
+
 void APE_CharacterBase::HandleDeath()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[%s] 사망 처리되었습니다."), *GetName());
