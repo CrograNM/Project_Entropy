@@ -61,12 +61,15 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayDiscardAnimation(FVector DiscardPileWorldLocation);
 
-	/** --- Getter --- */
+	/** --- Getter/Setter --- */
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
 	UPE_CardInstance* GetCardInstance() const { return CardInstance; }
 
 	UFUNCTION(BlueprintCallable, Category = "Card|Movement")
 	void MoveToTargetTransform(const FTransform& InTargetRelativeTransform);
+
+	UFUNCTION(BlueprintCallable, Category = "Card|Movement")
+	void CancelMoveToTarget() { bIsMovingToTarget = false; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -101,6 +104,7 @@ protected:
 private:
 	// --- 이동 보간용 변수 ---
 	bool bIsMovingToTarget = false;
+
 	FTransform TargetRelativeTransform;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Card|Movement")

@@ -3,6 +3,8 @@
 #include "Components/ACCardInteractionComponent.h"
 #include "Components/ACDeckManagerComponent.h"
 #include "CardSystem/PE_CardActor.h"
+#include "CardSystem/PE_CardInstance.h"
+#include "CardSystem/PE_CardData.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -15,34 +17,36 @@ UACCardInteractionComponent::UACCardInteractionComponent()
 void UACCardInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	PC = Cast<APlayerController>(GetOwner());
 }
 
 void UACCardInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!bIsInteractionEnabled) return;
-
-	// 카드를 쥐고 있다면 드래그 로직, 아니라면 호버링 탐색
-	if (GrabbedCard)
-	{
-		ProcessDragging();
-	}
-	else
-	{
-		ProcessHovering();
+	// 상태 기반 분기 처리
+	switch (CurrentState) {
+		case EPEInteractionState::Hovering:
+			ProcessHovering();
+			break;
+		case EPEInteractionState::Selecting:
+			ProcessDragging();
+			break;
+		case EPEInteractionState::Waiting:
+		case EPEInteractionState::Casting:
+		case EPEInteractionState::Disabled:
+			// 해당 상태에서는 마우스 트레이싱/드래그 연산을 멈춤 (최적화)
+			break;
 	}
 }
 
 void UACCardInteractionComponent::ProcessHovering()
 {
-	APlayerController* PC = Cast<APlayerController>(GetOwner());
 	if (!PC) return;
 
 	FHitResult HitResult;
-	// 카드 메쉬는 BlockAllDynamic 등으로 설정되어 있어야 감지됨
 	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
 	APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
 
 	if (HitCard != HoveredCard)
@@ -51,14 +55,12 @@ void UACCardInteractionComponent::ProcessHovering()
 		if (HoveredCard)
 		{
 			HoveredCard->SetHighlightState(false);
-			// TODO: HoveredCard->PlayUnhoverAnimation(); (아래로 살짝 내려가는 연출)
 		}
 
 		// 새 카드 호버링 적용
 		if (HitCard)
 		{
 			HitCard->SetHighlightState(true, FLinearColor::Yellow);
-			// TODO: HitCard->PlayHoverAnimation(); (위로 살짝 들썩이는 연출)
 		}
 
 		HoveredCard = HitCard;
@@ -67,7 +69,6 @@ void UACCardInteractionComponent::ProcessHovering()
 
 void UACCardInteractionComponent::ProcessDragging()
 {
-	APlayerController* PC = Cast<APlayerController>(GetOwner());
 	if (!PC || !GrabbedCard) return;
 
 	// [정렬 스왑 로직] - 마우스 아래에 다른 카드가 있는지 확인
@@ -109,17 +110,19 @@ void UACCardInteractionComponent::ProcessDragging()
 	}
 }
 
-
 void UACCardInteractionComponent::GrabCard()
 {
-	if (!bIsInteractionEnabled) return;
+	if (CurrentState != EPEInteractionState::Hovering) return;
 
 	if (HoveredCard)
 	{
 		GrabbedCard = HoveredCard;
 		GrabbedCard->SetActorEnableCollision(false); // 드래그 시 충돌 비활성화 (레이캐스트 방해 방지)
+		
+		// 상태 전환
+		CurrentState = EPEInteractionState::Selecting; 
 
-		// 드래그 중인 카드를 DeckManager에 등록 (강제 정렬 무효화)
+		// 드래그 중인 카드 등록 (강제 정렬 무효화)
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
 			DeckManager->SetDraggedCard(GrabbedCard);
@@ -129,69 +132,103 @@ void UACCardInteractionComponent::GrabCard()
 
 void UACCardInteractionComponent::ReleaseCard()
 {
-	if (GrabbedCard)
+	if (CurrentState != EPEInteractionState::Selecting || !GrabbedCard) return;
+
+	GrabbedCard->SetActorEnableCollision(true);
+
+	UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>();
+
+	if (PC && DeckManager)
 	{
-		GrabbedCard->SetActorEnableCollision(true);	// 드래그 종료 시 충돌 활성화
+		int32 ViewportSizeX, ViewportSizeY;
+		PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
 
-		APlayerController* PC = Cast<APlayerController>(GetOwner());
-		UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>();
+		float MouseX, MouseY;
+		PC->GetMousePosition(MouseX, MouseY);
 
-		if (PC && DeckManager)
+		// 마우스 Y좌표가 화면 하단 1/3 (약 66%) 위쪽인지 검사
+		if (MouseY < (ViewportSizeY * 0.66f))
 		{
-			// 뷰포트 크기
-			int32 ViewportSizeX, ViewportSizeY;
-			PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
+			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
+			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
 
-			// 마우스 위치
-			float MouseX, MouseY;
-			PC->GetMousePosition(MouseX, MouseY);
-
-			// 마우스 Y좌표가 화면 하단 1/3 위쪽인지 검사
-			if (MouseY < (ViewportSizeY * 0.66f))
+			if (BaseData)
 			{
-				// [임시] 
-				if (false)
+				// TODO: 실제로는 BaseData->TargetType 을 통해 즉발/지정 분기 처리
+				if (false /* 즉발(Instant)일 경우 */)
 				{
 					DeckManager->SetDraggedCard(nullptr);
 					DeckManager->DiscardCard(GrabbedCard);
+					CurrentState = EPEInteractionState::Hovering;
 				}
-				else
+				else // 지정(Target)형 스킬일 경우
 				{
-					GrabbedCard->MoveToTargetTransform(CastingReadyOffset);
+					CastingCard = GrabbedCard;
+					CastingCard->CancelMoveToTarget(); // 애니메이션을 위해 객체 자체의 보간 연산 중지
+					CurrentState = EPEInteractionState::Waiting; // 애니메이션 대기 상태로 진입 (입력 락)
+
+					// BP 연출 이벤트 호출
+					CastingCard->PlayCastingReadyAnimation();
 				}
-			}
-			else
-			{
-				UE_LOG(LogTemp, Log, TEXT("사용 취소, 원래 손패로 돌아갑니다."));
-				DeckManager->SetDraggedCard(nullptr);
-				DeckManager->UpdateHandLayout(); 
 			}
 		}
-		GrabbedCard = nullptr;
-		HoveredCardDuringDrag = nullptr;
+		else
+		{
+			// 기준선 아래에서 놓았다면 사용 취소 (원래 자리로 롤백)
+			CurrentState = EPEInteractionState::Hovering; // 상태 복구
+			DeckManager->SetDraggedCard(nullptr);
+			DeckManager->UpdateHandLayout();
+		}
+	}
+
+	GrabbedCard = nullptr;
+	HoveredCardDuringDrag = nullptr;
+}
+
+void UACCardInteractionComponent::OnCastingReadyFinished()
+{
+	// BP에서 애니메이션이 끝났다고 알려주면, 타겟팅 시작 상태로 전환
+	if (CurrentState == EPEInteractionState::Waiting && CastingCard)
+	{
+		CurrentState = EPEInteractionState::Casting;
+		UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 시전 대기 완료, 타겟팅 시작!"));
+	}
+}
+
+void UACCardInteractionComponent::CancelCasting()
+{
+	// 시전 중일 때만 취소 가능 (우클릭 등)
+	if (CurrentState == EPEInteractionState::Casting && CastingCard)
+	{
+		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
+		{
+			// 덱 매니저의 무시(DraggedCard) 상태를 해제하고 재정렬 지시
+			DeckManager->SetDraggedCard(nullptr);
+			DeckManager->UpdateHandLayout();
+		}
+
+		// BP 연출 이벤트 호출 (스윽 하고 원래 손패 자리로 돌아감)
+		// 도착지는 위 UpdateHandLayout에서 자동으로 카드 액터의 TargetRelativeTransform에 세팅되었음
+		CastingCard->PlayCancelCastingAnimation(CastingCard->GetActorTransform()); // 더미값 전달, 내부 C++ 틱 보간 사용 지시 등 응용 가능
+
+		CastingCard = nullptr;
+		CurrentState = EPEInteractionState::Hovering; // 상태 복구
+		UE_LOG(LogTemp, Log, TEXT("[CardInteraction] 시전 취소됨."));
 	}
 }
 
 void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
 {
-	bIsInteractionEnabled = bEnabled;
-
-	// 비활성화될 때, 쥐고 있거나 호버링 중인 카드가 있다면 즉시 취소 처리
-	if (!bIsInteractionEnabled)
+	if (bEnabled)
 	{
-		if (HoveredCard)
-		{
-			HoveredCard->SetHighlightState(false);
-			HoveredCard = nullptr;
-		}
+		CurrentState = EPEInteractionState::Hovering;
+	}
+	else
+	{
+		CurrentState = EPEInteractionState::Disabled;
 
-		if (GrabbedCard)
-		{
-			ReleaseCard();
-		}
-
-		HoveredCardDuringDrag = nullptr;
-
-		// TODO: 시전 준비 중이던 카드가 있다면 시전 취소 처리
+		if (HoveredCard) { HoveredCard->SetHighlightState(false); HoveredCard = nullptr; }
+		if (GrabbedCard) { ReleaseCard(); }
+		if (CastingCard) { CancelCasting(); }
 	}
 }
