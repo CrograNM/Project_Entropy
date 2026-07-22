@@ -100,7 +100,32 @@ void APE_SkillActionActor::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, A
 		// 투사체면 바로 파괴, 장판이면 계속 유지
 		if (SkillData && SkillData->bDestroyOnHit)
 		{
-			Destroy();
+			// 1. 물리적 실체 제거
+			if (CollisionComp)
+			{
+				CollisionComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			}
+
+			// 2. 이동 중지
+			if (MovementComponent)
+			{
+				MovementComponent->MaxSpeed = 0;
+				MovementComponent->HomingAccelerationMagnitude = 0;
+				MovementComponent->StopMovementImmediately();
+			}
+
+			// 3. 이펙트 및 사운드 방출 중지
+			// if (ActionVFXComponent)
+			// {
+			//		ActionVFXComponent->Deactivate();
+			// }
+			if (ActionSFXComponent)
+			{
+				ActionSFXComponent->FadeOut(0.5f, 0.f);
+			}
+
+			// 4. 파괴 예약
+			SetLifeSpan(2.0f);
 		}
 	}
 }
