@@ -56,13 +56,14 @@ void UACDeckManagerComponent::InitializeDeck(const TArray<UPE_CardData*>& Initia
 void UACDeckManagerComponent::DrawCards(int32 Count)
 {
 	if (!CardActorClass || Count <= 0) return;
+	FString ErrorMsg = TEXT("더 이상 카드를 뽑을 수 없습니다.");
 
 	int32 CurrentHandSize = HandCards.Num();
 	if (CurrentHandSize >= MaxHandSize)
 	{
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetOwner()))
 		{
-			PC->ShowToastMessage(FText::FromString(TEXT("더 이상 카드를 뽑을 수 없습니다.")));
+			PC->ShowToastMessage(FText::FromString(ErrorMsg));
 		}
 		return;
 	}
@@ -115,7 +116,7 @@ void UACDeckManagerComponent::DrawCards(int32 Count)
 	{
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetOwner()))
 		{
-			PC->ShowToastMessage(FText::FromString(TEXT("공간 부족, 일부 카드만 뽑았습니다.")));
+			PC->ShowToastMessage(FText::FromString(ErrorMsg));
 		}
 	}
 
