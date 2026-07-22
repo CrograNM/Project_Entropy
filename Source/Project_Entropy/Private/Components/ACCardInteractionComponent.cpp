@@ -119,6 +119,8 @@ void UACCardInteractionComponent::GrabCard()
 		GrabbedCard = HoveredCard;
 		GrabbedCard->SetActorEnableCollision(false); // 드래그 시 충돌 비활성화 (레이캐스트 방해 방지)
 		
+		GrabbedCard->SetHighlightState(false);
+
 		// 상태 전환
 		CurrentState = EPEInteractionState::Selecting; 
 
