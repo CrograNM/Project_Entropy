@@ -5,6 +5,7 @@
 #include "Core/PE_RunManagerSubsystem.h"
 #include "CardSystem/PE_CardActor.h"
 #include "CardSystem/PE_CardData.h"
+#include "CardSystem/PE_CardInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -18,17 +19,31 @@ void UACDeckManagerComponent::BeginPlay()
 	Super::BeginPlay();
 }
 
-void UACDeckManagerComponent::InitializeDeck(const TArray<UPE_CardData*>& InitialDeck)
+void UACDeckManagerComponent::InitializeDeck(const TArray<UPE_CardData*>& InitialDeckData)
 {
-	DrawPile = InitialDeck;
+	DrawPile.Empty();
 	DiscardPile.Empty();
 	HandCards.Empty();
 
+	for (UPE_CardData* Data : InitialDeckData)
+	{
+		if (Data)
+		{
+			// NewObject를 통해 UObject 인스턴스 생성
+			UPE_CardInstance* NewInstance = NewObject<UPE_CardInstance>(this);
+			NewInstance->Initialize(Data);
+
+			DrawPile.Add(NewInstance);
+		}
+	}
+
+	// 셔플 로직
 	if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
 	{
 		if (UPE_RunManagerSubsystem* RunManager = GI->GetSubsystem<UPE_RunManagerSubsystem>())
 		{
-			DrawPile.Sort([RunManager](const UPE_CardData& A, const UPE_CardData& B) {
+			// 인스턴스 배열을 셔플
+			DrawPile.Sort([RunManager](const UPE_CardInstance& A, const UPE_CardInstance& B) {
 				return RunManager->GetRandomBool();
 				});
 		}
@@ -67,13 +82,11 @@ void UACDeckManagerComponent::DrawCards(int32 Count)
 		}
 
 		// 덱의 맨 위(마지막 인덱스)에서 카드 데이터를 꺼냄
-		UPE_CardData* DrawnCardData = DrawPile.Pop();
+		UPE_CardInstance* DrawnCardInstance = DrawPile.Pop();
 		OnDrawPileCountChanged.Broadcast(DrawPile.Num());
 
-		// 실제 3D 액터 생성
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.Owner = GetOwner();
-
 		FTransform SpawnTransform = FTransform::Identity;
 		APE_CardActor* NewCardActor = GetWorld()->SpawnActor<APE_CardActor>(CardActorClass, SpawnTransform, SpawnParams);
 
@@ -92,12 +105,9 @@ void UACDeckManagerComponent::DrawCards(int32 Count)
 				}
 			}
 
-			// 데이터 주입 및 손패 배열에 추가
-			NewCardActor->InitializeCard(DrawnCardData);
+			// 카드 액터에게 인스턴스를 통째로 넘겨주고 핸드 배열에 추가
+			NewCardActor->InitializeCard(DrawnCardInstance);
 			HandCards.Add(NewCardActor);
-
-			// TODO: NewCardActor->PlayDrawAnimation(...) 호출 
-			// (오른쪽으로 쌓이며 빛 알갱이가 카드로 변하는 연출 지시)
 		}
 	}
 
@@ -117,16 +127,11 @@ void UACDeckManagerComponent::DiscardCard(APE_CardActor* CardToDiscard)
 {
 	if (!CardToDiscard || !HandCards.Contains(CardToDiscard)) return;
 
-	// 손패에서 제거하고 무덤에 데이터 추가
+	// 손패에서 제거하고 무덤에 인스턴스 추가
 	HandCards.Remove(CardToDiscard);
-	DiscardPile.Add(CardToDiscard->GetCardData());
+	DiscardPile.Add(CardToDiscard->GetCardInstance());
 
 	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
-
-	// 카드 액터에게 산화 연출 지시
-	// TODO: CardToDiscard->PlayDiscardAnimation(...) 호출
-
-	// 연출이 끝난 뒤 액터를 파괴하는 로직은 CardActor 내부의 애니메이션 종료 이벤트에서 처리하도록 위임
 
 	// 남은 손패 재정렬
 	UpdateHandLayout();
@@ -145,13 +150,14 @@ void UACDeckManagerComponent::ShuffleDiscardToDraw()
 	{
 		if (UPE_RunManagerSubsystem* RunManager = GI->GetSubsystem<UPE_RunManagerSubsystem>())
 		{
-			DrawPile.Sort([RunManager](const UPE_CardData& A, const UPE_CardData& B) {
+			// 인스턴스 배열 셔플
+			DrawPile.Sort([RunManager](const UPE_CardInstance& A, const UPE_CardInstance& B) {
 				return RunManager->GetRandomBool();
 				});
 		}
 	}
 
-	OnDeckShuffled.Broadcast(); // 셔플 이펙트 연출 지시
+	OnDeckShuffled.Broadcast();
 	OnDrawPileCountChanged.Broadcast(DrawPile.Num());
 	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
 }

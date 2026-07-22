@@ -3,7 +3,6 @@
 #include "Components/ACCardInteractionComponent.h"
 #include "Components/ACDeckManagerComponent.h"
 #include "CardSystem/PE_CardActor.h"
-#include "CardSystem/PE_CardData.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -150,38 +149,22 @@ void UACCardInteractionComponent::ReleaseCard()
 			// 마우스 Y좌표가 화면 하단 1/3 위쪽인지 검사
 			if (MouseY < (ViewportSizeY * 0.66f))
 			{
-				UPE_CardData* CardData = GrabbedCard->GetCardData();
-
-				// 즉발 스킬 / 타겟팅 스킬 분기
-				// [임시] - CardType이 Power(버프/즉발)면 즉시 사용, Attack(공격)이면 타겟팅 대기로 가정
+				// [임시] 
 				if (false)
 				{
-					// [즉발 스킬 처리]
-					UE_LOG(LogTemp, Warning, TEXT("즉시 시전!: %s"), *CardData->CardName.ToString());
-
-					// TODO: 스킬 이펙트 발동 로직 호출
-
 					DeckManager->SetDraggedCard(nullptr);
 					DeckManager->DiscardCard(GrabbedCard);
 				}
 				else
 				{
-					// [타겟팅 스킬: 시전 대기 상태 돌입]
-					UE_LOG(LogTemp, Warning, TEXT("시전 대기 (타겟팅 모드): %s"), *CardData->CardName.ToString());
-
-					// 덱 매니저의 정렬 로직에서 이 카드를 계속 무시하도록 유지한 채,
-					// 시전 대기 전용 좌표(좌측 중앙)로 카드를 쇽! 하고 날려보냅니다.
 					GrabbedCard->MoveToTargetTransform(CastingReadyOffset);
-
-					// TODO: 플레이어 컨트롤러의 모드를 '타겟팅 모드'로 변경하고, 타겟팅 화살표(Spline) 그리기 시작
 				}
 			}
 			else
 			{
-				// 기준선 아래에서 놓았다면 사용 취소 (원래 자리로 롤백)
 				UE_LOG(LogTemp, Log, TEXT("사용 취소, 원래 손패로 돌아갑니다."));
 				DeckManager->SetDraggedCard(nullptr);
-				DeckManager->UpdateHandLayout(); // 비워져 있던 원래 자기 자리로 스르륵 돌아감
+				DeckManager->UpdateHandLayout(); 
 			}
 		}
 		GrabbedCard = nullptr;

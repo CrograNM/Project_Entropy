@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "PE_CardActor.generated.h"
 
-class UPE_CardData;
+class UPE_CardInstance;
 class UStaticMeshComponent;
 class UWidgetComponent;
 class UNiagaraComponent;
@@ -37,7 +37,7 @@ public:
 
 	/** 덱에서 카드를 생성하거나 가져올 때 DataAsset을 주입하여 카드 세팅 */
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
-	void InitializeCard(UPE_CardData* InCardData);
+	void InitializeCard(UPE_CardInstance* InCardInstance);
 
 	/** 마우스 호버링 및 특수 조건(비용 감소 등)에 따른 외곽선 하이라이트 제어 */
 	UFUNCTION(BlueprintCallable, Category = "Card|Visual")
@@ -62,7 +62,8 @@ public:
 	void PlayDiscardAnimation(FVector DiscardPileWorldLocation);
 
 	/** --- Getter --- */
-	TObjectPtr<UPE_CardData> GetCardData() const { return CardData; }
+	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
+	UPE_CardInstance* GetCardInstance() const { return CardInstance; }
 
 	UFUNCTION(BlueprintCallable, Category = "Card|Movement")
 	void MoveToTargetTransform(const FTransform& InTargetRelativeTransform);
@@ -70,9 +71,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	/** 카드의 핵심 데이터 (이름, 스킬클래스, 비용 등) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Card|Data")
-	TObjectPtr<UPE_CardData> CardData;
+	TObjectPtr<UPE_CardInstance> CardInstance;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Card|State")
 	EPECardVisualState CurrentState = EPECardVisualState::InDeck;

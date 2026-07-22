@@ -1,6 +1,7 @@
 // Copyright CrograNM
 
 #include "CardSystem/PE_CardActor.h"
+#include "CardSystem/PE_CardInstance.h"
 #include "CardSystem/PE_CardData.h"
 #include "Components/SceneComponent.h"
 #include "Components/BoxComponent.h"
@@ -132,17 +133,21 @@ void APE_CardActor::BeginPlay()
 
 // TODO: CardUIWidget 내부의 UserWidget(UPE_CardWidget)을 가져와서 
 // CardData->CardName, CardData->CostAP 등을 텍스트 박스에 쏴주는 로직 추가
-void APE_CardActor::InitializeCard(UPE_CardData* InCardData)
+void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 {
-	if (!InCardData) return;
+	if (!InCardInstance) return;
 
-	CardData = InCardData;
+	CardInstance = InCardInstance;
 
-	if (DynamicMaterial && CardData->CardArt)
+	// 인스턴스 안에 들어있는 원본 데이터를 꺼내서 시각적 세팅을 합니다.
+	UPE_CardData* BaseData = CardInstance->GetBaseCardData();
+
+	if (DynamicMaterial && BaseData && BaseData->CardArt)
 	{
-		DynamicMaterial->SetTextureParameterValue(TEXT("CardArt"), CardData->CardArt);
+		DynamicMaterial->SetTextureParameterValue(TEXT("CardArt"), BaseData->CardArt);
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[CardActor] %s 카드 생성 및 초기화 완료"), *CardData->CardName.ToString());
+
+	UE_LOG(LogTemp, Warning, TEXT("[CardActor] %s 카드(인스턴스) 생성 및 초기화 완료"), BaseData ? *BaseData->CardName.ToString() : TEXT("Unknown"));
 }
 
 void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor)

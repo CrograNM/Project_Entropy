@@ -8,6 +8,7 @@
 
 class UPE_CardData;
 class APE_CardActor;
+class UPE_CardInstance;
 
 // UI 및 3D 더미 액터에게 카드 장수 변경을 알리는 델리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPileCountChangedSignature, int32, NewCount);
@@ -24,7 +25,7 @@ public:
 
 	/** 전투 시작 시 초기 덱 데이터 주입 */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
-	void InitializeDeck(const TArray<UPE_CardData*>& InitialDeck);
+	void InitializeDeck(const TArray<UPE_CardData*>& InitialDeckData);
 
 	/** 지정된 장수만큼 카드를 뽑습니다. */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
@@ -73,11 +74,11 @@ protected:
 
 	// 뽑을 카드 더미 (아직 스폰되지 않은 순수 데이터)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck|State")
-	TArray<TObjectPtr<UPE_CardData>> DrawPile;
+	TArray<TObjectPtr<UPE_CardInstance>> DrawPile;
 
 	// 버린 카드 더미 (순수 데이터)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck|State")
-	TArray<TObjectPtr<UPE_CardData>> DiscardPile;
+	TArray<TObjectPtr<UPE_CardInstance>> DiscardPile;
 
 	// 현재 손패 (실제로 스폰되어 화면에 존재하는 3D 액터들)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck|State")
