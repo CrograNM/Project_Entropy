@@ -107,6 +107,10 @@ void APE_PlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Completed, this, &APE_PlayerController::OnCameraControlCompleted);
 			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Canceled, this, &APE_PlayerController::OnCameraControlCompleted);
 		}
+		if (IA_MouseRR)
+		{
+			EnhancedInputComponent->BindAction(IA_MouseRR, ETriggerEvent::Triggered, this, &APE_PlayerController::OnMouseRDoubleClick);
+		}
 		if (IA_CameraMove)
 		{
 			EnhancedInputComponent->BindAction(IA_CameraMove, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraMove);
@@ -179,13 +183,13 @@ void APE_PlayerController::ToggleGridMovementActivation()
 
 void APE_PlayerController::CancelCurrentAction()
 {
-	// 카메라 리셋
+	// [카메라 리셋]
 	if (PlayerCharacter && PlayerCharacter->GetCameraControlComponent())
 	{
 		PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
 	}
 	
-	// 이동 모드 취소
+	// [이동 모드 취소]
 	if (bIsGridMoveActivated)
 	{
 		bIsGridMoveActivated = false;
@@ -205,14 +209,11 @@ void APE_PlayerController::CancelCurrentAction()
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::CancelCurrentAction] 이동 조작이 취소되었습니다."));
 	}
 
-	// 2. [추후 추가될 기능]: 카드 타겟팅 취소 등
-	/*
-	if (bIsCardTargetingMode)
+	// [캐스팅 취소]
+	if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
 	{
-		bIsCardTargetingMode = false;
-		// 카드 UI 원래 위치로 되돌리기 등...
+		CardInteractionComp->CancelCasting();
 	}
-	*/
 }
 
 void APE_PlayerController::PlayerTick(float DeltaTime)
@@ -429,6 +430,12 @@ void APE_PlayerController::OnMouseClickCompleted(const FInputActionValue& Value)
 	{
 		CardInteractionComp->ReleaseCard();
 	}
+}
+
+// 각종 취소 입력 처리
+void APE_PlayerController::OnMouseRDoubleClick(const FInputActionValue& Value)
+{
+	CancelCurrentAction();
 }
 
 void APE_PlayerController::OnCameraControlStarted(const FInputActionValue& Value)

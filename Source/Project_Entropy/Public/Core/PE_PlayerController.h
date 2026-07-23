@@ -64,6 +64,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_MouseR;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> IA_MouseRR;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_CameraMove;
@@ -115,6 +118,7 @@ private:
 	// 카드 상호작용 입력 처리
 	void OnMouseClickStarted(const FInputActionValue& Value);
 	void OnMouseClickCompleted(const FInputActionValue& Value);
+	void OnMouseRDoubleClick(const FInputActionValue& Value);
 
 	// 카메라 회전 시 마우스 커서 표시 제어
 	void OnCameraControlStarted(const FInputActionValue& Value);
