@@ -222,7 +222,7 @@ void UACCardInteractionComponent::ReleaseCard()
 		// 마우스를 놓은 시점에 1/3 상단 지점에 있었는지 검사
 		bool bWasInCastingZone = MouseY < (ViewportSizeY * 0.66f);
 
-		if (bWasInCastingZone)
+		if (bWasInCastingZone && !bIsSuspended)
 		{
 			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
 			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
@@ -301,13 +301,15 @@ void UACCardInteractionComponent::CancelCasting()
 
 void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
 {
+	SetInteractionSuspended(!bEnabled);
+
 	if (bEnabled)
 	{
 		CurrentState = EPEInteractionState::Hovering;
 	}
 	else
 	{
-		if (HoveredCard) { HoveredCard->SetHighlightState(false); HoveredCard = nullptr; }
+		// if (HoveredCard) -->SetInteractionSuspended 에서 처리됨
 		if (GrabbedCard) { ReleaseCard(); }
 		if (CastingCard) { CancelCasting(); }
 

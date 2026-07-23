@@ -160,7 +160,7 @@ void APE_PlayerController::ToggleGridMovementActivation()
 		// 이동 모드 활성화
 		bIsGridMoveActivated = true;
 
-		// 카드 상호작용 비활성화
+		// 카드 상호작용 취소 및 비활성화
 		if (CardInteractionComp)
 		{
 			CardInteractionComp->SetInteractionEnabled(false);
