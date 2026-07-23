@@ -25,6 +25,8 @@ void UACCardInteractionComponent::TickComponent(float DeltaTime, ELevelTick Tick
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (bIsSuspended) return;
+
 	// 상태 기반 분기 처리
 	switch (CurrentState) {
 		case EPEInteractionState::Hovering:
@@ -305,10 +307,32 @@ void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
 	}
 	else
 	{
-		CurrentState = EPEInteractionState::Disabled;
-
 		if (HoveredCard) { HoveredCard->SetHighlightState(false); HoveredCard = nullptr; }
 		if (GrabbedCard) { ReleaseCard(); }
 		if (CastingCard) { CancelCasting(); }
+
+		CurrentState = EPEInteractionState::Disabled;
+	}
+}
+
+void UACCardInteractionComponent::SetInteractionSuspended(bool bSuspend)
+{
+	bIsSuspended = bSuspend;
+
+	// 일시 정지
+	if (bIsSuspended && HoveredCard)
+	{
+		HoveredCard->SetHighlightState(false);
+
+		if (CurrentState == EPEInteractionState::Hovering)
+		{
+			HoveredCard->SetHoverOffsetEnabled(false);
+		}
+		else if (CurrentState == EPEInteractionState::Casting)
+		{
+			HoveredCard->OnCastingHoverStateChanged(false);
+		}
+
+		HoveredCard = nullptr;
 	}
 }

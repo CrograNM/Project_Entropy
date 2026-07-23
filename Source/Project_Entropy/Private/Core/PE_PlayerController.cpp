@@ -221,7 +221,8 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 
 	// 이동 모드: 마우스 호버링 - 타일 감지 및 경로 하이라이트
-	if (!bIsGridMoveActivated || !GridSystem) return;
+	if (!bShowMouseCursor || !bIsGridMoveActivated || !GridSystem) return;
+
 	FHitResult HitResult;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
@@ -445,6 +446,12 @@ void APE_PlayerController::OnCameraControlStarted(const FInputActionValue& Value
 	GetMousePosition(StoredMouseX, StoredMouseY);
 
 	bShowMouseCursor = false;
+
+	// 카메라 조작 중에는 카드 상호작용 일시중지 (드래그/캐스팅 방지)
+	if (CardInteractionComp)
+	{
+		CardInteractionComp->SetInteractionSuspended(true);
+	}
 }
 
 // 카메라 회전 종료 시 
@@ -455,6 +462,12 @@ void APE_PlayerController::OnCameraControlCompleted(const FInputActionValue& Val
 	SetMouseLocation(FMath::RoundToInt(StoredMouseX), FMath::RoundToInt(StoredMouseY));
 
 	bShowMouseCursor = true;
+
+	// 그리드 이동 모드가 아닐 때만 카드 상호작용을 다시 활성화
+	if (CardInteractionComp && !bIsGridMoveActivated)
+	{
+		CardInteractionComp->SetInteractionSuspended(false);
+	}
 }
 
 void APE_PlayerController::OnTestDrawCard(int32 Count)

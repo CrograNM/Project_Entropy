@@ -38,6 +38,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void SetInteractionEnabled(bool bEnabled);
 
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void SetInteractionSuspended(bool bSuspend);
+
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
 	void CancelCasting();
 
@@ -56,6 +59,8 @@ private:
 	/** 현재 상호작용의 상태 */
 	UPROPERTY(VisibleAnywhere, Category = "Interaction|State")
 	EPEInteractionState CurrentState = EPEInteractionState::Hovering;
+
+	bool bIsSuspended = false;
 
 	void ProcessHovering();
 	void ProcessDragging();
