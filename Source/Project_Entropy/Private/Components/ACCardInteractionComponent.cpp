@@ -117,14 +117,6 @@ void UACCardInteractionComponent::ProcessDragging()
 		FVector TargetWorldLoc = WorldLocation + (WorldDirection * DragDepth);
 		FRotator TargetWorldRot = PC->PlayerCameraManager->GetCameraRotation();
 
-		// [시각적 피드백]: 시전하려는 카드를 살짝 회전시키는 연출
-		if (bIsOverCastingZone)
-		{
-			TargetWorldRot.Pitch += 30.f;
-			TargetWorldRot.Yaw += 5.f;
-			TargetWorldLoc.Z += 15.f;
-		}
-
 		FTransform TargetWorldTransform(TargetWorldRot, TargetWorldLoc);
 		FTransform CameraTransform = PC->PlayerCameraManager->GetTransform();
 		FTransform RelativeTargetTransform = TargetWorldTransform.GetRelativeTransform(CameraTransform);
@@ -165,47 +157,54 @@ void UACCardInteractionComponent::ReleaseCard()
 
 	if (PC && DeckManager)
 	{
-		// 카드를 손에서 놓을 때는 결과(시전/취소)와 무조건 시전 구역 판정 상태를 해제합니다.
-		DeckManager->SetInCastingZone(false);
-
 		int32 ViewportSizeX, ViewportSizeY;
 		PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
 
 		float MouseX, MouseY;
 		PC->GetMousePosition(MouseX, MouseY);
 
-		// 마우스 Y좌표가 화면 하단 1/3 (약 66%) 위쪽인지 검사
-		if (MouseY < (ViewportSizeY * 0.66f))
+		// 마우스를 놓은 시점에 1/3 상단 지점에 있었는지 검사
+		bool bWasInCastingZone = MouseY < (ViewportSizeY * 0.66f);
+
+		if (bWasInCastingZone)
 		{
 			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
 			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
 
 			if (BaseData)
 			{
-				// TODO: 실제로는 BaseData->TargetType 을 통해 즉발/지정 분기 처리
 				if (false /* 즉발(Instant)일 경우 */)
 				{
+					// 사용했으므로 깔끔하게 비움
 					DeckManager->SetDraggedCard(nullptr);
+					DeckManager->SetInCastingZone(false);
 					DeckManager->DiscardCard(GrabbedCard);
 					CurrentState = EPEInteractionState::Hovering;
 				}
 				else // 지정(Target)형 스킬일 경우
 				{
 					CastingCard = GrabbedCard;
-					CastingCard->CancelMoveToTarget(); // 애니메이션을 위해 객체 자체의 보간 연산 중지
-					CurrentState = EPEInteractionState::Waiting; // 애니메이션 대기 상태로 진입 (입력 락)
+					CastingCard->CancelMoveToTarget();
+					CurrentState = EPEInteractionState::Waiting;
 
-					// BP 연출 이벤트 호출
+					// 시전 카드로 먼저 꽂아 넣고 드래그를 해제 (** 순서 중요 **)
+					DeckManager->SetCastingCard(CastingCard);
+					DeckManager->SetDraggedCard(nullptr);
+
+					// 마지막에 구역 진입 상태를 꺼주면 내부에서 UpdateHandLayout()이 발동
+					DeckManager->SetInCastingZone(false);
+
 					CastingCard->PlayCastingReadyAnimation();
 				}
 			}
 		}
 		else
 		{
-			// 기준선 아래에서 놓았다면 사용 취소 (원래 자리로 롤백)
-			CurrentState = EPEInteractionState::Hovering; // 상태 복구
+			// 기준선 아래에서 놓았다면 사용 취소
+			CurrentState = EPEInteractionState::Hovering;
 			DeckManager->SetDraggedCard(nullptr);
-			DeckManager->UpdateHandLayout();
+			DeckManager->SetInCastingZone(false);
+			DeckManager->UpdateHandLayout(); // 원래 자기 자리 이빨로 다시 쏙 들어감
 		}
 	}
 
@@ -230,8 +229,7 @@ void UACCardInteractionComponent::CancelCasting()
 	{
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
-			// 덱 매니저의 무시(DraggedCard) 상태를 해제하고 재정렬 지시
-			DeckManager->SetDraggedCard(nullptr);
+			DeckManager->SetCastingCard(nullptr);
 			DeckManager->UpdateHandLayout();
 		}
 
@@ -241,7 +239,7 @@ void UACCardInteractionComponent::CancelCasting()
 
 		CastingCard = nullptr;
 		CurrentState = EPEInteractionState::Hovering; // 상태 복구
-		UE_LOG(LogTemp, Log, TEXT("[CardInteraction] 시전 취소됨."));
+		UE_LOG(LogTemp, Log, TEXT("[CardInteraction] 시전 취소됨. 빈 자리로 돌아갑니다."));
 	}
 }
 

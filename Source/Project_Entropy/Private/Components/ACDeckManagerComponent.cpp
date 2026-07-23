@@ -168,28 +168,35 @@ void UACDeckManagerComponent::UpdateHandLayout()
 	int32 CardCount = HandCards.Num();
 	if (CardCount == 0) return;
 
-	// 드래그 중 시전 구역 진입 시, 드래그 중인 카드를 제외한 나머지 카드만 레이아웃 계산
-	int32 LayoutCardCount = CardCount;
-	if (bInCastingZone && DraggedCard && HandCards.Contains(DraggedCard))
+	// 실제로 화면 하단 손패 영역에 배치될 카드의 개수만 정확히 계산
+	int32 LayoutCardCount = 0;
+	for (APE_CardActor* Card : HandCards)
 	{
-		LayoutCardCount -= 1;
+		if (!Card) continue;
+
+		// 시전 대기 중인 카드이거나, 시전 구역으로 끌어올린 카드는 손패 공간에서 완전히 제외
+		if (Card == CastingCard || (Card == DraggedCard && bInCastingZone))
+		{
+			continue;
+		}
+		LayoutCardCount++;
 	}
 	if (LayoutCardCount <= 0) return;
 
 	// 동적 간격(Spacing) 및 압축 비율 계산
 	float CurrentSpacing = BaseCardSpacing;
-	float DesiredWidth = (CardCount - 1) * BaseCardSpacing;
+	float DesiredWidth = (LayoutCardCount - 1) * BaseCardSpacing;
 	float SqueezeRatio = 0.f; // 0.0 (안 좁아짐) ~ 1.0 (최대로 좁아짐)
 
 	// 카드가 많아져서 최대 너비를 초과하면 간격을 좁힘
-	if (DesiredWidth > MaxHandWidth && CardCount > 1)
+	if (DesiredWidth > MaxHandWidth && LayoutCardCount > 1)
 	{
-		CurrentSpacing = MaxHandWidth / (CardCount - 1);
+		CurrentSpacing = MaxHandWidth / (LayoutCardCount - 1);
 		SqueezeRatio = 1.f - (CurrentSpacing / BaseCardSpacing);
 	}
 
 	// 전체 손패의 시작점(가장 왼쪽) 오프셋 계산
-	float OffsetY = (CardCount - 1) * CurrentSpacing * -0.5f;
+	float OffsetY = (LayoutCardCount - 1) * CurrentSpacing * -0.5f;
 
 	// 시각적 인덱스
 	int32 VisualIndex = 0;
@@ -198,19 +205,15 @@ void UACDeckManagerComponent::UpdateHandLayout()
 	{
 		APE_CardActor* Card = HandCards[i];
 		if (!Card) continue;
-		if (Card == DraggedCard)
+		if (Card == CastingCard || (Card == DraggedCard && bInCastingZone))
 		{
-			if (bInCastingZone)
-			{
-				// 시전 구역에 있으면 아예 없는 카드 취급
-				continue;
-			}
-			else
-			{
-				// 손패 구역에 있으면 빈 자리(Gap)를 만들기 위해 시각적 인덱스만 1칸 건너뜀
-				VisualIndex++;
-				continue;
-			}
+			continue;
+		}
+		// 드래그 중인데 아직 시전 구역(상단)이 아니면, 그 자리는 원래 카드 자리이므로 비워둠
+		if (Card == DraggedCard && !bInCastingZone)
+		{
+			VisualIndex++;
+			continue;
 		}
 
 		// --- 위치(Location) 계산 ---

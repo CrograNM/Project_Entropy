@@ -42,17 +42,21 @@ public:
 	void UpdateHandLayout();
 
 public:
-	/** [Drag] - 드래그 중인 카드가 시전 구역(상단)에 진입했는지 여부 설정 */
+	/** [Drag] - 카드 재배치 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
-	void SetInCastingZone(bool bInZone);
+	void ReorderHandCards(APE_CardActor* InDraggedCard, APE_CardActor* TargetCard);
 
 	/** [Drag] - 드래그 중인 카드 등록 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
 	void SetDraggedCard(APE_CardActor* InCard) { DraggedCard = InCard; }
 
-	/** [Drag] - 카드 재배치 */
+	/** [Drag] - 드래그 중인 카드가 시전 구역(상단)에 진입했는지 여부 설정 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
-	void ReorderHandCards(APE_CardActor* InDraggedCard, APE_CardActor* TargetCard);
+	void SetInCastingZone(bool bInZone);
+
+	/** [Casting] - 시전 대기 중인 카드 등록 */
+	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
+	void SetCastingCard(APE_CardActor * InCard) { CastingCard = InCard; }
 
 public:
 	// --- 이벤트 방송국 (블루프린트 UI나 3D 카드더미 액터가 구독할 이벤트) ---
@@ -118,10 +122,14 @@ protected:
 	FTransform BaseHandOffset = FTransform(FRotator(0.f, 0.f, 0.f), FVector(50.f, 0.f, -30.f));
 
 private:
+	// [Drag] 시전 구역 진입 여부
+	bool bInCastingZone = false;
+
 	// [Drag] 현재 마우스로 잡고 있는 카드
 	UPROPERTY()
 	TObjectPtr<APE_CardActor> DraggedCard;
 
-	// [Drag] 시전 구역 진입 여부
-	bool bInCastingZone = false;
+	// 시전 대기(중앙으로 띄워진) 중인 카드
+	UPROPERTY()
+	TObjectPtr<APE_CardActor> CastingCard;
 };
