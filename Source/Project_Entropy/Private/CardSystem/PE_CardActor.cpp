@@ -3,10 +3,12 @@
 #include "CardSystem/PE_CardActor.h"
 #include "CardSystem/PE_CardInstance.h"
 #include "CardSystem/PE_CardData.h"
+#include "CardSystem/PE_CardWidget.h"
 #include "Components/SceneComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "NiagaraComponent.h"
 
 APE_CardActor::APE_CardActor()
@@ -39,6 +41,7 @@ APE_CardActor::APE_CardActor()
 	CardUIWidget->SetupAttachment(CardMesh);
 	CardUIWidget->SetWidgetSpace(EWidgetSpace::World);
 	CardUIWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CardUIWidget->SetTickWhenOffscreen(true); // 화면 밖에서도 틱 연산 허용 (UI 업데이트를 위해)
 
 	VFXComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("VFXComponent"));
 	VFXComponent->SetupAttachment(CardMesh);
@@ -48,6 +51,19 @@ APE_CardActor::APE_CardActor()
 void APE_CardActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// 지연 매핑: Render Target이 생성될 때까지 기다림
+	if (!bIsUIMapped && CardUIWidget && DynamicMaterial)
+	{
+		if (UTextureRenderTarget2D* UIRenderTarget = CardUIWidget->GetRenderTarget())
+		{
+			DynamicMaterial->SetTextureParameterValue(TEXT("CardUITexture"), UIRenderTarget);
+
+			bIsUIMapped = true; // 매핑 완료
+
+			UE_LOG(LogTemp, Warning, TEXT("[CardActor] UI Render Target 지연 매핑 성공!"));
+		}
+	}
 
 	if (!bIsMovingToTarget || !RootComponent) return;
 	
@@ -147,7 +163,29 @@ void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 		DynamicMaterial->SetTextureParameterValue(TEXT("CardArt"), BaseData->CardArt);
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[CardActor] %s 카드(인스턴스) 생성 및 초기화 완료"), BaseData ? *BaseData->CardName.ToString() : TEXT("Unknown"));
+	// 위젯 컴포넌트 업데이트
+	if (CardUIWidget)
+	{
+		UUserWidget* BaseWidget = CardUIWidget->GetUserWidgetObject();
+
+		if (UPE_CardWidget* MyCardWidget = Cast<UPE_CardWidget>(BaseWidget))
+		{
+			MyCardWidget->UpdateCardUI(BaseData); 
+		}
+
+		// 위젯의 실시간 화면(Render Target)을 가져오기
+		if (UTextureRenderTarget2D* UIRenderTarget = CardUIWidget->GetRenderTarget())
+		{
+			if (DynamicMaterial)
+			{
+				DynamicMaterial->SetTextureParameterValue(TEXT("CardUITexture"), UIRenderTarget);
+				UE_LOG(LogTemp, Warning, TEXT("[CardActor] UI의 Render Target 가져오기"));
+			}
+			else UE_LOG(LogTemp, Warning, TEXT("[CardActor] DynamicMaterial 없음"));
+		}
+		else UE_LOG(LogTemp, Warning, TEXT("[CardActor] GetRenderTarget 실패"));
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[CardActor] %s 카드 생성 및 UI 매핑 완료"), BaseData ? *BaseData->CardName.ToString() : TEXT("Unknown"));
 }
 
 void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor)

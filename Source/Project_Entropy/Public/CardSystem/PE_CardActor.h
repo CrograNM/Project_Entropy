@@ -110,6 +110,9 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;
 
 private:
+	// UI 렌더 타겟 매핑 완료 여부
+	bool bIsUIMapped = false;
+
 	// --- 이동 보간용 변수 ---
 	bool bIsMovingToTarget = false;
 
