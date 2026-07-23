@@ -23,27 +23,29 @@ class PROJECT_ENTROPY_API UACDeckManagerComponent : public UActorComponent
 public:
 	UACDeckManagerComponent();
 
-	/** 전투 시작 시 초기 덱 데이터 주입 */
+	/** 초기 덱 데이터 주입 */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
 	void InitializeDeck(const TArray<UPE_CardData*>& InitialDeckData);
 
-	/** 지정된 장수만큼 카드를 뽑습니다. */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
 	void DrawCards(int32 Count = 1);
 
-	/** 특정 카드를 사용 또는 강제로 버립니다. */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
 	void DiscardCard(APE_CardActor* CardToDiscard);
 
-	/** 버린 카드 더미를 뽑을 카드 더미로 섞어 넣습니다. */
+	/** 핸드 제외 셔플 */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
 	void ShuffleDiscardToDraw();
 
-	/** 현재 손패에 있는 카드들의 3D 위치(아치형 등)를 다시 계산하여 정렬을 지시합니다. */
+	/** 핸드 정렬 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
 	void UpdateHandLayout();
 
 public:
+	/** [Drag] - 드래그 중인 카드가 시전 구역(상단)에 진입했는지 여부 설정 */
+	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
+	void SetInCastingZone(bool bInZone);
+
 	/** [Drag] - 드래그 중인 카드 등록 */
 	UFUNCTION(BlueprintCallable, Category = "Deck|Layout")
 	void SetDraggedCard(APE_CardActor* InCard) { DraggedCard = InCard; }
@@ -116,7 +118,10 @@ protected:
 	FTransform BaseHandOffset = FTransform(FRotator(0.f, 0.f, 0.f), FVector(50.f, 0.f, -30.f));
 
 private:
-	// [Drag] 현재 마우스로 잡고 있는 카드 (레이아웃 자동 정렬에서 무시됨)
+	// [Drag] 현재 마우스로 잡고 있는 카드
 	UPROPERTY()
 	TObjectPtr<APE_CardActor> DraggedCard;
+
+	// [Drag] 시전 구역 진입 여부
+	bool bInCastingZone = false;
 };

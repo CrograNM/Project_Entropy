@@ -71,41 +71,64 @@ void UACCardInteractionComponent::ProcessDragging()
 {
 	if (!PC || !GrabbedCard) return;
 
-	// [정렬 스왑 로직] - 마우스 아래에 다른 카드가 있는지 확인
-	FHitResult HitResult;
-	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+	int32 ViewportSizeX, ViewportSizeY;
+	PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
+	float MouseX, MouseY;
+	PC->GetMousePosition(MouseX, MouseY);
 
-	APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
-	if (HitCard != HoveredCardDuringDrag)
+	// 하단 1/3 지점을 넘었는지 실시간 판단 후 덱 매니저에 전달 (시전 구역 진입 여부)
+	bool bIsOverCastingZone = MouseY < (ViewportSizeY * 0.66f);
+
+	UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>();
+	if (DeckManager)
 	{
-		HoveredCardDuringDrag = HitCard;
+		DeckManager->SetInCastingZone(bIsOverCastingZone);
+	}
 
-		// 실제 새로운 카드에 '진입(Enter)' 했을 때만 스왑
-		if (HoveredCardDuringDrag != nullptr && HoveredCardDuringDrag != GrabbedCard)
+	// [스왑(정렬) 로직] - 카드가 손패 영역에 있을 때만
+	if (!bIsOverCastingZone)
+	{
+		FHitResult HitResult;
+		PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+		APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
+		if (HitCard != HoveredCardDuringDrag)
 		{
-			if (UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>())
+			HoveredCardDuringDrag = HitCard;
+			if (HoveredCardDuringDrag != nullptr && HoveredCardDuringDrag != GrabbedCard)
 			{
-				DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
+				if (DeckManager)
+				{
+					DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
+				}
 			}
 		}
 	}
+	else
+	{
+		// 시전 구역으로 올라갔을 때는 카드 간 스왑 타겟팅을 초기화합니다.
+		HoveredCardDuringDrag = nullptr;
+	}
 
-	// [드래그 이동 로직] - 마우스의 월드 좌표를 카메라 상대 좌표로 변환하여 부드럽게 이동
+	// [드래그 이동 로직]
 	FVector WorldLocation, WorldDirection;
 	if (PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection))
 	{
-		// 카메라로부터 DragDepth만큼 떨어진 월드 목표 좌표
 		FVector TargetWorldLoc = WorldLocation + (WorldDirection * DragDepth);
 		FRotator TargetWorldRot = PC->PlayerCameraManager->GetCameraRotation();
+
+		// [시각적 피드백]: 시전하려는 카드를 살짝 회전시키는 연출
+		if (bIsOverCastingZone)
+		{
+			TargetWorldRot.Pitch += 30.f;
+			TargetWorldRot.Yaw += 5.f;
+			TargetWorldLoc.Z += 15.f;
+		}
+
 		FTransform TargetWorldTransform(TargetWorldRot, TargetWorldLoc);
-
-		// 플레이어 카메라의 트랜스폼 가져오기
 		FTransform CameraTransform = PC->PlayerCameraManager->GetTransform();
-
-		// 월드 좌표 -> 카메라 기준 로컬(Relative) 좌표로 변환
 		FTransform RelativeTargetTransform = TargetWorldTransform.GetRelativeTransform(CameraTransform);
 
-		// SetActorLocation이 아닌, 카드 액터 자체의 보간 함수에 목표점 하달
 		GrabbedCard->MoveToTargetTransform(RelativeTargetTransform);
 	}
 }
@@ -142,6 +165,9 @@ void UACCardInteractionComponent::ReleaseCard()
 
 	if (PC && DeckManager)
 	{
+		// 카드를 손에서 놓을 때는 결과(시전/취소)와 무조건 시전 구역 판정 상태를 해제합니다.
+		DeckManager->SetInCastingZone(false);
+
 		int32 ViewportSizeX, ViewportSizeY;
 		PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
 

@@ -168,6 +168,14 @@ void UACDeckManagerComponent::UpdateHandLayout()
 	int32 CardCount = HandCards.Num();
 	if (CardCount == 0) return;
 
+	// 드래그 중 시전 구역 진입 시, 드래그 중인 카드를 제외한 나머지 카드만 레이아웃 계산
+	int32 LayoutCardCount = CardCount;
+	if (bInCastingZone && DraggedCard && HandCards.Contains(DraggedCard))
+	{
+		LayoutCardCount -= 1;
+	}
+	if (LayoutCardCount <= 0) return;
+
 	// 동적 간격(Spacing) 및 압축 비율 계산
 	float CurrentSpacing = BaseCardSpacing;
 	float DesiredWidth = (CardCount - 1) * BaseCardSpacing;
@@ -183,42 +191,63 @@ void UACDeckManagerComponent::UpdateHandLayout()
 	// 전체 손패의 시작점(가장 왼쪽) 오프셋 계산
 	float OffsetY = (CardCount - 1) * CurrentSpacing * -0.5f;
 
+	// 시각적 인덱스
+	int32 VisualIndex = 0;
+
 	for (int32 i = 0; i < CardCount; ++i)
 	{
 		APE_CardActor* Card = HandCards[i];
 		if (!Card) continue;
-		if (Card == DraggedCard) continue;
-		
+		if (Card == DraggedCard)
+		{
+			if (bInCastingZone)
+			{
+				// 시전 구역에 있으면 아예 없는 카드 취급
+				continue;
+			}
+			else
+			{
+				// 손패 구역에 있으면 빈 자리(Gap)를 만들기 위해 시각적 인덱스만 1칸 건너뜀
+				VisualIndex++;
+				continue;
+			}
+		}
+
 		// --- 위치(Location) 계산 ---
 
-		// 깊이(X축): 나중에 뽑은 카드(오른쪽)가 미세하게 앞쪽에 배치되어 겹치도록 설정
-		float TargetX = i * DepthSpacing;
-
 		// 좌우(Y축): 줄어든 간격(CurrentSpacing)을 반영하여 배치
-		float TargetY = OffsetY + (i * CurrentSpacing);
+		float TargetX = VisualIndex * DepthSpacing;
+		float TargetY = OffsetY + (VisualIndex * CurrentSpacing);
 
 		// 상하(Z축): 중심에서 멀어질수록 아래로 내려가는 아치형 포물선 궤적
-		float NormalizedIndex = (CardCount > 1) ? ((float)i / (CardCount - 1)) * 2.f - 1.f : 0.f;
+		float NormalizedIndex = (LayoutCardCount > 1) ? ((float)VisualIndex / (LayoutCardCount - 1)) * 2.f - 1.f : 0.f;
 		float TargetZ = -FMath::Abs(NormalizedIndex * NormalizedIndex) * ArchCurveHeight;
-
+		
 		// --- 회전(Rotation) 계산 ---
-
-		// 부채꼴 회전(Roll)
-		float TargetRoll = NormalizedIndex * FanAngle;
-
-		// 카드가 압축될수록(SqueezeRatio 상승) 도미노처럼 비스듬히 겹쳐지는 회전(Yaw) 추가
-		float TargetYaw = SqueezeRatio * SqueezeTiltAngle;
-
+		
+		float TargetRoll = NormalizedIndex * FanAngle;		// 부채꼴 회전(Roll)
+		float TargetYaw = SqueezeRatio * SqueezeTiltAngle;	// 카드가 압축될수록(SqueezeRatio 상승) 
+		
 		// 로컬 트랜스폼을 계산한 뒤, BaseHandOffset(기준점)과 곱하여 최종 상대 좌표 산출
 		FTransform LayoutTransform;
 		LayoutTransform.SetLocation(FVector(TargetX, TargetY, TargetZ));
 		LayoutTransform.SetRotation(FRotator(0.f, TargetYaw, TargetRoll).Quaternion());
 
-		// 언리얼의 FTransform 곱셈: LayoutTransform을 BaseHandOffset 기준으로 적용
 		FTransform FinalRelativeTransform = LayoutTransform * BaseHandOffset;
-
+		
 		// 카드에게 '상대 좌표계'에서의 이동을 명령
 		Card->MoveToTargetTransform(FinalRelativeTransform);
+
+		VisualIndex++;
+	}
+}
+
+void UACDeckManagerComponent::SetInCastingZone(bool bInZone)
+{
+	if (bInCastingZone != bInZone)
+	{
+		bInCastingZone = bInZone;
+		UpdateHandLayout(); // 상태가 바뀔 때마다 즉시 재정렬
 	}
 }
 
