@@ -90,26 +90,36 @@ void APE_PlayerController::SetupInputComponent()
 	// Enhanced Input Component로 캐스팅하여 액션 바인딩
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		// 1. 기지 모드 입력 바인딩
-		if (IA_Move)
+		// ----- [Base Mode Movement] -----
+		if (IA_DirectMove)
 		{
-			EnhancedInputComponent->BindAction(IA_Move, ETriggerEvent::Triggered, this, &APE_PlayerController::Move);
+			EnhancedInputComponent->BindAction(IA_DirectMove, ETriggerEvent::Triggered, this, &APE_PlayerController::OnDirectMove);
 		}
 
-		// 2. 전투 모드 입력 바인딩
-		if (IA_MouseL)
+		// ----- [Select Action] -----
+		if (IA_Select)
 		{
-			EnhancedInputComponent->BindAction(IA_MouseL, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClick);
+			EnhancedInputComponent->BindAction(IA_Select, ETriggerEvent::Started, this, &APE_PlayerController::OnSelect);
+
+			// 클릭 시작 (Pressed) -> 카드 잡기 시도
+			EnhancedInputComponent->BindAction(IA_Select, ETriggerEvent::Started, this, &APE_PlayerController::OnCardSelect);
+
+			// 클릭 종료 (Released) -> 카드 놓기 시도
+			EnhancedInputComponent->BindAction(IA_Select, ETriggerEvent::Completed, this, &APE_PlayerController::OnCardRelease);
 		}
-		if (IA_MouseR)
+		
+		// ----- [Universal Cancel Action] -----
+		if (IA_Cancel)
 		{
-			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Started, this, &APE_PlayerController::OnCameraControlStarted);
-			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Completed, this, &APE_PlayerController::OnCameraControlCompleted);
-			EnhancedInputComponent->BindAction(IA_MouseR, ETriggerEvent::Canceled, this, &APE_PlayerController::OnCameraControlCompleted);
+			EnhancedInputComponent->BindAction(IA_Cancel, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCancelAction);
 		}
-		if (IA_MouseRR)
+
+		// ----- [Camera Control] -----
+		if (IA_CameraControlTrigger)
 		{
-			EnhancedInputComponent->BindAction(IA_MouseRR, ETriggerEvent::Triggered, this, &APE_PlayerController::OnMouseRDoubleClick);
+			EnhancedInputComponent->BindAction(IA_CameraControlTrigger, ETriggerEvent::Started, this, &APE_PlayerController::OnCameraControlStarted);
+			EnhancedInputComponent->BindAction(IA_CameraControlTrigger, ETriggerEvent::Completed, this, &APE_PlayerController::OnCameraControlCompleted);
+			EnhancedInputComponent->BindAction(IA_CameraControlTrigger, ETriggerEvent::Canceled, this, &APE_PlayerController::OnCameraControlCompleted);
 		}
 		if (IA_CameraMove)
 		{
@@ -117,7 +127,6 @@ void APE_PlayerController::SetupInputComponent()
 		}
 		if (IA_CameraRotate)
 		{
-
 			EnhancedInputComponent->BindAction(IA_CameraRotate, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraRotate);
 		}
 		if (IA_CameraReset)
@@ -128,19 +137,43 @@ void APE_PlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(IA_CameraHeight, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraHeight);
 		}
+	}
+}
 
-		// 카드 상호작용 컴포넌트 입력 바인딩
-		if (IA_MouseL)
+
+// ----- [Update] -----
+void APE_PlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	// [Update] - 그리드 타일 호버링 감지 및 경로 하이라이트
+	UpdateGridHovering();
+}
+
+void APE_PlayerController::UpdateGridHovering() 
+{
+	// 이동 모드: 마우스 호버링 - 타일 감지 및 경로 하이라이트
+	if (!bShowMouseCursor || !bIsGridMoveActivated || !GridSystem) return;
+
+	FHitResult HitResult;
+	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
+	{
+		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
+		if (HoveredTile && PlayerCharacter)
 		{
-			// 클릭 시작 (Pressed) -> 카드 잡기 시도
-			EnhancedInputComponent->BindAction(IA_MouseL, ETriggerEvent::Started, this, &APE_PlayerController::OnMouseClickStarted);
+			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
 
-			// 클릭 종료 (Released) -> 카드 놓기 시도
-			EnhancedInputComponent->BindAction(IA_MouseL, ETriggerEvent::Completed, this, &APE_PlayerController::OnMouseClickCompleted);
+			if (CurrentTilePos != LastHoveredTilePos)
+			{
+				LastHoveredTilePos = CurrentTilePos;
+				GridSystem->HighlightPath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+			}
 		}
 	}
 }
 
+
+// ----- [Public Functions] -----
 void APE_PlayerController::ToggleGridMovementActivation()
 {
 	// 맵 툴이 켜져 있다면 이동 모드 진입을 차단
@@ -216,78 +249,9 @@ void APE_PlayerController::CancelCurrentAction()
 	}
 }
 
-void APE_PlayerController::PlayerTick(float DeltaTime)
-{
-	Super::PlayerTick(DeltaTime);
 
-	// 이동 모드: 마우스 호버링 - 타일 감지 및 경로 하이라이트
-	if (!bShowMouseCursor || !bIsGridMoveActivated || !GridSystem) return;
-
-	FHitResult HitResult;
-	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
-	{
-		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
-		if (HoveredTile && PlayerCharacter)
-		{
-			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
-			
-			if (CurrentTilePos != LastHoveredTilePos)
-			{
-				LastHoveredTilePos = CurrentTilePos;
-				GridSystem->HighlightPath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
-			}
-		}
-	}
-}
-
-void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
-{
-	CurrentInputMode = NewState;
-	
-	// 향상된 입력 서브시스템 가져오기
-	ULocalPlayer* LocalPlayer = GetLocalPlayer();
-	if (!LocalPlayer) return;
-
-	UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-	if (!Subsystem) return;
-
-	// 안전하게 기존 컨텍스트를 모두 비우기
-	Subsystem->ClearAllMappings();
-
-	// 상태에 따라 필요한 IMC만 활성화하고, 마우스 입력 모드 제어
-	switch (NewState)
-	{
-		case EPEGameState::Base:
-			{
-				if (IMC_DirectMove)
-				{
-					Subsystem->AddMappingContext(IMC_DirectMove, 0);
-				}
-				// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
-				FInputModeGameOnly InputModeDataGame;
-				SetInputMode(InputModeDataGame);
-				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 기지 모드로 전환"));
-				break;
-			}
-
-		case EPEGameState::Battle:
-			{
-				if (IMC_Battle)
-				{
-					Subsystem->AddMappingContext(IMC_Battle, 0);
-				}
-				// 배틀 모드: GameAndUI, 마우스 커서가 기본적으로 보이도록 설정
-				FInputModeGameAndUI InputModeDataUI;
-				InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-				InputModeDataUI.SetHideCursorDuringCapture(false);
-				SetInputMode(InputModeDataUI);
-				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
-				break;
-			}
-	}
-}
-
-void APE_PlayerController::Move(const FInputActionValue& Value)
+// ----- [Direct Move] -----
+void APE_PlayerController::OnDirectMove(const FInputActionValue& Value)
 {
 	// 기지 모드일 때만 IMC를 통해 이 함수가 호출됨
 	FVector2D MovementVector = Value.Get<FVector2D>();
@@ -307,59 +271,122 @@ void APE_PlayerController::Move(const FInputActionValue& Value)
 	}
 }
 
-void APE_PlayerController::OnMouseClick(const FInputActionValue& Value)
+
+// ----- [Select Action] -----
+void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 {
-	if (!bIsGridMoveActivated || !GridSystem) return;
+	if (!GridSystem) return;
 
-	FHitResult HitResult;
-	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
+	// [그리드 이동 모드] - 타일 선택
+	if (bIsGridMoveActivated) 
 	{
-		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
-		
-		// 유효한 타일이 아니거나 사거리 밖이면 이동 취소
-		if (!TargetTile || !ValidRangeTiles.Contains(TargetTile))
+		FHitResult HitResult;
+		if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 		{
-			CancelCurrentAction();
-			return; 
-		}
-		
-		// 정상적인 사거리 내 타일을 클릭 시 이동 확정
-		if (TargetTile && PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent() && PlayerCharacter->GetCameraControlComponent() && ValidRangeTiles.Contains(TargetTile))
-		{
-			// 이동 경로 추출
-			TArray<AACTile*> Path = GridSystem->CalculatePath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
-			
-			// 이동에 필요한 AP 소모 (1AP)
-			if (PlayerCharacter->GetStatComponent()->ConsumeAP(1))
+			AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
+
+			// 유효한 타일이 아니거나 사거리 밖이면 이동 취소
+			if (!TargetTile || !ValidRangeTiles.Contains(TargetTile))
 			{
-				// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
-				GridSystem->ClearAllHighlights();
-				TargetTile->SetHighlightState(ETileHighlightType::Hovered);
-			
-				// 캐릭터에게 이동 명령 하달 및 모드 종료
-				PlayerCharacter->GetGridMovementComponent()->MoveAlongPath(Path); 
-			
-				// 정상적으로 이동 '완료(초기화)' 처리
-				bIsGridMoveActivated = false;
-				ValidRangeTiles.Empty();
-				LastHoveredTilePos = FIntPoint(-999, -999);
-
-				// 카드 상호작용 재활성화
-				if (CardInteractionComp)
-				{
-					CardInteractionComp->SetInteractionEnabled(true);
-				}
-
-				// 카메라 리셋
-				PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
-			}
-			else
-			{	
-				// AP 부족 시 이동 취소
 				CancelCurrentAction();
-				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 이동 실패: AP 부족"));
+				return;
+			}
+
+			// 정상적인 사거리 내 타일을 클릭 시 이동 확정
+			if (TargetTile && PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent() && PlayerCharacter->GetCameraControlComponent() && ValidRangeTiles.Contains(TargetTile))
+			{
+				// 이동 경로 추출
+				TArray<AACTile*> Path = GridSystem->CalculatePath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
+
+				// 이동에 필요한 AP 소모 (1AP)
+				if (PlayerCharacter->GetStatComponent()->ConsumeAP(1))
+				{
+					// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
+					GridSystem->ClearAllHighlights();
+					TargetTile->SetHighlightState(ETileHighlightType::Hovered);
+
+					// 캐릭터에게 이동 명령 하달 및 모드 종료
+					PlayerCharacter->GetGridMovementComponent()->MoveAlongPath(Path);
+
+					// 정상적으로 이동 '완료(초기화)' 처리
+					bIsGridMoveActivated = false;
+					ValidRangeTiles.Empty();
+					LastHoveredTilePos = FIntPoint(-999, -999);
+
+					// 카드 상호작용 재활성화
+					if (CardInteractionComp)
+					{
+						CardInteractionComp->SetInteractionEnabled(true);
+					}
+
+					// 카메라 리셋
+					PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
+				}
+				else
+				{
+					// AP 부족 시 이동 취소
+					CancelCurrentAction();
+					UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 이동 실패: AP 부족"));
+				}
 			}
 		}
+	}
+}
+
+void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
+{
+	if (bIsGridMoveActivated) return;
+
+	if (CardInteractionComp)
+	{
+		CardInteractionComp->GrabCard();
+	}
+}
+
+void APE_PlayerController::OnCardRelease(const FInputActionValue& Value)
+{
+	if (CardInteractionComp)
+	{
+		CardInteractionComp->ReleaseCard();
+	}
+}
+
+
+// ----- [Universal Cancel Action] -----
+void APE_PlayerController::OnCancelAction(const FInputActionValue& Value)
+{
+	CancelCurrentAction();
+}
+
+
+// ----- [Camera Control] -----
+void APE_PlayerController::OnCameraControlStarted(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	GetMousePosition(StoredMouseX, StoredMouseY);
+
+	bShowMouseCursor = false;
+
+	// 카메라 조작 중에는 카드 상호작용 일시중지 (드래그/캐스팅 방지)
+	if (CardInteractionComp)
+	{
+		CardInteractionComp->SetInteractionSuspended(true);
+	}
+}
+
+void APE_PlayerController::OnCameraControlCompleted(const FInputActionValue& Value)
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	SetMouseLocation(FMath::RoundToInt(StoredMouseX), FMath::RoundToInt(StoredMouseY));
+
+	bShowMouseCursor = true;
+
+	// 그리드 이동 모드가 아닐 때만 카드 상호작용을 다시 활성화
+	if (CardInteractionComp && !bIsGridMoveActivated)
+	{
+		CardInteractionComp->SetInteractionSuspended(false);
 	}
 }
 
@@ -412,69 +439,60 @@ void APE_PlayerController::OnCameraHeight(const FInputActionValue& Value)
 	}
 }
 
-void APE_PlayerController::OnMouseClickStarted(const FInputActionValue& Value)
-{
-	if (bIsGridMoveActivated) return;
 
-	// 기존 이동/타일 클릭 로직 전에, 카드를 잡을 수 있는지 상호작용 컴포넌트에 우선 권한을 넘김
-	if (CardInteractionComp)
-	{
-		CardInteractionComp->GrabCard();
-	}
-
-	// TODO: 카드를 잡지 못했을 경우에만 기존 Grid 이동 로직(OnMouseClick) 실행하도록 분기 처리 필요
-}
-
-void APE_PlayerController::OnMouseClickCompleted(const FInputActionValue& Value)
-{
-	if (CardInteractionComp)
-	{
-		CardInteractionComp->ReleaseCard();
-	}
-}
-
-// 각종 취소 입력 처리
-void APE_PlayerController::OnMouseRDoubleClick(const FInputActionValue& Value)
-{
-	CancelCurrentAction();
-}
-
-void APE_PlayerController::OnCameraControlStarted(const FInputActionValue& Value)
-{
-	if (CurrentInputMode != EPEGameState::Battle) return;
-
-	GetMousePosition(StoredMouseX, StoredMouseY);
-
-	bShowMouseCursor = false;
-
-	// 카메라 조작 중에는 카드 상호작용 일시중지 (드래그/캐스팅 방지)
-	if (CardInteractionComp)
-	{
-		CardInteractionComp->SetInteractionSuspended(true);
-	}
-}
-
-// 카메라 회전 종료 시 
-void APE_PlayerController::OnCameraControlCompleted(const FInputActionValue& Value)
-{
-	if (CurrentInputMode != EPEGameState::Battle) return;
-
-	SetMouseLocation(FMath::RoundToInt(StoredMouseX), FMath::RoundToInt(StoredMouseY));
-
-	bShowMouseCursor = true;
-
-	// 그리드 이동 모드가 아닐 때만 카드 상호작용을 다시 활성화
-	if (CardInteractionComp && !bIsGridMoveActivated)
-	{
-		CardInteractionComp->SetInteractionSuspended(false);
-	}
-}
-
+// ----- [Test Functions] -----
 void APE_PlayerController::OnTestDrawCard(int32 Count)
 {
 	if (DeckManagerComp)
 	{
 		// D 키를 누를 때마다 드로우 테스트
 		DeckManagerComp->DrawCards(Count);
+	}
+}
+
+void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
+{
+	CurrentInputMode = NewState;
+
+	// 향상된 입력 서브시스템 가져오기
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	if (!LocalPlayer) return;
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+	if (!Subsystem) return;
+
+	// 안전하게 기존 컨텍스트를 모두 비우기
+	Subsystem->ClearAllMappings();
+
+	// 상태에 따라 필요한 IMC만 활성화하고, 마우스 입력 모드 제어
+	switch (NewState)
+	{
+	case EPEGameState::Base:
+	{
+		if (IMC_DirectMove)
+		{
+			Subsystem->AddMappingContext(IMC_DirectMove, 0);
+		}
+		// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
+		FInputModeGameOnly InputModeDataGame;
+		SetInputMode(InputModeDataGame);
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 기지 모드로 전환"));
+		break;
+	}
+
+	case EPEGameState::Battle:
+	{
+		if (IMC_Battle)
+		{
+			Subsystem->AddMappingContext(IMC_Battle, 0);
+		}
+		// 배틀 모드: GameAndUI, 마우스 커서가 기본적으로 보이도록 설정
+		FInputModeGameAndUI InputModeDataUI;
+		InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputModeDataUI.SetHideCursorDuringCapture(false);
+		SetInputMode(InputModeDataUI);
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
+		break;
+	}
 	}
 }

@@ -24,49 +24,50 @@ class PROJECT_ENTROPY_API APE_PlayerController : public APlayerController
 	
 public:
 	APE_PlayerController();
+
+	// ----- [Update] -----
 	virtual void PlayerTick(float DeltaTime) override;
+	void UpdateGridHovering(); 
 
-	// 이동 모드 [On/Off], UI 버튼이나 단축키를 눌러 호출
+	// ----- [Public Functions] -----
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void ToggleGridMovementActivation();
+	void ToggleGridMovementActivation(); // 이동 모드 [On/Off]
 	
-	// 현재 진행 중인 조작(이동, 카드 타겟팅 등)을 일괄 취소/초기화
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void CancelCurrentAction();
-	
-	// 외부에 의해 게임 모드가 바뀔 때 호출될 함수, **이후 패키징 단계에서 단축키에서 제거해야함**
-	UFUNCTION(BlueprintCallable, Category = "Input")
-	void SwitchInputMode(EPEGameState NewState);
-
-	UFUNCTION(BlueprintCallable, Category = "Test")
-	void OnTestDrawCard(int32 Count);
+	void CancelCurrentAction(); // 범용 취소 함수
 
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "UI")
-	void ShowToastMessage(const FText& Message);
+	void ShowToastMessage(const FText& Message); // [UI] 토스트 메시지 출력
+
+	// ----- [Test Functions] -----
+	UFUNCTION(BlueprintCallable, Category = "Test")
+	void OnTestDrawCard(int32 Count); // [Test] 카드 드로우
+
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void SwitchInputMode(EPEGameState NewState); // [Test] 인풋 모드 전환 (Base/Battle) 
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 
-	// --- 1. 에디터에서 할당할 인풋 에셋들 ---
+	// ----- [Input Mapping Contexts & Actions] -----
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Context", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputMappingContext> IMC_DirectMove;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Context", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputMappingContext> IMC_Battle;
 
-	// --- 2. 인풋 액션들 ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInputAction> IA_Move; // 기지용 이동 액션
+	TObjectPtr<UInputAction> IA_DirectMove; 
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInputAction> IA_MouseL; // 전투용 마우스 클릭 액션
+	TObjectPtr<UInputAction> IA_Select; 
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInputAction> IA_MouseR;
+	TObjectPtr<UInputAction> IA_CameraControlTrigger;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInputAction> IA_MouseRR;
+	TObjectPtr<UInputAction> IA_Cancel;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_CameraMove;
@@ -80,56 +81,53 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_CameraHeight;
 	
-	// 월드의 GridSystem 참조
+	// ----- [References] -----
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
-	TObjectPtr<AACGridSystem> GridSystem;
+	TObjectPtr<AACGridSystem> GridSystem; // 그리드 시스템 참조
 	
-	// 게임 모드의 TurnManager 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
-	TObjectPtr<UPE_TurnManagerComponent> TurnManager;
+	TObjectPtr<UPE_TurnManagerComponent> TurnManager; // 턴 매니저 참조
 	
-	// 현재 플레이어 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
-	TObjectPtr<APE_PlayerCharacter> PlayerCharacter = nullptr;
+	TObjectPtr<APE_PlayerCharacter> PlayerCharacter = nullptr; // 플레이어 캐릭터 참조
 
-	// 덱/손패 관리 컴포넌트
+	// ----- [Components] -----
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UACDeckManagerComponent> DeckManagerComp;
+	TObjectPtr<UACDeckManagerComponent> DeckManagerComp; // 덱 매니저 컴포넌트
 
-	// 카드 상호작용 전담 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UACCardInteractionComponent> CardInteractionComp;
+	TObjectPtr<UACCardInteractionComponent> CardInteractionComp; // 카드 상호작용 컴포넌트
 
-	/** [테스트용] 시작 시 주입할 임시 카드 데이터들 */
+	// ----- [Test] -----
 	UPROPERTY(EditDefaultsOnly, Category = "Test")
 	TArray<TObjectPtr<UPE_CardData>> TestStartingDeck;
 
 private:
-	// 기지 모드에서 키보드 이동 처리
-	void Move(const FInputActionValue& Value);
+	// ----- [Direct Move] -----
+	void OnDirectMove(const FInputActionValue& Value);
 
-	// 전투 모드 입력 처리
-	void OnMouseClick(const FInputActionValue& Value);
+	// ----- [Select Action] -----
+	void OnSelect(const FInputActionValue& Value);
+	void OnCardSelect(const FInputActionValue& Value);
+	void OnCardRelease(const FInputActionValue& Value);
+
+	// ----- [Universal Cancel Action] -----
+	void OnCancelAction(const FInputActionValue& Value);
+
+	// ----- [Camera Control] -----
+	void OnCameraControlStarted(const FInputActionValue& Value);
+	void OnCameraControlCompleted(const FInputActionValue& Value);
 	void OnCameraMove(const FInputActionValue& Value);
 	void OnCameraRotate(const FInputActionValue& Value);
 	void OnCameraReset(const FInputActionValue& Value);
 	void OnCameraHeight(const FInputActionValue& Value);
-	
-	// 카드 상호작용 입력 처리
-	void OnMouseClickStarted(const FInputActionValue& Value);
-	void OnMouseClickCompleted(const FInputActionValue& Value);
-	void OnMouseRDoubleClick(const FInputActionValue& Value);
-
-	// 카메라 회전 시 마우스 커서 표시 제어
-	void OnCameraControlStarted(const FInputActionValue& Value);
-	void OnCameraControlCompleted(const FInputActionValue& Value);
 
 private:
-	// Input Mode (Base/Battle)
-	EPEGameState CurrentInputMode = EPEGameState::Base; 
-	
-	bool bIsGridMoveActivated = false;
+	// ----- [State Variables] -----
+	EPEGameState CurrentInputMode = EPEGameState::Base; // 현재 입력 모드 (Base/Battle)
+	bool bIsGridMoveActivated = false;	// 이동 모드 활성화 여부
 
+	// ----- [Temporary Variables] -----
 	UPROPERTY()
 	TArray<AACTile*> ValidRangeTiles;
 
