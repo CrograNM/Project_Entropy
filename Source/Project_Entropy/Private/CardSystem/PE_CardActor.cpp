@@ -152,10 +152,6 @@ void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 
 void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor)
 {
-	// 호버링 트리거: 이동 연산을 즉시 시작하여 호버링 오프셋 적용
-	bIsHovered = bIsHighlighted;
-	bIsMovingToTarget = true;
-
 	if (!DynamicMaterial) return;
 
 	// 하이라이트 On/Off (0.0 or 1.0)
@@ -167,4 +163,11 @@ void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineC
 	{
 		DynamicMaterial->SetVectorParameterValue(TEXT("OutlineColor"), OutlineColor);
 	}
+}
+
+void APE_CardActor::SetHoverOffsetEnabled(bool bEnable)
+{
+	// 호버링 트리거: 이동 연산을 즉시 시작하여 호버링 오프셋 적용
+	bIsHovered = bEnable;
+	bIsMovingToTarget = true; // 이동 연산 활성화
 }

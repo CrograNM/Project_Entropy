@@ -33,8 +33,10 @@ void UACCardInteractionComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		case EPEInteractionState::Selecting:
 			ProcessDragging();
 			break;
-		case EPEInteractionState::Waiting:
 		case EPEInteractionState::Casting:
+			ProcessCasting();
+			break;
+		case EPEInteractionState::Waiting:
 		case EPEInteractionState::Disabled:
 			// 해당 상태에서는 마우스 트레이싱/드래그 연산을 멈춤 (최적화)
 			break;
@@ -55,12 +57,14 @@ void UACCardInteractionComponent::ProcessHovering()
 		if (HoveredCard)
 		{
 			HoveredCard->SetHighlightState(false);
+			HoveredCard->SetHoverOffsetEnabled(false);
 		}
 
 		// 새 카드 호버링 적용
 		if (HitCard)
 		{
 			HitCard->SetHighlightState(true, FLinearColor::Yellow);
+			HitCard->SetHoverOffsetEnabled(true);
 		}
 
 		HoveredCard = HitCard;
@@ -125,8 +129,57 @@ void UACCardInteractionComponent::ProcessDragging()
 	}
 }
 
+void UACCardInteractionComponent::ProcessCasting()
+{
+	if (!PC || !CastingCard) return;
+
+	FHitResult HitResult;
+	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+	APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
+
+	// 마우스가 캐스팅 중인 카드 위에 올라갔을 때만
+	if (HitCard == CastingCard)
+	{
+		if (HoveredCard != HitCard)
+		{
+			if (HoveredCard)
+			{
+				HoveredCard->SetHighlightState(false);
+				HoveredCard->OnCastingHoverStateChanged(false);
+			}
+
+			// 외곽선 빛 켜기 + BP 연출(오프셋) 시작 알림
+			HitCard->SetHighlightState(true, FLinearColor::Yellow);
+			HitCard->OnCastingHoverStateChanged(true);
+
+			HoveredCard = HitCard;
+		}
+	}
+	else
+	{
+		// 캐스팅 카드 밖으로 마우스가 나가면 빛 끄기 + 오프셋 복구 알림
+		if (HoveredCard)
+		{
+			HoveredCard->SetHighlightState(false);
+			HoveredCard->OnCastingHoverStateChanged(false); 
+
+			HoveredCard = nullptr;
+		}
+	}
+}
+
 void UACCardInteractionComponent::GrabCard()
 {
+	// [Casting] - 캐스팅 취소
+	if (CurrentState == EPEInteractionState::Casting)
+	{
+		if (HoveredCard && HoveredCard == CastingCard)
+		{
+			CancelCasting();
+		}
+		return;
+	}
+
 	if (CurrentState != EPEInteractionState::Hovering) return;
 
 	if (HoveredCard)
@@ -135,6 +188,7 @@ void UACCardInteractionComponent::GrabCard()
 		GrabbedCard->SetActorEnableCollision(false); // 드래그 시 충돌 비활성화 (레이캐스트 방해 방지)
 		
 		GrabbedCard->SetHighlightState(false);
+		GrabbedCard->SetHoverOffsetEnabled(false);
 
 		// 상태 전환
 		CurrentState = EPEInteractionState::Selecting; 

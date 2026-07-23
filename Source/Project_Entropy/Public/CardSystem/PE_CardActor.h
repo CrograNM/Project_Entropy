@@ -43,6 +43,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Card|Visual")
 	void SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor = FLinearColor::White);
 
+	/** 카드가 위로 들썩이는 물리적 오프셋 적용 여부 */
+	UFUNCTION(BlueprintCallable, Category = "Card|Movement")
+	void SetHoverOffsetEnabled(bool bEnable);
+
 	/** --- 연출(Juicy) 이벤트: C++에서 상태 변경 시 호출하면 BP에서 애니메이션 실행 --- */
 
 	// 1. 드로우: 빛 알갱이에서 카드로 나타나며 손패 위치로 날아오는 연출
@@ -60,6 +64,10 @@ public:
 	// 4. 카드 사용 완료 (산화): 빛 알갱이로 부서지며 무덤으로 날아가는 연출
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayDiscardAnimation(FVector DiscardPileWorldLocation);
+	
+	// 5. 캐스팅 대기 중 마우스 호버링 상태 변경 (오프셋 조절용)
+	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
+	void OnCastingHoverStateChanged(bool IsHovered);
 
 	/** --- Getter/Setter --- */
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")

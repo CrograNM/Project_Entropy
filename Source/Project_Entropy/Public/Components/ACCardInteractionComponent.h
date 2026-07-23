@@ -59,6 +59,7 @@ private:
 
 	void ProcessHovering();
 	void ProcessDragging();
+	void ProcessCasting();
 
 	UPROPERTY()
 	TObjectPtr<APE_CardActor> HoveredCard;
