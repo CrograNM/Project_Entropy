@@ -158,9 +158,10 @@ void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 	// 인스턴스 안에 들어있는 원본 데이터를 꺼내서 시각적 세팅을 합니다.
 	UPE_CardData* BaseData = CardInstance->GetBaseCardData();
 
-	if (DynamicMaterial && BaseData && BaseData->CardArt)
+	if (DynamicMaterial )
 	{
-		DynamicMaterial->SetTextureParameterValue(TEXT("CardArt"), BaseData->CardArt);
+		float RandomOffset = FMath::RandRange(0.0f, 100.0f);
+		DynamicMaterial->SetScalarParameterValue(FName("RandomTimeOffset"), RandomOffset);
 	}
 
 	// 위젯 컴포넌트 업데이트
