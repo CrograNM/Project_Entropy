@@ -77,6 +77,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
 	UPE_CardInstance* GetCardInstance() const { return CardInstance; }
 
+	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
+	void SetDynamicMaterial(UMaterialInstanceDynamic* InMaterial) { DynamicMaterial = InMaterial; }
+
 	UFUNCTION(BlueprintCallable, Category = "Card|Movement")
 	void MoveToTargetTransform(const FTransform& InTargetRelativeTransform);
 
@@ -118,9 +121,6 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;
 
 private:
-	// UI 렌더 타겟 매핑 완료 여부
-	bool bIsUIMapped = false;
-
 	// --- 이동 보간용 변수 ---
 	bool bIsMovingToTarget = false;
 

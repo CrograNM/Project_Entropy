@@ -137,6 +137,8 @@ void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 {
 	if (!InCardInstance) return;
 
+	CardInstance = InCardInstance;
+
 	// 위젯 컴포넌트 업데이트
 	if (CardUIWidget)
 	{
@@ -144,12 +146,12 @@ void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 
 		if (UPE_CardWidget* MyCardWidget = Cast<UPE_CardWidget>(BaseWidget))
 		{
-			MyCardWidget->UpdateCardUI(InCardInstance);
+			MyCardWidget->UpdateCardUI(CardInstance);
 		}
 	}
 
 	// 카드 머티리얼 등 시각적 요소 초기화
-	InitializeCardVisual(InCardInstance);
+	InitializeCardVisual(CardInstance);
 }
 
 void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor)

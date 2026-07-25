@@ -227,31 +227,31 @@ void UACCardInteractionComponent::ReleaseCard()
 			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
 			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
 
-			if (BaseData)
+			if (false /* 즉발(Instant)일 경우 */)
 			{
-				if (false /* 즉발(Instant)일 경우 */)
-				{
-					// 사용했으므로 깔끔하게 비움
-					DeckManager->SetDraggedCard(nullptr);
-					DeckManager->SetInCastingZone(false);
-					DeckManager->DiscardCard(GrabbedCard);
-					CurrentState = EPEInteractionState::Hovering;
-				}
-				else // 지정(Target)형 스킬일 경우
-				{
-					CastingCard = GrabbedCard;
-					CastingCard->CancelMoveToTarget();
-					CurrentState = EPEInteractionState::Waiting;
+				UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 즉발 카드 사용"));
+				// 사용했으므로 깔끔하게 비움
+				DeckManager->SetDraggedCard(nullptr);
+				DeckManager->SetInCastingZone(false);
+				DeckManager->DiscardCard(GrabbedCard);
+				CurrentState = EPEInteractionState::Hovering;
+			}
+			else // 지정(Target)형 스킬일 경우
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 캐스팅 시작"));
 
-					// 시전 카드로 먼저 꽂아 넣고 드래그를 해제 (** 순서 중요 **)
-					DeckManager->SetCastingCard(CastingCard);
-					DeckManager->SetDraggedCard(nullptr);
+				CastingCard = GrabbedCard;
+				CastingCard->CancelMoveToTarget();
+				CurrentState = EPEInteractionState::Waiting;
 
-					// 마지막에 구역 진입 상태를 꺼주면 내부에서 UpdateHandLayout()이 발동
-					DeckManager->SetInCastingZone(false);
+				// 시전 카드로 먼저 꽂아 넣고 드래그를 해제 (** 순서 중요 **)
+				DeckManager->SetCastingCard(CastingCard);
+				DeckManager->SetDraggedCard(nullptr);
 
-					CastingCard->PlayCastingReadyAnimation();
-				}
+				// 마지막에 구역 진입 상태를 꺼주면 내부에서 UpdateHandLayout()이 발동
+				DeckManager->SetInCastingZone(false);
+
+				CastingCard->PlayCastingReadyAnimation();
 			}
 		}
 		else
