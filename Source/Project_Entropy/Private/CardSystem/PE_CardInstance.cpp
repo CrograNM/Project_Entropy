@@ -50,3 +50,23 @@ float UPE_CardInstance::GetCalculatedHeal() const
 	float FinalHeal = BaseCardData->SkillDataToCast->BaseHeal + HealModifier;
 	return FMath::Max(0.f, FinalHeal);
 }
+
+FText UPE_CardInstance::GetFormattedDescription() const
+{
+	if (!IsValid(BaseCardData) || !IsValid(BaseCardData->SkillDataToCast))
+	{
+		return FText::GetEmpty();
+	}
+
+	// 치환할 키워드({Name})와 실제 수치를 매핑할 구조체 생성
+	FFormatNamedArguments Args;
+
+	// 런타임 수치(모디파이어 적용됨) 및 원본 수치를 키워드로 등록
+	Args.Add(TEXT("Damage"), GetCalculatedDamage());
+	Args.Add(TEXT("Heal"), GetCalculatedHeal());
+	Args.Add(TEXT("Cost"), GetCalculatedAPCost());
+	Args.Add(TEXT("Range"), BaseCardData->SkillDataToCast->BaseRange);
+
+	// FText(CardDescription) 내부의 {키워드}를 실제 수치로 치환하여 반환
+	return FText::Format(BaseCardData->CardDescription, Args);
+}

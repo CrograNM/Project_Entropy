@@ -36,6 +36,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Card Instance|Stats")
 	float GetCalculatedHeal() const;	// 런타임 변동 수치까지 반영된 최종 힐량 반환
 
+	UFUNCTION(BlueprintCallable, Category = "Card Instance|Text")
+	FText GetFormattedDescription() const;
+
 	// TODO: 마석(Modifier) 부착/해제 및 저장용 구조체 연동 로직 추가 예정
 	// UFUNCTION(BlueprintCallable, Category = "Card Instance|Modifier")
 	// void ApplyMagicStone(...);
