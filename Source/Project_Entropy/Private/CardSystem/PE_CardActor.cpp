@@ -52,19 +52,6 @@ void APE_CardActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 지연 매핑: Render Target이 생성될 때까지 기다림
-	if (!bIsUIMapped && CardUIWidget && DynamicMaterial)
-	{
-		if (UTextureRenderTarget2D* UIRenderTarget = CardUIWidget->GetRenderTarget())
-		{
-			DynamicMaterial->SetTextureParameterValue(TEXT("CardUITexture"), UIRenderTarget);
-
-			bIsUIMapped = true; // 매핑 완료
-
-			UE_LOG(LogTemp, Warning, TEXT("[CardActor] UI Render Target 지연 매핑 성공!"));
-		}
-	}
-
 	if (!bIsMovingToTarget || !RootComponent) return;
 	
 	// '부모 기준 상대 좌표'를 가져옴
@@ -146,23 +133,9 @@ void APE_CardActor::BeginPlay()
 	}
 }
 
-
-// TODO: CardUIWidget 내부의 UserWidget(UPE_CardWidget)을 가져와서 
-// CardData->CardName, CardData->CostAP 등을 텍스트 박스에 쏴주는 로직 추가
 void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 {
 	if (!InCardInstance) return;
-
-	CardInstance = InCardInstance;
-
-	// 인스턴스 안에 들어있는 원본 데이터를 꺼내서 시각적 세팅을 합니다.
-	UPE_CardData* BaseData = CardInstance->GetBaseCardData();
-
-	if (DynamicMaterial )
-	{
-		float RandomOffset = FMath::RandRange(0.0f, 100.0f);
-		DynamicMaterial->SetScalarParameterValue(FName("RandomTimeOffset"), RandomOffset);
-	}
 
 	// 위젯 컴포넌트 업데이트
 	if (CardUIWidget)
@@ -171,22 +144,12 @@ void APE_CardActor::InitializeCard(UPE_CardInstance* InCardInstance)
 
 		if (UPE_CardWidget* MyCardWidget = Cast<UPE_CardWidget>(BaseWidget))
 		{
-			MyCardWidget->UpdateCardUI(BaseData); 
+			MyCardWidget->UpdateCardUI(InCardInstance);
 		}
-
-		// 위젯의 실시간 화면(Render Target)을 가져오기
-		if (UTextureRenderTarget2D* UIRenderTarget = CardUIWidget->GetRenderTarget())
-		{
-			if (DynamicMaterial)
-			{
-				DynamicMaterial->SetTextureParameterValue(TEXT("CardUITexture"), UIRenderTarget);
-				UE_LOG(LogTemp, Warning, TEXT("[CardActor] UI의 Render Target 가져오기"));
-			}
-			else UE_LOG(LogTemp, Warning, TEXT("[CardActor] DynamicMaterial 없음"));
-		}
-		else UE_LOG(LogTemp, Warning, TEXT("[CardActor] GetRenderTarget 실패"));
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[CardActor] %s 카드 생성 및 UI 매핑 완료"), BaseData ? *BaseData->CardName.ToString() : TEXT("Unknown"));
+
+	// 카드 머티리얼 등 시각적 요소 초기화
+	InitializeCardVisual(InCardInstance);
 }
 
 void APE_CardActor::SetHighlightState(bool bIsHighlighted, FLinearColor OutlineColor)

@@ -2,33 +2,33 @@
 
 #include "CardSystem/PE_CardWidget.h"
 #include "CardSystem/PE_CardData.h"
+#include "CardSystem/PE_CardInstance.h"
+#include "CardSystem/PE_CardThemeData.h"
 #include "CardSystem/PE_SkillData.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
 
-void UPE_CardWidget::UpdateCardUI(const UPE_CardData* CardData)
+void UPE_CardWidget::UpdateCardUI(UPE_CardInstance* InCardInstance)
 {
 	// 데이터가 유효한지 검사
-	if (!CardData) return;
-
-	if (CardName_Text)
+	if (!IsValid(InCardInstance))
 	{
-		CardName_Text->SetText(CardData->CardName);
+		UE_LOG(LogTemp, Warning, TEXT("[UPE_CardWidget] UpdateCardUI 실패: 인스턴스가 유효하지 않습니다."));
+		return;
 	}
 
-	if (Description_Text)
+	UPE_CardData* BaseData = InCardInstance->GetBaseCardData();
+	if (!IsValid(BaseData))
 	{
-		Description_Text->SetText(CardData->CardDescription);
+		UE_LOG(LogTemp, Warning, TEXT("[UPE_CardWidget] UpdateCardUI 실패: BaseCardData가 유효하지 않습니다."));
+		return;
 	}
 
-	if (Art_Image && CardData->CardArt)
+	if (!IsValid(GlobalCardTheme))
 	{
-		Art_Image->SetBrushFromTexture(CardData->CardArt);
+		UE_LOG(LogTemp, Warning, TEXT("[UPE_CardWidget] GlobalCardTheme이 설정되지 않았습니다. BP 위젯 속성 확인 필요."));
 	}
 
-	if (Cost_Text && CardData->SkillDataToCast)
-	{
-		int32 APCost = CardData->SkillDataToCast->BaseAPCost;
-		Cost_Text->SetText(FText::AsNumber(APCost));
-	}
+	// 실제 시각적 변경은 BP의 이벤트로 위임
+	OnCardUIUpdated(InCardInstance, BaseData, GlobalCardTheme);
 }

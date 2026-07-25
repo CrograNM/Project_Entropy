@@ -7,6 +7,7 @@
 #include "PE_CardActor.generated.h"
 
 class UPE_CardInstance;
+class UPE_CardThemeData;
 class UStaticMeshComponent;
 class UWidgetComponent;
 class UNiagaraComponent;
@@ -35,9 +36,12 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
-	/** 덱에서 카드를 생성하거나 가져올 때 DataAsset을 주입하여 카드 세팅 */
+	/** 덱에서 카드를 생성하거나 가져올 때 Data를 주입하여 카드 세팅 */
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
 	void InitializeCard(UPE_CardInstance* InCardInstance);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Logic")
+	void InitializeCardVisual(UPE_CardInstance* InCardInstance);
 
 	/** 마우스 호버링 및 특수 조건(비용 감소 등)에 따른 외곽선 하이라이트 제어 */
 	UFUNCTION(BlueprintCallable, Category = "Card|Visual")
@@ -87,6 +91,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Card|State")
 	EPECardVisualState CurrentState = EPECardVisualState::InDeck;
+
+	// --- 테마 데이터 ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Theme")
+	TObjectPtr<UPE_CardThemeData> GlobalCardTheme;
 
 	// --- 컴포넌트 ---
 
