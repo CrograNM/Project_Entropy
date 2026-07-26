@@ -5,6 +5,8 @@
 #include "CardSystem/PE_CardActor.h"
 #include "CardSystem/PE_CardInstance.h"
 #include "CardSystem/PE_CardData.h"
+#include "CardSystem/PE_SkillData.h"
+#include "CardSystem/PE_DataTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -226,41 +228,46 @@ void UACCardInteractionComponent::ReleaseCard()
 		{
 			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
 			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
+			UPE_SkillData* SkillData = BaseData ? BaseData->SkillDataToCast : nullptr;
 
-			if (true /* 즉발(Instant)일 경우 */)
+			if (SkillData)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 즉발 카드 사용"));
+				if (SkillData->TargetType == EPESkillTargetType::All_Enemies ||
+					SkillData->TargetType == EPESkillTargetType::Self)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 즉발 카드 사용"));
 
-				CastingCard = GrabbedCard;
-				CastingCard->CancelMoveToTarget();
+					CastingCard = GrabbedCard;
+					CastingCard->CancelMoveToTarget();
 
-				// 애니메이션이 진행되는 동안 다른 상호작용을 막기 위해 Waiting 상태로 전환
-				CurrentState = EPEInteractionState::Waiting;
+					// 애니메이션이 진행되는 동안 다른 상호작용을 막기 위해 Waiting 상태로 전환
+					CurrentState = EPEInteractionState::Waiting;
 
-				// 드래그 상태 해제 및 손패 빈자리 갱신 (다른 카드들이 당겨짐)
-				DeckManager->SetCastingCard(CastingCard); // 시전 카드 등록 -> 자동 정렬에서 제외 (타임라인 애니메이션을 위해)
-				DeckManager->SetDraggedCard(nullptr);
-				DeckManager->SetInCastingZone(false);
+					// 드래그 상태 해제 및 손패 빈자리 갱신 (다른 카드들이 당겨짐)
+					DeckManager->SetCastingCard(CastingCard); // 시전 카드 등록 -> 자동 정렬에서 제외 (타임라인 애니메이션을 위해)
+					DeckManager->SetDraggedCard(nullptr);
+					DeckManager->SetInCastingZone(false);
 
-				// 카드 액터에 즉발 사용 애니메이션(중앙 이동) 재생 지시
-				CastingCard->PlayInstantCastingAnimation();
-			}
-			else // 지정(Target)형 스킬일 경우
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 캐스팅 시작"));
+					// 카드 액터에 즉발 사용 애니메이션(중앙 이동) 재생 지시
+					CastingCard->PlayInstantCastingAnimation();
+				}
+				else // 지정(Target)형 스킬일 경우
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 캐스팅 시작"));
 
-				CastingCard = GrabbedCard;
-				CastingCard->CancelMoveToTarget();
-				CurrentState = EPEInteractionState::Waiting;
+					CastingCard = GrabbedCard;
+					CastingCard->CancelMoveToTarget();
+					CurrentState = EPEInteractionState::Waiting;
 
-				// 시전 카드로 먼저 꽂아 넣고 드래그를 해제 (** 순서 중요 **)
-				DeckManager->SetCastingCard(CastingCard);
-				DeckManager->SetDraggedCard(nullptr);
+					// 시전 카드로 먼저 꽂아 넣고 드래그를 해제 (** 순서 중요 **)
+					DeckManager->SetCastingCard(CastingCard);
+					DeckManager->SetDraggedCard(nullptr);
 
-				// 마지막에 구역 진입 상태를 꺼주면 내부에서 UpdateHandLayout()이 발동
-				DeckManager->SetInCastingZone(false);
+					// 마지막에 구역 진입 상태를 꺼주면 내부에서 UpdateHandLayout()이 발동
+					DeckManager->SetInCastingZone(false);
 
-				CastingCard->PlayCastingReadyAnimation();
+					CastingCard->PlayCastingReadyAnimation();
+				}
 			}
 		}
 		else
