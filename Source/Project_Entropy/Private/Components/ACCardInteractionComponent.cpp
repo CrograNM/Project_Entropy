@@ -227,14 +227,23 @@ void UACCardInteractionComponent::ReleaseCard()
 			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
 			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
 
-			if (false /* 즉발(Instant)일 경우 */)
+			if (true /* 즉발(Instant)일 경우 */)
 			{
 				UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 즉발 카드 사용"));
-				// 사용했으므로 깔끔하게 비움
+
+				CastingCard = GrabbedCard;
+				CastingCard->CancelMoveToTarget();
+
+				// 애니메이션이 진행되는 동안 다른 상호작용을 막기 위해 Waiting 상태로 전환
+				CurrentState = EPEInteractionState::Waiting;
+
+				// 드래그 상태 해제 및 손패 빈자리 갱신 (다른 카드들이 당겨짐)
+				DeckManager->SetCastingCard(CastingCard); // 시전 카드 등록 -> 자동 정렬에서 제외 (타임라인 애니메이션을 위해)
 				DeckManager->SetDraggedCard(nullptr);
 				DeckManager->SetInCastingZone(false);
-				DeckManager->DiscardCard(GrabbedCard);
-				CurrentState = EPEInteractionState::Hovering;
+
+				// 카드 액터에 즉발 사용 애니메이션(중앙 이동) 재생 지시
+				CastingCard->PlayInstantCastingAnimation();
 			}
 			else // 지정(Target)형 스킬일 경우
 			{
@@ -276,6 +285,19 @@ void UACCardInteractionComponent::OnCastingReadyFinished()
 		CurrentState = EPEInteractionState::Casting;
 		UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 시전 대기 완료, 타겟팅 시작!"));
 	}
+}
+
+void UACCardInteractionComponent::OnInstantCastFinished()
+{
+	if (CastingCard)
+	{
+		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
+		{
+			DeckManager->DiscardCard(CastingCard);
+		}
+		CastingCard = nullptr;
+	}
+	CurrentState = EPEInteractionState::Hovering;
 }
 
 void UACCardInteractionComponent::CancelCasting()

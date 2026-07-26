@@ -48,6 +48,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction|State")
 	void OnCastingReadyFinished();
 
+	/** BP에서 즉발 카드의 산화 애니메이션이 완전히 끝났을 때 C++로 알려주는 콜백 */
+	UFUNCTION(BlueprintCallable, Category = "Interaction|State")
+	void OnInstantCastFinished();
+
 	// --- Getter ---
 	EPEInteractionState GetCurrentState() const { return CurrentState; }
 	APE_CardActor* GetCastingCard() const { return CastingCard; }

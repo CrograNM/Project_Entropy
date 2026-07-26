@@ -61,6 +61,10 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayCastingReadyAnimation();
 
+	// 2-1. 즉발 카드 사용: 중앙으로 날아가 바로 산화되는 연출
+	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
+	void PlayInstantCastingAnimation();
+
 	// 3. 시전 취소: 스윽하고 원래 손패 위치로 자연스럽게 돌아가는 연출
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayCancelCastingAnimation(FTransform ReturnHandTransform);
@@ -69,7 +73,7 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "Card|Animation")
 	void PlayDiscardAnimation(FVector DiscardPileWorldLocation);
 	
-	// 5. 캐스팅 대기 중 마우스 호버링 상태 변경 (오프셋 조절용)
+	// 캐스팅 대기 중 마우스 호버링 상태 변경 (오프셋 조절용)
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void OnCastingHoverStateChanged(bool IsHovered);
 
