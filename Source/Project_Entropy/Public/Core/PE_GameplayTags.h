@@ -7,6 +7,7 @@
 
 /**
  * C++에서 안전하게 사용할 수 있도록 네이티브 게임플레이 태그를 싱글톤으로 관리하는 클래스입니다.
+ * FPE_GameplayTags::Get().Element_Normal_Fire 와 같은 방식으로 안전하게 접근 가능.
  */
 class PROJECT_ENTROPY_API FPE_GameplayTags
 {
