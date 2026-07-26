@@ -4,9 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "CardSystem/PE_SkillData.h"
+#include "CardSystem/PE_CardData.h"
+#include "CardSystem/PE_CardInstance.h"
 #include "PE_CardActor.generated.h"
 
-class UPE_CardInstance;
 class UPE_CardThemeData;
 class UStaticMeshComponent;
 class UWidgetComponent;
@@ -80,6 +82,9 @@ public:
 	/** --- Getter/Setter --- */
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
 	UPE_CardInstance* GetCardInstance() const { return CardInstance; }
+
+	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
+	UPE_SkillData* GetSkillData() const { return CardInstance ? CardInstance->GetBaseCardData()->SkillDataToCast : nullptr; }
 
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
 	void SetDynamicMaterial(UMaterialInstanceDynamic* InMaterial) { DynamicMaterial = InMaterial; }
