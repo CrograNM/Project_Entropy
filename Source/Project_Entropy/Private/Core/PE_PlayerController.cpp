@@ -34,49 +34,38 @@ void APE_PlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 게임 모드에서 인풋 모드를 변경 해주지만 한번 더 호출
-	APE_GameMode* GameMode = Cast<APE_GameMode>(UGameplayStatics::GetGameMode(this));
-	if (GameMode)
+	// 멀티플레이어 환경에서는 GameMode가 서버에만 존재하므로 HasAuthority 체크를 먼저 수행
+	if (HasAuthority())
 	{
-		SwitchInputMode(GameMode->GetCurrentState());
+		APE_GameMode* GameMode = Cast<APE_GameMode>(UGameplayStatics::GetGameMode(this));
+		if (GameMode)
+		{
+			SwitchInputMode(GameMode->GetCurrentState());
+			// 서버인 경우 클라이언트의 인풋도 맞춰주기 위해 RPC 호출
+			Client_SetupInputMode(GameMode->GetCurrentState());
+		}
 	}
-	
-	// ----- 참조 초기화 -----
-	APE_BattleGameMode* BattleGameMode = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this));
-	if (BattleGameMode)
+	// 클라이언트/서버 공통 참조 초기화 (GameMode 의존성 제거)
+	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
 	{
-		// AACGridSystem
-		if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
-		{
-			GridSystem = Cast<AACGridSystem>(FoundGridActor);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 월드에 GridSystem 액터가 없음"));
-		}
-		
-		// UPE_TurnManagerComponent
-		if (BattleGameMode->GetTurnManager())
+		GridSystem = Cast<AACGridSystem>(FoundGridActor);
+	}
+
+	if (APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter = PC;
+	}
+
+	// [주의] 추후 UPE_TurnManagerComponent를 GameState로 이동시킨 뒤, 아래 로직을 GameState 탐색으로 교체해야 함
+	if (HasAuthority())
+	{
+		APE_BattleGameMode* BattleGameMode = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this));
+		if (BattleGameMode && BattleGameMode->GetTurnManager())
 		{
 			TurnManager = BattleGameMode->GetTurnManager();
 		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 턴 매니저가 존재하지 않음"));
-		}
-		
-		// APE_PlayerCharacter
-		if (APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn()))
-		{
-			PlayerCharacter = PC;
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[APE_PlayerController::BeginPlay] 플레이어 캐릭터가 존재하지 않음"));
-		}
 	}
 
-	// 테스트용 덱 데이터가 설정되어 있다면 덱 매니저 초기화 진행
 	if (DeckManagerComp && TestStartingDeck.Num() > 0)
 	{
 		DeckManagerComp->InitializeDeck(TestStartingDeck);
@@ -139,7 +128,10 @@ void APE_PlayerController::SetupInputComponent()
 		}
 	}
 }
-
+void APE_PlayerController::Client_SetupInputMode_Implementation(EPEGameState NewState)
+{
+	SwitchInputMode(NewState);
+}
 
 // ----- [Update] -----
 void APE_PlayerController::PlayerTick(float DeltaTime)
@@ -292,42 +284,14 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 				return;
 			}
 
-			// 정상적인 사거리 내 타일을 클릭 시 이동 확정
-			if (TargetTile && PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent() && PlayerCharacter->GetCameraControlComponent() && ValidRangeTiles.Contains(TargetTile))
+			// 로컬에서 직접 움직이는 대신 서버로 이동 및 검증 요청
+			Server_RequestGridMove(TargetTile);
+
+			// 이동 요청 후 로컬 클라이언트의 UI 및 모드는 즉시 초기화, 추후 조작감 수정 작업 필요
+			CancelCurrentAction();
+			if (PlayerCharacter && PlayerCharacter->GetCameraControlComponent())
 			{
-				// 이동 경로 추출
-				TArray<AACTile*> Path = GridSystem->CalculatePath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), TargetTile->GetGridPosition());
-
-				// 이동에 필요한 AP 소모 (1AP)
-				if (PlayerCharacter->GetStatComponent()->ConsumeAP(1))
-				{
-					// 도착지(TargetTile)를 제외한 모든 사거리 타일 원상복구
-					GridSystem->ClearAllHighlights();
-					TargetTile->SetHighlightState(ETileHighlightType::Hovered);
-
-					// 캐릭터에게 이동 명령 하달 및 모드 종료
-					PlayerCharacter->GetGridMovementComponent()->MoveAlongPath(Path);
-
-					// 정상적으로 이동 '완료(초기화)' 처리
-					bIsGridMoveActivated = false;
-					ValidRangeTiles.Empty();
-					LastHoveredTilePos = FIntPoint(-999, -999);
-
-					// 카드 상호작용 재활성화
-					if (CardInteractionComp)
-					{
-						CardInteractionComp->SetInteractionEnabled(true);
-					}
-
-					// 카메라 리셋
-					PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
-				}
-				else
-				{
-					// AP 부족 시 이동 취소
-					CancelCurrentAction();
-					UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::OnMouseClick] 이동 실패: AP 부족"));
-				}
+				PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
 			}
 		}
 	}
@@ -494,5 +458,67 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
 		break;
 	}
+	}
+}
+
+bool APE_PlayerController::Server_RequestGridMove_Validate(AACTile* TargetTile)
+{
+	return TargetTile != nullptr;
+}
+void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* TargetTile)
+{
+	if (!GridSystem || !PlayerCharacter || !PlayerCharacter->GetGridMovementComponent() || !PlayerCharacter->GetStatComponent()) return;
+
+	FIntPoint StartPos = PlayerCharacter->GetGridMovementComponent()->GetGridPosition();
+	TArray<AACTile*> Path = GridSystem->CalculatePath(StartPos, TargetTile->GetGridPosition());
+
+	if (Path.IsEmpty()) return;
+
+	AACTile* FinalDestination = Path.Last();
+
+	// [도착지 충돌 보정 로직]: 모든 컨트롤러를 순회하며 겹치는 목적지가 있는지 확인
+	bool bDestinationOccupied = false;
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APE_PlayerController* OtherPC = Cast<APE_PlayerController>(Iterator->Get());
+		if (OtherPC && OtherPC != this && OtherPC->PlayerCharacter)
+		{
+			if (UACGridMovementComponent* OtherMoveComp = OtherPC->PlayerCharacter->GetGridMovementComponent())
+			{
+				FIntPoint OtherPos = OtherMoveComp->GetGridPosition();
+				FIntPoint OtherTarget = OtherMoveComp->GetTargetGridPosition();
+				FIntPoint MyTarget = FinalDestination->GetGridPosition();
+
+				// 이미 누군가 위치해 있거나 해당 지점을 향해 이동(예약) 중이라면 충돌
+				if (MyTarget == OtherPos || MyTarget == OtherTarget)
+				{
+					bDestinationOccupied = true;
+					break;
+				}
+			}
+		}
+	}
+
+	// 겹친다면 이전 타일로 보정
+	if (bDestinationOccupied)
+	{
+		if (Path.Num() > 1)
+		{
+			Path.Pop();
+			FinalDestination = Path.Last();
+		}
+		else
+		{
+			// 제자리에서 막힌 경우 이동 취소
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 도착지가 모두 막혀 이동을 취소합니다."));
+			return;
+		}
+	}
+
+	// 서버 권한으로 AP 소모 후 멀티캐스트 전송
+	if (PlayerCharacter->GetStatComponent()->ConsumeAP(1))
+	{
+		// 이 순간부터 해당 PC의 TargetGridPosition이 갱신됨
+		PlayerCharacter->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
 	}
 }

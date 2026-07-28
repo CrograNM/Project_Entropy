@@ -4,10 +4,12 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Grid/ACTile.h"
+#include "Net/UnrealNetwork.h"
 
 UACGridMovementComponent::UACGridMovementComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	SetIsReplicatedByDefault(true); // 멀티플레이어 동기화 활성화
 
 	GridPosition = FIntPoint(-999, -999);
 	GridMoveSpeed = 600.f;       
@@ -21,6 +23,19 @@ void UACGridMovementComponent::BeginPlay()
 	Super::BeginPlay();
 }
 
+void UACGridMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UACGridMovementComponent, GridPosition);
+	DOREPLIFETIME(UACGridMovementComponent, TargetGridPosition);
+}
+
+void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath)
+{
+	MoveAlongPath(InPath);
+}
+
 void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath)
 {
 	if (InPath.Num() == 0) return;
@@ -28,6 +43,12 @@ void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath)
 	SavedPath = InPath;
 	CurrentPathIndex = 0;
 	bIsMovingOnGrid = true;
+
+	// 이동 시작 시 서버 권한으로 최종 목적지 좌표 예약 갱신
+	if (GetOwner()->HasAuthority())
+	{
+		TargetGridPosition = SavedPath.Last()->GetGridPosition();
+	}
 
 	SetNextPathStep();
 }
@@ -49,7 +70,12 @@ void UACGridMovementComponent::SetNextPathStep()
 		bIsMovingOnGrid = false;
 		SavedPath.Empty();
 		CurrentPathIndex = 0;
-		
+
+		if (GetOwner()->HasAuthority())
+		{
+			TargetGridPosition = FIntPoint(-999, -999); // 이동 종료 시 예약 해제
+		}
+
 		// 애니메이션 정지를 위해 속도 리셋
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
 		{

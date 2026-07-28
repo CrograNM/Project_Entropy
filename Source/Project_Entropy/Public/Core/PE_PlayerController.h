@@ -46,6 +46,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SwitchInputMode(EPEGameState NewState); // [Test] 인풋 모드 전환 (Base/Battle) 
 
+	// ----- [Multiplayer Network Functions] -----
+	UFUNCTION(Client, Reliable)
+	void Client_SetupInputMode(EPEGameState NewState); // 클라이언트 접속 시 인풋 모드를 강제 세팅하기 위한 RPC
+
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_RequestGridMove(AACTile* TargetTile); // 클라이언트에서 타일 클릭 시 서버로 이동 요청 (충돌 처리 포함)
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
