@@ -6,6 +6,7 @@
 #include "Components/ACCameraControlComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Core/PE_BattleGameMode.h"
+#include "Core/PE_GameState.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Grid/ACGridSystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -46,9 +47,9 @@ void APE_PlayerCharacter::BeginPlay()
 	}
 	
 	// TurnManager의 페이즈 변경 신호를 구독하여 내 턴 시작 시 AP를 회복하도록 설정
-	if (APE_BattleGameMode* BattleGM = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this)))
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 	{
-		if (UPE_TurnManagerComponent* TurnManager = BattleGM->GetTurnManager())
+		if (UPE_TurnManagerComponent* TurnManager = GS->GetTurnManager())
 		{
 			TurnManager->OnPhaseChanged.AddDynamic(this, &APE_PlayerCharacter::OnBattlePhaseChanged);
 		}

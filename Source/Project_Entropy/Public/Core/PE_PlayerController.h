@@ -53,6 +53,10 @@ public:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_RequestGridMove(AACTile* TargetTile); // 클라이언트에서 타일 클릭 시 서버로 이동 요청 (충돌 처리 포함)
 
+	// 추가: 서버 측에서 강제로 클라이언트의 이동/캐스팅 액션을 취소시킴 (턴 종료 시 사용)
+	UFUNCTION(Client, Reliable)
+	void Client_CancelCurrentAction();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

@@ -6,14 +6,25 @@
 #include "Core/PE_PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "Net/UnrealNetwork.h"
 
 UPE_TurnManagerComponent::UPE_TurnManagerComponent()
 {
 	// 신호만 주고받으므로 틱 연산이 전혀 필요 없습니다. (최적화)
 	PrimaryComponentTick.bCanEverTick = false;
-	
+	SetIsReplicatedByDefault(true); // 컴포넌트 동기화 활성화
+
 	CurrentPhase = EPEBattlePhase::None;
 	CurrentTurnCount = 0;
+}
+
+void UPE_TurnManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 클라이언트들이 턴 수와 현재 페이즈를 알 수 있도록 복제
+	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentPhase);
+	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentTurnCount);
 }
 
 void UPE_TurnManagerComponent::BeginPlay()
@@ -35,15 +46,18 @@ void UPE_TurnManagerComponent::StartBattle()
 
 void UPE_TurnManagerComponent::EndCurrentPhase()
 {
-	APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
-	// 현재 페이즈에 따라 다음 페이즈로 바통을 넘깁니다.
+	// 서버에서만 실행되어야 함
+	if (!GetOwner()->HasAuthority()) return;
 	switch (CurrentPhase)
 	{
 	case EPEBattlePhase::PlayerTurn:
-		if (PC)
+		// 모든 컨트롤러를 순회하며(멀티플레이어 대응), 강제 조작 취소 RPC 전송
+		for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
 		{
-			// 플레이어 턴 종료 시, 이동 모드가 켜져있다면 강제로 끄고 사거리 하이라이트를 초기화
-			PC->CancelCurrentAction();
+			if (APE_PlayerController* PC = Cast<APE_PlayerController>(Iterator->Get()))
+			{
+				PC->Client_CancelCurrentAction();
+			}
 		}
 		StartEnemyPhase();
 		break;
@@ -53,7 +67,6 @@ void UPE_TurnManagerComponent::EndCurrentPhase()
 		break;
 
 	case EPEBattlePhase::EnvironmentTurn:
-		// 한 바퀴 사이클이 끝나면 턴 수를 올리고 다시 플레이어 턴으로
 		CurrentTurnCount++;
 		UE_LOG(LogTemp, Warning, TEXT("[UPE_TurnManagerComponent::EndCurrentPhase] --- 새로운 턴 시작: %d ---"), CurrentTurnCount);
 		ChangePhase(EPEBattlePhase::PlayerTurn);
@@ -66,22 +79,28 @@ void UPE_TurnManagerComponent::EndCurrentPhase()
 
 void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 {
+	if (!GetOwner()->HasAuthority()) return; // 페이즈 변경은 서버만 가능
 	if (CurrentPhase == NewPhase) return;
 
+	EPEBattlePhase OldPhase = CurrentPhase;
 	CurrentPhase = NewPhase;
 	
-	// Enum 이름을 String으로 변환하여 깔끔하게 로그 출력
+	// 서버 로컬 델리게이트 발동 (클라이언트는 OnRep_CurrentPhase에서 발동)
+	OnRep_CurrentPhase(OldPhase);
+
+	if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
+	{
+		EndCurrentPhase();
+	}
+}
+
+void UPE_TurnManagerComponent::OnRep_CurrentPhase(EPEBattlePhase OldPhase)
+{
 	FString PhaseName = UEnum::GetValueAsString(CurrentPhase);
 	UE_LOG(LogTemp, Warning, TEXT("[UPE_TurnManagerComponent::ChangePhase] 페이즈 변경: %s"), *PhaseName);
 
-	// 이 델리게이트가 호출되면, 구독하고 있는 모든 객체가 일제히 반응합니다.
+	// 클라이언트 및 서버 모두 이 델리게이트를 통해 UI 갱신 등 반응
 	OnPhaseChanged.Broadcast(CurrentPhase);
-	
-	// 일단 환경 턴은 스킵 (임시)
-	if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
-	{
-		EndCurrentPhase(); 
-	}
 }
 
 void UPE_TurnManagerComponent::StartEnemyPhase()

@@ -29,6 +29,7 @@ class PROJECT_ENTROPY_API UPE_TurnManagerComponent : public UActorComponent
 
 public:	
 	UPE_TurnManagerComponent();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** 페이즈가 바뀔 때마다 발동하는 이벤트 */
 	UPROPERTY(BlueprintAssignable, Category = "Turn System")
@@ -62,9 +63,13 @@ private:
 	UPROPERTY()
 	TArray<APE_EnemyBase*> EnemyQueue;
 	
-	UPROPERTY(VisibleAnywhere, Category = "Turn System")
+	// --- 멀티플레이어 동기화 변수 및 함수 ---
+	UFUNCTION()
+	void OnRep_CurrentPhase(EPEBattlePhase OldPhase);
+
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentPhase, Category = "Turn System")
 	EPEBattlePhase CurrentPhase;
 
-	UPROPERTY(VisibleAnywhere, Category = "Turn System")
+	UPROPERTY(VisibleAnywhere, Replicated, Category = "Turn System")
 	int32 CurrentTurnCount;
 };

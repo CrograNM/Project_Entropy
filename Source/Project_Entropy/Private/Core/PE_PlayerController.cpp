@@ -8,6 +8,7 @@
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Core/PE_BattleGameMode.h"
+#include "Core/PE_GameState.h"
 #include "Core/PE_CheatManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/ACDeckManagerComponent.h"
@@ -56,14 +57,10 @@ void APE_PlayerController::BeginPlay()
 		PlayerCharacter = PC;
 	}
 
-	// [주의] 추후 UPE_TurnManagerComponent를 GameState로 이동시킨 뒤, 아래 로직을 GameState 탐색으로 교체해야 함
-	if (HasAuthority())
+	// 수정됨: GameMode가 아닌 GameState에서 턴 매니저 캐싱 (서버/클라 모두 접근 가능)
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 	{
-		APE_BattleGameMode* BattleGameMode = Cast<APE_BattleGameMode>(UGameplayStatics::GetGameMode(this));
-		if (BattleGameMode && BattleGameMode->GetTurnManager())
-		{
-			TurnManager = BattleGameMode->GetTurnManager();
-		}
+		TurnManager = GS->GetTurnManager();
 	}
 
 	if (DeckManagerComp && TestStartingDeck.Num() > 0)
@@ -177,7 +174,7 @@ void APE_PlayerController::ToggleGridMovementActivation()
 	// 필터링: 배틀모드, 플레이어 턴, GridSystem 존재 여부
 	if (!GridSystem) return;
 	if (CurrentInputMode != EPEGameState::Battle) return;
-	if (TurnManager->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
+	if (!TurnManager || TurnManager->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
 	
 	// 이동 모드 토글
 	if (!bIsGridMoveActivated)
@@ -204,6 +201,12 @@ void APE_PlayerController::ToggleGridMovementActivation()
 		// 이동 모드 비활성화, 조작 초기화
 		CancelCurrentAction();
 	}
+}
+
+// 클라이언트 강제 조작 취소 RPC 구현부 추가
+void APE_PlayerController::Client_CancelCurrentAction_Implementation()
+{
+	CancelCurrentAction(); // 기존 로컬 함수 호출
 }
 
 void APE_PlayerController::CancelCurrentAction()
