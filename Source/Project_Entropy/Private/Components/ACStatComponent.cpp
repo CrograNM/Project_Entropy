@@ -1,10 +1,12 @@
 // Copyright CrograNM
 
 #include "Components/ACStatComponent.h"
+#include "Net/UnrealNetwork.h"
 
 UACStatComponent::UACStatComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	SetIsReplicatedByDefault(true); // 컴포넌트 복제 활성화
 
 	MaxHP = 100.f;
 	CurrentHP = MaxHP;
@@ -13,58 +15,121 @@ UACStatComponent::UACStatComponent()
 	bIsDead = false;
 }
 
+void UACStatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UACStatComponent, bIsDead);
+	DOREPLIFETIME(UACStatComponent, MaxHP);
+	DOREPLIFETIME(UACStatComponent, CurrentHP);
+	DOREPLIFETIME(UACStatComponent, MaxAP);
+	DOREPLIFETIME(UACStatComponent, CurrentAP);
+}
+
 void UACStatComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	CurrentHP = MaxHP;
-	CurrentAP = MaxAP;
+	if (GetOwner()->HasAuthority())
+	{
+		CurrentHP = MaxHP;
+		CurrentAP = MaxAP;
+	}
+}
+
+void UACStatComponent::SetMaxHP(float InMaxHP)
+{
+	if (!GetOwner()->HasAuthority()) return;
+	MaxHP = InMaxHP;
+	OnHPChanged.Broadcast(CurrentHP, MaxHP, 0.f);
+}
+
+void UACStatComponent::SetHP(float InHP)
+{
+	if (!GetOwner()->HasAuthority()) return;
+	CurrentHP = FMath::Clamp(InHP, 0.f, MaxHP);
+	OnHPChanged.Broadcast(CurrentHP, MaxHP, 0.f);
+}
+
+void UACStatComponent::SetMaxAP(int32 InMaxAP)
+{
+	if (!GetOwner()->HasAuthority()) return;
+	MaxAP = InMaxAP;
+	OnAPChanged.Broadcast(CurrentAP, MaxAP, 0);
+}
+
+void UACStatComponent::SetAP(int32 InAP)
+{
+	if (!GetOwner()->HasAuthority()) return;
+	CurrentAP = InAP;
+	OnAPChanged.Broadcast(CurrentAP, MaxAP, 0);
 }
 
 void UACStatComponent::TakeDamage(float Amount)
 {
-	if (bIsDead || Amount <= 0.f) return;
+	if (!GetOwner()->HasAuthority() || bIsDead || Amount <= 0.f) return;
 
+	float OldHP = CurrentHP;
 	CurrentHP = FMath::Clamp(CurrentHP - Amount, 0.f, MaxHP);
-	OnHPChanged.Broadcast(CurrentHP, MaxHP, -Amount);
+
+	// 서버 로컬 UI 갱신용 호출
+	OnRep_CurrentHP(OldHP);
 
 	if (CurrentHP <= 0.f)
 	{
 		bIsDead = true;
-		OnDeath.Broadcast();
+		OnRep_IsDead();
 	}
 	UE_LOG(LogTemp, Warning, TEXT("[UACStatComponent::TakeDamage] 체력 감소: %f, 현재 HP: %f"), Amount, CurrentHP);
 }
 
 void UACStatComponent::Heal(float Amount)
 {
-	if (bIsDead || Amount <= 0.f) return;
+	if (!GetOwner()->HasAuthority() || bIsDead || Amount <= 0.f) return;
 
+	float OldHP = CurrentHP;
 	CurrentHP = FMath::Clamp(CurrentHP + Amount, 0.f, MaxHP);
-	OnHPChanged.Broadcast(CurrentHP, MaxHP, Amount);
-	UE_LOG(LogTemp, Warning, TEXT("[UACStatComponent::Heal] 체력 회복: %f, 현재 HP: %f"), Amount, CurrentHP);
+	OnRep_CurrentHP(OldHP);
 }
 
 bool UACStatComponent::ConsumeAP(int32 Amount)
 {
-	if (bIsDead || Amount <= 0) return false;
+	if (!GetOwner()->HasAuthority() || bIsDead || Amount <= 0) return false;
 
 	if (CurrentAP >= Amount)
 	{
+		int32 OldAP = CurrentAP;
 		CurrentAP -= Amount;
-		OnAPChanged.Broadcast(CurrentAP, MaxAP, -Amount);
+		OnRep_CurrentAP(OldAP);
 		return true;
 	}
-	
-	UE_LOG(LogTemp, Warning, TEXT("[UACStatComponent::ConsumeAP] 행동력(AP)이 부족합니다!"));
+
 	return false;
 }
 
 void UACStatComponent::ResetAP()
 {
-	if (bIsDead) return;
+	if (!GetOwner()->HasAuthority() || bIsDead) return;
 
-	int32 RecoveredAmount = MaxAP - CurrentAP;
+	int32 OldAP = CurrentAP;
 	CurrentAP = MaxAP;
-	OnAPChanged.Broadcast(CurrentAP, MaxAP, RecoveredAmount);
-	UE_LOG(LogTemp, Warning, TEXT("[UACStatComponent::ResetAP] 행동력(AP) 초기화: 현재 AP: %d"), CurrentAP);
+	OnRep_CurrentAP(OldAP);
+}
+
+/* --- OnRep 함수들 (클라이언트 UI 갱신을 위해 델리게이트 방송) --- */
+void UACStatComponent::OnRep_CurrentHP(float OldHP)
+{
+	OnHPChanged.Broadcast(CurrentHP, MaxHP, CurrentHP - OldHP);
+}
+
+void UACStatComponent::OnRep_CurrentAP(int32 OldAP)
+{
+	OnAPChanged.Broadcast(CurrentAP, MaxAP, CurrentAP - OldAP);
+}
+
+void UACStatComponent::OnRep_IsDead()
+{
+	if (bIsDead)
+	{
+		OnDeath.Broadcast();
+	}
 }

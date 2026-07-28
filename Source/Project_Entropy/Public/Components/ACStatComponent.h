@@ -18,19 +18,20 @@ class PROJECT_ENTROPY_API UACStatComponent : public UActorComponent
 
 public:
 	UACStatComponent();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/* --- Setter --- */
 	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
-	void SetMaxHP(float InMaxHP) { MaxHP = InMaxHP; OnHPChanged.Broadcast(CurrentHP, MaxHP, 0.f); }
-	
+	void SetMaxHP(float InMaxHP);
+
 	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
-	void SetHP(float InHP) { CurrentHP = FMath::Clamp(InHP, 0.f, MaxHP); OnHPChanged.Broadcast(CurrentHP, MaxHP, 0.f); }
-	
+	void SetHP(float InHP);
+
 	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
-	void SetMaxAP(int32 InMaxAP) { MaxAP = InMaxAP; OnAPChanged.Broadcast(CurrentAP, MaxAP, 0); }
-	
+	void SetMaxAP(int32 InMaxAP);
+
 	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
-	void SetAP(int32 InAP) { CurrentAP = InAP; OnAPChanged.Broadcast(CurrentAP, MaxAP, 0); }
+	void SetAP(int32 InAP);
 	
 	UFUNCTION(BlueprintCallable, Category = "Stats | Setters")
 	void SetMoveRange(int32 InRange) { MoveRange = InRange; }
@@ -72,18 +73,31 @@ public:
 	FORCEINLINE int32 GetMoveRange() const { return MoveRange; }
 
 protected:
+	// 변수들이 변경될 때 클라이언트에서 호출될 OnRep 함수들
+	UFUNCTION()
+	void OnRep_CurrentHP(float OldHP);
+
+	UFUNCTION()
+	void OnRep_CurrentAP(int32 OldAP);
+
+	UFUNCTION()
+	void OnRep_IsDead();
+
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_IsDead, Category = "Stats|State")
 	bool bIsDead;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats|HP")
+	UPROPERTY(EditAnywhere, Replicated, BlueprintReadWrite, Category = "Stats|HP")
 	float MaxHP;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats|HP")
+
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentHP, BlueprintReadOnly, Category = "Stats|HP")
 	float CurrentHP;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats|AP")
+	UPROPERTY(EditAnywhere, Replicated, BlueprintReadWrite, Category = "Stats|AP")
 	int32 MaxAP;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats|AP")
+
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentAP, BlueprintReadOnly, Category = "Stats|AP")
 	int32 CurrentAP;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats|Movement")
-	int32 MoveRange = 4; // 기본 4칸
+	int32 MoveRange = 4;
 };
