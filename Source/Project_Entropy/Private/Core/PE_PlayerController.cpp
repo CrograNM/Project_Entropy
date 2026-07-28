@@ -52,21 +52,32 @@ void APE_PlayerController::BeginPlay()
 		GridSystem = Cast<AACGridSystem>(FoundGridActor);
 	}
 
-	if (APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(GetPawn()))
-	{
-		PlayerCharacter = PC;
-	}
-
-	// 수정됨: GameMode가 아닌 GameState에서 턴 매니저 캐싱 (서버/클라 모두 접근 가능)
-	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
-	{
-		TurnManager = GS->GetTurnManager();
-	}
-
 	if (DeckManagerComp && TestStartingDeck.Num() > 0)
 	{
 		DeckManagerComp->InitializeDeck(TestStartingDeck);
 	}
+}
+
+// 지연 초기화 헬퍼 함수 구현 (접근 시 비어있다면 동적으로 채워넣음)
+APE_PlayerCharacter* APE_PlayerController::GetCachedPlayerCharacter()
+{
+	if (!PlayerCharacter)
+	{
+		PlayerCharacter = Cast<APE_PlayerCharacter>(GetPawn());
+	}
+	return PlayerCharacter;
+}
+
+UPE_TurnManagerComponent* APE_PlayerController::GetCachedTurnManager()
+{
+	if (!TurnManager)
+	{
+		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+		{
+			TurnManager = GS->GetTurnManager();
+		}
+	}
+	return TurnManager;
 }
 
 void APE_PlayerController::SetupInputComponent()
@@ -148,14 +159,16 @@ void APE_PlayerController::UpdateGridHovering()
 	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
 	{
 		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
-		if (HoveredTile && PlayerCharacter)
+		APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+
+		if (HoveredTile && PC)
 		{
 			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
 
 			if (CurrentTilePos != LastHoveredTilePos)
 			{
 				LastHoveredTilePos = CurrentTilePos;
-				GridSystem->HighlightPath(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+				GridSystem->HighlightPath(PC->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
 			}
 		}
 	}
@@ -174,8 +187,11 @@ void APE_PlayerController::ToggleGridMovementActivation()
 	// 필터링: 배틀모드, 플레이어 턴, GridSystem 존재 여부
 	if (!GridSystem) return;
 	if (CurrentInputMode != EPEGameState::Battle) return;
-	if (!TurnManager || TurnManager->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
-	
+
+	// 동적 턴 매니저 호출 및 Null 예외 처리
+	UPE_TurnManagerComponent* TM = GetCachedTurnManager();
+	if (!TM || TM->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
+
 	// 이동 모드 토글
 	if (!bIsGridMoveActivated)
 	{
@@ -188,12 +204,13 @@ void APE_PlayerController::ToggleGridMovementActivation()
 			CardInteractionComp->SetInteractionEnabled(false);
 		}
 
-		// 이동 범위 표시
-		if (PlayerCharacter && PlayerCharacter->GetGridMovementComponent() && PlayerCharacter->GetStatComponent())
+		// 동적 캐릭터 호출
+		APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+		if (PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
 		{
-			const int32 Range = PlayerCharacter->GetStatComponent()->GetMoveRange();
-			ValidRangeTiles = GridSystem->ShowMovementRange(PlayerCharacter->GetGridMovementComponent()->GetGridPosition(), Range);
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::ToggleMovementMode] 이동 모드 활성화 - 사거리 표시 작동"));
+			const int32 Range = PC->GetStatComponent()->GetMoveRange();
+			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 이동 모드 활성화 작동"));
 		}
 	}
 	else
@@ -211,33 +228,26 @@ void APE_PlayerController::Client_CancelCurrentAction_Implementation()
 
 void APE_PlayerController::CancelCurrentAction()
 {
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+
 	// [카메라 리셋]
-	if (PlayerCharacter && PlayerCharacter->GetCameraControlComponent())
+	if (PC && PC->GetCameraControlComponent())
 	{
-		PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
+		PC->GetCameraControlComponent()->ResetCameraPosition();
 	}
-	
+
 	// [이동 모드 취소]
 	if (bIsGridMoveActivated)
 	{
 		bIsGridMoveActivated = false;
+		if (CardInteractionComp) CardInteractionComp->SetInteractionEnabled(true);
+		if (GridSystem) GridSystem->ClearAllHighlights();
 
-		// 카드 상호작용 재활성화
-		if (CardInteractionComp)
-		{
-			CardInteractionComp->SetInteractionEnabled(true);
-		}
-
-		if (GridSystem)
-		{
-			GridSystem->ClearAllHighlights();
-		}
 		ValidRangeTiles.Empty();
 		LastHoveredTilePos = FIntPoint(-999, -999);
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::CancelCurrentAction] 이동 조작이 취소되었습니다."));
 	}
 
-	// [캐스팅 취소]
+	// [카드 상호작용 취소]
 	if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
 	{
 		CardInteractionComp->CancelCasting();
@@ -292,9 +302,9 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 
 			// 이동 요청 후 로컬 클라이언트의 UI 및 모드는 즉시 초기화, 추후 조작감 수정 작업 필요
 			CancelCurrentAction();
-			if (PlayerCharacter && PlayerCharacter->GetCameraControlComponent())
+			if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
 			{
-				PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
+				PC->GetCameraControlComponent()->ResetCameraPosition();
 			}
 		}
 	}
@@ -364,9 +374,10 @@ void APE_PlayerController::OnCameraMove(const FInputActionValue& Value)
 	bShowMouseCursor = false;
 
 	FVector2D MoveVector = Value.Get<FVector2D>();
-	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
+	// 동적 캐릭터 호출을 통한 컴포넌트 접근
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
 	{
-		PlayerCharacter->GetCameraControlComponent()->PanCamera(MoveVector);
+		PC->GetCameraControlComponent()->PanCamera(MoveVector);
 	}
 }
 
@@ -377,9 +388,9 @@ void APE_PlayerController::OnCameraRotate(const FInputActionValue& Value)
 	bShowMouseCursor = false;
 
 	FVector2D RotateVector = Value.Get<FVector2D>();
-	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
 	{
-		PlayerCharacter->GetCameraControlComponent()->RotateCamera(RotateVector);
+		PC->GetCameraControlComponent()->RotateCamera(RotateVector);
 	}
 }
 
@@ -387,10 +398,9 @@ void APE_PlayerController::OnCameraReset(const FInputActionValue& Value)
 {
 	if (CurrentInputMode != EPEGameState::Battle) return;
 
-	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
 	{
-		// 캐릭터 카메라 리셋 호출
-		PlayerCharacter->GetCameraControlComponent()->ResetCameraPosition();
+		PC->GetCameraControlComponent()->ResetCameraPosition();
 	}
 }
 
@@ -400,9 +410,9 @@ void APE_PlayerController::OnCameraHeight(const FInputActionValue& Value)
 
 	// Axis1D 타입이므로 float 값으로 받아옴
 	float HeightInput = Value.Get<float>();
-	if (IsValid(PlayerCharacter) && PlayerCharacter->GetCameraControlComponent())
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
 	{
-		PlayerCharacter->GetCameraControlComponent()->AdjustCameraHeight(HeightInput);
+		PC->GetCameraControlComponent()->AdjustCameraHeight(HeightInput);
 	}
 }
 
@@ -470,9 +480,11 @@ bool APE_PlayerController::Server_RequestGridMove_Validate(AACTile* TargetTile)
 }
 void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* TargetTile)
 {
-	if (!GridSystem || !PlayerCharacter || !PlayerCharacter->GetGridMovementComponent() || !PlayerCharacter->GetStatComponent()) return;
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
 
-	FIntPoint StartPos = PlayerCharacter->GetGridMovementComponent()->GetGridPosition();
+	if (!GridSystem || !PC || !PC->GetGridMovementComponent() || !PC->GetStatComponent()) return;
+
+	FIntPoint StartPos = PC->GetGridMovementComponent()->GetGridPosition();
 	TArray<AACTile*> Path = GridSystem->CalculatePath(StartPos, TargetTile->GetGridPosition());
 
 	if (Path.IsEmpty()) return;
@@ -484,9 +496,9 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
 		APE_PlayerController* OtherPC = Cast<APE_PlayerController>(Iterator->Get());
-		if (OtherPC && OtherPC != this && OtherPC->PlayerCharacter)
+		if (OtherPC && OtherPC != this && OtherPC->GetCachedPlayerCharacter())
 		{
-			if (UACGridMovementComponent* OtherMoveComp = OtherPC->PlayerCharacter->GetGridMovementComponent())
+			if (UACGridMovementComponent* OtherMoveComp = OtherPC->GetCachedPlayerCharacter()->GetGridMovementComponent())
 			{
 				FIntPoint OtherPos = OtherMoveComp->GetGridPosition();
 				FIntPoint OtherTarget = OtherMoveComp->GetTargetGridPosition();
@@ -519,9 +531,9 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 	}
 
 	// 서버 권한으로 AP 소모 후 멀티캐스트 전송
-	if (PlayerCharacter->GetStatComponent()->ConsumeAP(1))
+	if (PC->GetStatComponent()->ConsumeAP(1))
 	{
 		// 이 순간부터 해당 PC의 TargetGridPosition이 갱신됨
-		PlayerCharacter->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
+		PC->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
 	}
 }

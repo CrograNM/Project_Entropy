@@ -7,6 +7,7 @@
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h" // 캡슐 컴포넌트 제어를 위해 추가
 
 APE_CharacterBase::APE_CharacterBase()
 {
@@ -18,6 +19,12 @@ APE_CharacterBase::APE_CharacterBase()
 	bUseControllerRotationYaw = false;
 	GetCharacterMovement()->bOrientRotationToMovement = true; 
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 640.f, 0.f); 
+
+	if (GetCapsuleComponent())
+	{
+		// 다른 캐릭터(Pawn 채널)와의 물리적 충돌(Block)을 무시(Ignore)로 변경
+		GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	}
 
 	// 핵심 컴포넌트 생성
 	GridMovement = CreateDefaultSubobject<UACGridMovementComponent>(TEXT("GridMovement"));

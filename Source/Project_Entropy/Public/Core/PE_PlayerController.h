@@ -61,6 +61,13 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 
+	// --- [안전한 멀티플레이어 참조 헬퍼 함수] ---
+	UFUNCTION(BlueprintCallable, Category = "References")
+	APE_PlayerCharacter* GetCachedPlayerCharacter();
+
+	UFUNCTION(BlueprintCallable, Category = "References")
+	UPE_TurnManagerComponent* GetCachedTurnManager();
+
 	// ----- [Input Mapping Contexts & Actions] -----
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Context", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputMappingContext> IMC_DirectMove;

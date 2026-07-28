@@ -14,11 +14,16 @@ APE_GameMode::APE_GameMode()
 void APE_GameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	// 시작 시 현재 상태에 맞춰 플레이어 컨트롤러의 입력 모드를 세팅 유도
-	APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(this, 0));
-	if (PC)
+}
+
+void APE_GameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+
+	// 접속한 플레이어(호스트 및 클라이언트 모두 포함)에게 현재 게임 모드에 맞는 인풋 상태를 RPC로 전송
+	if (APE_PlayerController* PC = Cast<APE_PlayerController>(NewPlayer))
 	{
-		PC->SwitchInputMode(CurrentState);
+		PC->Client_SetupInputMode(CurrentState);
+		UE_LOG(LogTemp, Warning, TEXT("[APE_GameMode] 플레이어 %s 접속, 인풋 모드 갱신 요청."), *PC->GetName());
 	}
 }
