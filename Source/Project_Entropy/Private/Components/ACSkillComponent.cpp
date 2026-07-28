@@ -44,6 +44,8 @@ bool UACSkillComponent::TryExecuteSkill(int32 SkillIndex, AACTile* TargetTile, A
 
 bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage)
 {
+	// 서버가 아니라면 스킬 실행 자체를 차단하여 해킹/오류 방지
+	if (!GetOwner()->HasAuthority()) return false;
 	if (!SkillData || !OwnerStatComponent) return false;
 
 	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());

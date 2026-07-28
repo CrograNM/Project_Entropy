@@ -70,4 +70,17 @@ private:
 	TObjectPtr<class APE_CharacterBase> PendingSkillTargetCharacter;
 
 	void ExecutePendingSkill();
+
+	/** --- 멀티플레이어 시각화 RPC --- */
+	// 공격 의도 표시
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_ShowSkillIntent(AACTile* TargetTile);
+
+	// 이동 의도 표시
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_ShowMoveIntent(FIntPoint StartPos, int32 MoveRange, AACTile* DestinationTile);
+
+	// 표시된 하이라이트 지우기
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_ClearIntent();
 };

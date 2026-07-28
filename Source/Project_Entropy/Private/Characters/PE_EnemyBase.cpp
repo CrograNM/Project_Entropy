@@ -13,6 +13,7 @@
 APE_EnemyBase::APE_EnemyBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	bReplicates = true; // 적 캐릭터 복제 활성화
 
 	SkillComponent = CreateDefaultSubobject<UACSkillComponent>(TEXT("SkillComponent"));
 }
@@ -21,8 +22,7 @@ void APE_EnemyBase::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 이동 완료 델리게이트 바인딩 (이동 컴포넌트가 목표 도달 시 OnMovementCompleted 호출)
-	if (GridMovement)
+	if (HasAuthority() && GridMovement)
 	{
 		GridMovement->OnMovementFinished.AddDynamic(this, &APE_EnemyBase::OnMovementCompleted);
 	}
@@ -30,6 +30,9 @@ void APE_EnemyBase::BeginPlay()
 
 void APE_EnemyBase::StartTurn()
 {
+	// AI 루프는 서버에서만 돌아야 합니다.
+	if (!HasAuthority()) return;
+
 	if (!StatComponent || StatComponent->IsDead())
 	{
 		FinishTurn();
@@ -45,6 +48,8 @@ void APE_EnemyBase::StartTurn()
 
 void APE_EnemyBase::EvaluateAndTakeAction()
 {
+	if (!HasAuthority()) return;
+
 	// 1. AP가 없거나 죽었다면 즉시 턴 종료
 	if (StatComponent->GetCurrentAP() <= 0 || StatComponent->IsDead())
 	{
@@ -75,14 +80,7 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 		// [판단 1]: 거리가 닿고 AP가 충분하다면 공격!
 		if (DistanceToPlayer <= MainSkill->BaseRange && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[EnemyAI] 플레이어 공격 결심. (비용: %d AP, 남은 AP: %d)"), MainSkill->BaseAPCost, StatComponent->GetCurrentAP());
-
-			// 스킬 범위 시각화 (스킬의 사거리만큼 붉은색 표시)
-			// 현재는 단순하게 시전자 위치부터 타겟 위치까지의 범위를 하이라이트
-			if (PlayerTile)
-			{
-				PlayerTile->SetHighlightState(ETileHighlightType::SkillTarget);
-			}
+			NetMulticast_ShowSkillIntent(PlayerTile);
 
 			// 타이머 설정
 			PendingSkillIndex = 0;
@@ -116,7 +114,8 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 		// 거리에 상관없이(1칸이든 끝까지 가든) 이동이라는 '행동' 자체에 딱 1 AP만 소모합니다.
 		if (StatComponent->ConsumeAP(1))
 		{
-			UE_LOG(LogTemp, Log, TEXT("[EnemyAI] %d칸 이동을 결심. (비용: 1 AP, 남은 AP: %d)"), MovePath.Num(), StatComponent->GetCurrentAP());
+			// 멀티캐스트를 통해 클라이언트들에게 적의 예상 이동 경로 표시
+			NetMulticast_ShowMoveIntent(MyPos, MoveRange, MovePath.Last());
 
 			// N초 후 이동하도록 시각화 처리
 			// 1. 반경 및 경로 시각화
@@ -138,32 +137,19 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 
 void APE_EnemyBase::ExecutePendingSkill()
 {
-	// 하이라이트 지우기
-	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
-	{
-		GridSystem->ClearAllHighlights();
-	}
+	NetMulticast_ClearIntent();
 
 	if (PendingSkillIndex >= 0 && PendingSkillTargetTile)
 	{
 		SkillComponent->TryExecuteSkill(PendingSkillIndex, PendingSkillTargetTile, PendingSkillTargetCharacter);
+	}
 
-		// 스킬을 썼으므로, 남은 AP로 힐을 하거나 더 때릴 수 있는지 다시 스스로 재평가
-		EvaluateAndTakeAction();
-	}
-	else
-	{
-		EvaluateAndTakeAction();
-	}
+	EvaluateAndTakeAction();
 }
 
 void APE_EnemyBase::ExecutePendingMovement()
 {
-	// 하이라이트 지우기
-	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
-	{
-		GridSystem->ClearAllHighlights();
-	}
+	NetMulticast_ClearIntent();
 
 	if (PendingMovePath.Num() > 0)
 	{
@@ -178,12 +164,40 @@ void APE_EnemyBase::ExecutePendingMovement()
 
 void APE_EnemyBase::OnMovementCompleted()
 {
-	// 이동이 끝났으니, 이제 때릴 수 있는지 다시 루프를 굴립니다.
-	EvaluateAndTakeAction();
+	if (HasAuthority())
+	{
+		EvaluateAndTakeAction();
+	}
 }
 
 void APE_EnemyBase::FinishTurn()
 {
 	UE_LOG(LogTemp, Log, TEXT("[EnemyBase] %s 의 행동 완료 및 턴 종료."), *GetName());
 	OnTurnFinished.Broadcast();
+}
+
+/* --- 멀티캐스트 시각화 구현부 --- */
+void APE_EnemyBase::NetMulticast_ShowSkillIntent_Implementation(AACTile* TargetTile)
+{
+	if (TargetTile)
+	{
+		TargetTile->SetHighlightState(ETileHighlightType::SkillTarget);
+	}
+}
+
+void APE_EnemyBase::NetMulticast_ShowMoveIntent_Implementation(FIntPoint StartPos, int32 MoveRange, AACTile* DestinationTile)
+{
+	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		TArray<AACTile*> RangeTiles = GridSystem->ShowMovementRange(StartPos, MoveRange);
+		GridSystem->HighlightPath(StartPos, DestinationTile->GetGridPosition(), RangeTiles);
+	}
+}
+
+void APE_EnemyBase::NetMulticast_ClearIntent_Implementation()
+{
+	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		GridSystem->ClearAllHighlights();
+	}
 }
