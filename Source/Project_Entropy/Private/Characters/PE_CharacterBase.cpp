@@ -3,6 +3,7 @@
 #include "Characters/PE_CharacterBase.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
+#include "Components/ACSkillComponent.h"
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -29,6 +30,7 @@ APE_CharacterBase::APE_CharacterBase()
 	// 핵심 컴포넌트 생성
 	GridMovement = CreateDefaultSubobject<UACGridMovementComponent>(TEXT("GridMovement"));
 	StatComponent = CreateDefaultSubobject<UACStatComponent>(TEXT("StatComponent"));
+	SkillComponent = CreateDefaultSubobject<UACSkillComponent>(TEXT("SkillComponent"));
 }
 
 void APE_CharacterBase::BeginPlay()

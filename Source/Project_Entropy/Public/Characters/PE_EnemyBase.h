@@ -29,10 +29,6 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	// 적 AI의 스킬과 무기를 담당할 컴포넌트
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UACSkillComponent> SkillComponent;
-
 	/** 이동 딜레이를 주기 위한 시간 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Behavior")
 	float ActionDelay = 0.5f;

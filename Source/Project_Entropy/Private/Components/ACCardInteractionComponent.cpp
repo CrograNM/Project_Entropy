@@ -300,6 +300,7 @@ void UACCardInteractionComponent::OnInstantCastFinished()
 	{
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
+			CastingCard->PlayDiscardAnimation();
 			DeckManager->DiscardCard(CastingCard);
 		}
 		CastingCard = nullptr;

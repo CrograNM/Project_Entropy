@@ -57,6 +57,19 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_CancelCurrentAction();
 
+	// --- [타겟팅 시각화 동기화 RPC] ---
+	UFUNCTION(Server, Unreliable)
+	void Server_HighlightTarget(FIntPoint TargetPos);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_HighlightTarget(FIntPoint TargetPos);
+
+	UFUNCTION(Server, Unreliable)
+	void Server_ClearHighlight();
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_ClearHighlight();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

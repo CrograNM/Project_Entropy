@@ -14,8 +14,6 @@ APE_EnemyBase::APE_EnemyBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true; // 적 캐릭터 복제 활성화
-
-	SkillComponent = CreateDefaultSubobject<UACSkillComponent>(TEXT("SkillComponent"));
 }
 
 void APE_EnemyBase::BeginPlay()

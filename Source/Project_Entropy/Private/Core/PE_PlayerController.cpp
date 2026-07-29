@@ -14,6 +14,13 @@
 #include "Components/ACDeckManagerComponent.h"
 #include "Components/ACCardInteractionComponent.h"
 #include "CardSystem/PE_CardData.h"
+#include "CardSystem/PE_CardActor.h"
+#include "CardSystem/PE_CardInstance.h"
+#include "CardSystem/PE_SkillData.h"
+#include "CardSystem/PE_DataTypes.h"
+#include "Characters/PE_EnemyBase.h"
+#include "Components/ACSkillComponent.h"
+
 
 APE_PlayerController::APE_PlayerController()
 {
@@ -148,15 +155,29 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 
 	// [Update] - 그리드 타일 호버링 감지 및 경로 하이라이트
 	UpdateGridHovering();
+
+	// [안전장치] 상태가 Casting이나 Move가 아닌데 타일 배열이 남아있다면 잔상 초기화
+	if (!bIsGridMoveActivated && (!CardInteractionComp || CardInteractionComp->GetCurrentState() != EPEInteractionState::Casting))
+	{
+		if (!ValidRangeTiles.IsEmpty())
+		{
+			ValidRangeTiles.Empty();
+			LastHoveredTilePos = FIntPoint(-999, -999);
+			if (GridSystem) GridSystem->ClearAllHighlights();
+			Server_ClearHighlight();
+		}
+	}
 }
 
 void APE_PlayerController::UpdateGridHovering() 
 {
-	// 이동 모드: 마우스 호버링 - 타일 감지 및 경로 하이라이트
-	if (!bShowMouseCursor || !bIsGridMoveActivated || !GridSystem) return;
+	if (!bShowMouseCursor || !GridSystem) return;
 
 	FHitResult HitResult;
-	if (GetHitResultUnderCursor(ECC_Visibility, false, HitResult))
+	bool bHit = GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+	// 1. [이동 모드]
+	if (bIsGridMoveActivated)
 	{
 		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
 		APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
@@ -164,11 +185,88 @@ void APE_PlayerController::UpdateGridHovering()
 		if (HoveredTile && PC)
 		{
 			FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
-
 			if (CurrentTilePos != LastHoveredTilePos)
 			{
 				LastHoveredTilePos = CurrentTilePos;
 				GridSystem->HighlightPath(PC->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+			}
+		}
+	}
+
+	// 2. [캐스팅 모드]
+	else if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
+	{
+		APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+		APE_CardActor* CastingCard = CardInteractionComp->GetCastingCard();
+		if (!PC || !CastingCard || !CastingCard->GetSkillData()) return;
+
+		UPE_SkillData* SkillData = CastingCard->GetSkillData();
+
+		// 사거리가 아직 계산되지 않았다면 진입 시 1회 계산
+		if (ValidRangeTiles.IsEmpty())
+		{
+			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), SkillData->BaseRange);
+		}
+
+		if (bHit)
+		{
+			AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
+			if (!HoveredTile)
+			{
+				APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor());
+				if (HitChar && HitChar->GetGridMovementComponent())
+				{
+					HoveredTile = GridSystem->GetTileAtPosition(HitChar->GetGridMovementComponent()->GetGridPosition());
+				}
+			}
+
+			if (HoveredTile)
+			{
+				FIntPoint CurrentTilePos = HoveredTile->GetGridPosition();
+
+				if (CurrentTilePos != LastHoveredTilePos)
+				{
+					LastHoveredTilePos = CurrentTilePos;
+
+					// 1. 하이라이트 초기화 및 사거리 재표시
+					GridSystem->ClearAllHighlights();
+					GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), SkillData->BaseRange);
+
+					// 2. 타겟팅 유효성 검사 (Snap 여부)
+					bool bIsValidTarget = false;
+					if (ValidRangeTiles.Contains(HoveredTile))
+					{
+						if (SkillData->TargetType == EPESkillTargetType::Tile)
+						{
+							bIsValidTarget = true;
+						}
+						else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
+						{
+							TArray<AActor*> Enemies;
+							UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), Enemies);
+							for (AActor* EnemyActor : Enemies)
+							{
+								APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(EnemyActor);
+								if (Enemy && Enemy->GetGridMovementComponent()->GetGridPosition() == CurrentTilePos)
+								{
+									bIsValidTarget = true;
+									break;
+								}
+							}
+						}
+					}
+
+					// 3. 타겟팅 결과 시각화 및 타 클라이언트에 공유
+					if (bIsValidTarget)
+					{
+						HoveredTile->SetHighlightState(ETileHighlightType::SkillTarget);
+						Server_HighlightTarget(CurrentTilePos);
+					}
+					else
+					{
+						Server_ClearHighlight();
+					}
+				}
 			}
 		}
 	}
@@ -306,6 +404,112 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 			{
 				PC->GetCameraControlComponent()->ResetCameraPosition();
 			}
+		}
+	}
+
+	// [스킬 시전 모드 클릭]
+	else if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
+	{
+		FHitResult HitResult;
+		GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+		// [충돌 해결] 캐스팅 중인 카드를 직접 클릭한 경우 (GrabCard에서 취소 처리되게 둠)
+		APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
+		if (HitCard && HitCard == CardInteractionComp->GetCastingCard())
+		{
+			return;
+		}
+
+		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
+		APE_CharacterBase* TargetCharacter = Cast<APE_CharacterBase>(HitResult.GetActor());
+		APE_CardActor* CastingCard = CardInteractionComp->GetCastingCard();
+
+		if (!TargetTile && TargetCharacter && TargetCharacter->GetGridMovementComponent())
+		{
+			TargetTile = GridSystem->GetTileAtPosition(TargetCharacter->GetGridMovementComponent()->GetGridPosition());
+		}
+		else if (!TargetTile && !TargetCharacter)
+		{
+			// 타일도 캐릭터도 아닌 경우 (예: 배경 클릭) -> 시전 취소
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 타일/캐릭터 둘 다 아님"));
+			CancelCurrentAction();
+			return;
+		}
+		else {
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도: 타일 %s, 캐릭터 %s, 스킬: %s"),
+				TargetTile ? *TargetTile->GetName() : TEXT("null"),
+				TargetCharacter ? *TargetCharacter->GetName() : TEXT("null"),
+				CastingCard && CastingCard->GetSkillData() ? *CastingCard->GetSkillData()->GetName() : TEXT("null"));
+		}
+
+		if (CastingCard && CastingCard->GetSkillData() && TargetTile)
+		{
+			UPE_SkillData* SkillData = CastingCard->GetSkillData();
+
+			// 유효성 검사 (타겟 스냅 룰 적용)
+			bool bIsValidTarget = false;
+			if (ValidRangeTiles.Contains(TargetTile))
+			{
+				if (SkillData->TargetType == EPESkillTargetType::Tile)
+				{
+					bIsValidTarget = true;
+				}
+				else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
+				{
+					TArray<AActor*> Enemies;
+					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), Enemies);
+					for (AActor* EnemyActor : Enemies)
+					{
+						APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(EnemyActor);
+						if (Enemy && Enemy->GetGridMovementComponent()->GetGridPosition() == TargetTile->GetGridPosition())
+						{
+							TargetCharacter = Enemy; // 스냅된 적 캐릭터 캐싱
+							bIsValidTarget = true;
+							break;
+						}
+					}
+				}
+			}
+			else {
+				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 타겟 타일이 유효 범위 밖"));
+				CancelCurrentAction();
+			}
+			if (bIsValidTarget)
+			{
+				APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+				if (PC && PC->FindComponentByClass<UACSkillComponent>())
+				{
+					UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>();
+
+					// [테스트 환경] 싱글/로컬 테스트를 위해 즉시 함수 직접 호출 
+					bool bSuccess = SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage);
+
+					if (bSuccess)
+					{
+						CardInteractionComp->OnInstantCastFinished(); // 버려지는(산화) 애니메이션 재생
+						ValidRangeTiles.Empty();
+						LastHoveredTilePos = FIntPoint(-999, -999);
+						GridSystem->ClearAllHighlights();
+						Server_ClearHighlight();
+					}
+					else {
+						UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: TryExecuteSkillByData 반환값 false"));
+						CancelCurrentAction();
+					}
+				}
+				else {
+					UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 플레이어 캐릭터에 SkillComponent 없음"));
+					CancelCurrentAction();
+				}
+			}
+			else {
+				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 유효하지 않은 타겟"));
+				CancelCurrentAction();
+			}
+		}
+		else {
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: CastingCard 또는 SkillData 또는 TargetTile이 null"));
+			CancelCurrentAction();
 		}
 	}
 }
@@ -536,4 +740,34 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 		// 이 순간부터 해당 PC의 TargetGridPosition이 갱신됨
 		PC->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
 	}
+}
+
+// --- [시각화 RPC 구현부] ---
+void APE_PlayerController::Server_HighlightTarget_Implementation(FIntPoint TargetPos)
+{
+	NetMulticast_HighlightTarget(TargetPos);
+}
+
+void APE_PlayerController::NetMulticast_HighlightTarget_Implementation(FIntPoint TargetPos)
+{
+	// 로컬 플레이어는 이미 Tick에서 그렸으므로 무시
+	if (IsLocalController() || !GridSystem) return;
+
+	if (AACTile* Tile = GridSystem->GetTileAtPosition(TargetPos))
+	{
+		Tile->SetHighlightState(ETileHighlightType::SkillTarget);
+	}
+}
+
+void APE_PlayerController::Server_ClearHighlight_Implementation()
+{
+	NetMulticast_ClearHighlight();
+}
+
+void APE_PlayerController::NetMulticast_ClearHighlight_Implementation()
+{
+	if (IsLocalController() || !GridSystem) return;
+
+	// 타겟팅 잔상을 멀티플레이어 환경에서 지움 (최적화 상 사거리 외곽선은 건드리지 않음)
+	GridSystem->ClearAllHighlights();
 }

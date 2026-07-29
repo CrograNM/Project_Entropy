@@ -73,7 +73,7 @@ public:
 
 	// 4. 카드 사용 완료 (산화): 빛 알갱이로 부서지며 무덤으로 날아가는 연출
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "Card|Animation")
-	void PlayDiscardAnimation(FVector DiscardPileWorldLocation);
+	void PlayDiscardAnimation();
 	
 	// 캐스팅 대기 중 마우스 호버링 상태 변경 (오프셋 조절용)
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")

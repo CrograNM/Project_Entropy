@@ -8,6 +8,7 @@
 
 class UACGridMovementComponent;
 class UACStatComponent;
+class UACSkillComponent;
 
 UCLASS(Abstract) // 인스턴스화 방지 (반드시 상속해서 사용)
 class PROJECT_ENTROPY_API APE_CharacterBase : public ACharacter
@@ -41,4 +42,8 @@ protected:
 	/** 체력 및 행동력(AP) 제어 컴포넌트 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UACStatComponent> StatComponent;
+
+	// 스킬 컴포넌트
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UACSkillComponent> SkillComponent;
 };
