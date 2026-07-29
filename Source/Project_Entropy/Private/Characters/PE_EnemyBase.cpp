@@ -56,81 +56,88 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 		FinishTurn();
 		return;
 	}
-	
-	APE_PlayerCharacter* Player = Cast<APE_PlayerCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-	AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
 
-	if (!Player || !GridSystem) 
+	AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
+	if (!GridSystem)
 	{
 		FinishTurn();
 		return;
 	}
-	
-	// 내 위치와 플레이어 위치 계산
+
+	// 맵 위의 모든 플레이어를 탐색하여 가장 가까운 대상을 찾습니다.
+	TArray<AActor*> FoundPlayers;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_PlayerCharacter::StaticClass(), FoundPlayers);
+
+	APE_PlayerCharacter* TargetPlayer = nullptr;
+	int32 MinDistance = MAX_int32;
 	FIntPoint MyPos = GridMovement->GetGridPosition();
-	FIntPoint PlayerPos = Player->GetGridMovementComponent()->GetGridPosition();
-	int32 DistanceToPlayer = FMath::Abs(MyPos.X - PlayerPos.X) + FMath::Abs(MyPos.Y - PlayerPos.Y);
-	
-	// 2. 첫 번째 스킬(무기)이 있는지 확인합니다.
+
+	for (AActor* Actor : FoundPlayers)
+	{
+		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(Actor);
+		if (PC && PC->GetStatComponent() && !PC->GetStatComponent()->IsDead())
+		{
+			FIntPoint PlayerPos = PC->GetGridMovementComponent()->GetGridPosition();
+			int32 DistanceToPlayer = FMath::Abs(MyPos.X - PlayerPos.X) + FMath::Abs(MyPos.Y - PlayerPos.Y);
+
+			if (DistanceToPlayer < MinDistance)
+			{
+				MinDistance = DistanceToPlayer;
+				TargetPlayer = PC;
+			}
+		}
+	}
+
+	// 타겟 플레이어가 없다면 턴 종료
+	if (!TargetPlayer)
+	{
+		FinishTurn();
+		return;
+	}
+
+	FIntPoint PlayerPos = TargetPlayer->GetGridMovementComponent()->GetGridPosition();
+
+	// 2. 스킬 사용 판단 로직
 	if (SkillComponent->GetActiveSkills().Num() > 0)
 	{
 		UPE_SkillData* MainSkill = SkillComponent->GetActiveSkills()[0];
 		AACTile* PlayerTile = GridSystem->GetTileAtPosition(PlayerPos);
 
-		// [판단 1]: 거리가 닿고 AP가 충분하다면 공격!
-		if (DistanceToPlayer <= MainSkill->BaseRange && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
+		if (MinDistance <= MainSkill->BaseRange && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
 		{
 			NetMulticast_ShowSkillIntent(PlayerTile);
-
-			// 타이머 설정
 			PendingSkillIndex = 0;
 			PendingSkillTargetTile = PlayerTile;
-			PendingSkillTargetCharacter = Player;
+			PendingSkillTargetCharacter = TargetPlayer;
 
 			GetWorldTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_EnemyBase::ExecutePendingSkill, ActionDelay, false);
-
 			return;
 		}
 	}
-	
-	// 3. [판단 2]: 때릴 수 없다면, 플레이어를 향해 이동
+
+	// 3. 이동 판단 로직
 	TArray<AACTile*> FullPath = GridSystem->CalculatePath(MyPos, PlayerPos);
 	TArray<AACTile*> MovePath;
-	
-	// 1 AP로 갈 수 있는 최대 거리는 온전히 내 MoveRange 스탯
 	int32 MoveRange = StatComponent->GetMoveRange();
-	
-	// 갈 수 있는 만큼 경로 자르기
+
 	for (int32 i = 0; i < FullPath.Num(); ++i)
 	{
-		if (FullPath[i]->GetGridPosition() == PlayerPos) break; // 플레이어 밟기 방지
-		
+		if (FullPath[i]->GetGridPosition() == PlayerPos) break;
 		MovePath.Add(FullPath[i]);
-		if (MovePath.Num() >= MoveRange) break; // 1AP 이동력 한계까지만 자르기
+		if (MovePath.Num() >= MoveRange) break;
 	}
-	
+
 	if (MovePath.Num() > 0)
 	{
-		// 거리에 상관없이(1칸이든 끝까지 가든) 이동이라는 '행동' 자체에 딱 1 AP만 소모합니다.
 		if (StatComponent->ConsumeAP(1))
 		{
-			// 멀티캐스트를 통해 클라이언트들에게 적의 예상 이동 경로 표시
 			NetMulticast_ShowMoveIntent(MyPos, MoveRange, MovePath.Last());
-
-			// N초 후 이동하도록 시각화 처리
-			// 1. 반경 및 경로 시각화
-			TArray<AACTile*> RangeTiles = GridSystem->ShowMovementRange(MyPos, MoveRange);
-			GridSystem->HighlightPath(MyPos, MovePath.Last()->GetGridPosition(), RangeTiles);
-
-			// 2. 타이머로 실제 이동 지연
 			PendingMovePath = MovePath;
 			GetWorldTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_EnemyBase::ExecutePendingMovement, ActionDelay, false);
-
 			return;
 		}
 	}
 
-	// 4. 할 수 있는 게 아무것도 없으면 턴 종료
 	FinishTurn();
 }
 

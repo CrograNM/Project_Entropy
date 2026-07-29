@@ -19,10 +19,6 @@ class PROJECT_ENTROPY_API APE_EnemyBase : public APE_CharacterBase
 public:
 	APE_EnemyBase();
 
-protected:
-	virtual void BeginPlay() override;
-
-public:
 	/** 턴 매니저가 이 적의 차례일 때 호출하는 함수 */
 	void StartTurn();
 
@@ -31,6 +27,8 @@ public:
 	FOnEnemyTurnFinishedSignature OnTurnFinished;
 
 protected:
+	virtual void BeginPlay() override;
+
 	// 적 AI의 스킬과 무기를 담당할 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UACSkillComponent> SkillComponent;
