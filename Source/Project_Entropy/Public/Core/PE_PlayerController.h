@@ -53,7 +53,11 @@ public:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_RequestGridMove(AACTile* TargetTile); // 클라이언트에서 타일 클릭 시 서버로 이동 요청 (충돌 처리 포함)
 
-	// 추가: 서버 측에서 강제로 클라이언트의 이동/캐스팅 액션을 취소시킴 (턴 종료 시 사용)
+	// 스킬 시전 서버 요청
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_RequestSkillCast(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter);
+
+	// 서버 측에서 강제로 클라이언트의 이동/캐스팅 액션을 취소 (턴 종료 시 사용)
 	UFUNCTION(Client, Reliable)
 	void Client_CancelCurrentAction();
 
@@ -69,6 +73,13 @@ public:
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void NetMulticast_ClearHighlight();
+
+	// 다른 플레이어에게 나의 사거리(이동/캐스팅) 의도 보여주기
+	UFUNCTION(Server, Reliable)
+	void Server_ShowRangeIntent(int32 Range, bool bIsSkill);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void NetMulticast_ShowRangeIntent(FIntPoint StartPos, int32 Range, bool bIsSkill);
 
 protected:
 	virtual void BeginPlay() override;

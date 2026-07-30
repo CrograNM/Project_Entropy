@@ -22,7 +22,8 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 	GENERATED_BODY()
 
 public:
-	APE_SkillActionActor();
+	APE_SkillActionActor(); 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
 	void InitializeActionActor(UPE_SkillLogicBase* InLogic, AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage);
 
 protected:
@@ -44,17 +45,21 @@ protected:
 	TObjectPtr<UAudioComponent> ActionSFXComponent;
 
 private:
+	// --- [데이터 복제를 통한 클라이언트 VFX/SFX 동기화] ---
+	UFUNCTION()
+	void OnRep_SkillData();
+
+	UPROPERTY(ReplicatedUsing = OnRep_SkillData)
+	TObjectPtr<const UPE_SkillData> RepSkillData;
+
+	UPROPERTY(Replicated)
+	TObjectPtr<AActor> RepTargetActor;
+
 	UPROPERTY()
 	TObjectPtr<UPE_SkillLogicBase> SkillLogicInstance;
 
 	UPROPERTY()
 	TObjectPtr<AActor> Caster;
-
-	UPROPERTY()
-	TObjectPtr<AActor> TargetActor;
-
-	UPROPERTY()
-	const UPE_SkillData* SkillData;
 
 	float DamageToApply;
 };

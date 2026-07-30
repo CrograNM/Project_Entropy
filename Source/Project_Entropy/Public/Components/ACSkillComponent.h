@@ -32,6 +32,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Skill System")
 	TArray<UPE_SkillData*> GetActiveSkills() const { return ActiveSkills; }
 
+	// --- [추가됨: 스킬 시각화 멀티캐스트 RPC] ---
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_PlayCastVisuals(const UPE_SkillData* SkillData);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_PlayHitVisuals(const UPE_SkillData* SkillData, AActor* Target);
+
 protected:
 	virtual void BeginPlay() override;
 

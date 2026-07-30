@@ -206,6 +206,9 @@ void APE_PlayerController::UpdateGridHovering()
 		if (ValidRangeTiles.IsEmpty())
 		{
 			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), SkillData->BaseRange);
+
+			// 나의 캐스팅 범위를 멀티플레이어 환경에 공유
+			Server_ShowRangeIntent(SkillData->BaseRange, true);
 		}
 
 		if (bHit)
@@ -308,7 +311,9 @@ void APE_PlayerController::ToggleGridMovementActivation()
 		{
 			const int32 Range = PC->GetStatComponent()->GetMoveRange();
 			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 이동 모드 활성화 작동"));
+			
+			// 나의 이동 범위를 멀티플레이어 환경에 공유
+			Server_ShowRangeIntent(Range, false);
 		}
 	}
 	else
@@ -476,31 +481,14 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 			}
 			if (bIsValidTarget)
 			{
-				APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
-				if (PC && PC->FindComponentByClass<UACSkillComponent>())
-				{
-					UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>();
+				// 로컬에서 직접 쏘는 대신, 서버로 RPC를 보내 안전하게 결제/시전
+				Server_RequestSkillCast(SkillData, TargetTile, TargetCharacter);
 
-					// [테스트 환경] 싱글/로컬 테스트를 위해 즉시 함수 직접 호출 
-					bool bSuccess = SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage);
-
-					if (bSuccess)
-					{
-						CardInteractionComp->OnInstantCastFinished(); // 버려지는(산화) 애니메이션 재생
-						ValidRangeTiles.Empty();
-						LastHoveredTilePos = FIntPoint(-999, -999);
-						GridSystem->ClearAllHighlights();
-						Server_ClearHighlight();
-					}
-					else {
-						UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: TryExecuteSkillByData 반환값 false"));
-						CancelCurrentAction();
-					}
-				}
-				else {
-					UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 플레이어 캐릭터에 SkillComponent 없음"));
-					CancelCurrentAction();
-				}
+				CardInteractionComp->OnInstantCastFinished();
+				ValidRangeTiles.Empty();
+				LastHoveredTilePos = FIntPoint(-999, -999);
+				GridSystem->ClearAllHighlights();
+				Server_ClearHighlight();
 			}
 			else {
 				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 유효하지 않은 타겟"));
@@ -678,6 +666,26 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 	}
 }
 
+// 스킬 시전 서버 검증 및 실행 RPC
+bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter)
+{
+	return SkillData != nullptr;
+}
+
+void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter)
+{
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+	if (!PC) return;
+
+	UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>();
+	if (SkillComp)
+	{
+		float FinalDamage = SkillData->BaseDamage;
+		// 서버에서 AP 차감 및 로직 실행
+		SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, FinalDamage);
+	}
+}
+
 bool APE_PlayerController::Server_RequestGridMove_Validate(AACTile* TargetTile)
 {
 	return TargetTile != nullptr;
@@ -743,6 +751,23 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 }
 
 // --- [시각화 RPC 구현부] ---
+void APE_PlayerController::Server_ShowRangeIntent_Implementation(int32 Range, bool bIsSkill)
+{
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
+	{
+		NetMulticast_ShowRangeIntent(PC->GetGridMovementComponent()->GetGridPosition(), Range, bIsSkill);
+	}
+}
+
+void APE_PlayerController::NetMulticast_ShowRangeIntent_Implementation(FIntPoint StartPos, int32 Range, bool bIsSkill)
+{
+	// 로컬 플레이어는 스스로 렌더링하므로 무시
+	if (IsLocalController() || !GridSystem) return;
+
+	// 다른 플레이어의 의도를 화면에 하이라이트 (시각적 혼동을 피하기 위해 추후 색상 분리 가능)
+	GridSystem->ShowMovementRange(StartPos, Range);
+}
+
 void APE_PlayerController::Server_HighlightTarget_Implementation(FIntPoint TargetPos)
 {
 	NetMulticast_HighlightTarget(TargetPos);

@@ -6,6 +6,8 @@
 #include "Components/ACStatComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Grid/ACTile.h"
+#include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
 
 UACSkillComponent::UACSkillComponent()
 {
@@ -44,7 +46,7 @@ bool UACSkillComponent::TryExecuteSkill(int32 SkillIndex, AACTile* TargetTile, A
 
 bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage)
 {
-	//if (!GetOwner()->HasAuthority()) return false;
+	if (!GetOwner()->HasAuthority()) return false;
 	if (!SkillData || !OwnerStatComponent) return false;
 
 	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
@@ -88,4 +90,29 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 	}
 
 	return false;
+}
+
+// 모든 클라이언트에서 동일한 시전(Cast) 애니메이션과 사운드를 재생합니다.
+void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_SkillData* SkillData)
+{
+	if (!SkillData) return;
+	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
+	if (!Caster) return;
+
+	if (SkillData->CastVFX) { UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->CastVFX, Caster->GetActorLocation()); }
+	if (SkillData->CastSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), SkillData->CastSFX, Caster->GetActorLocation()); }
+
+	if (SkillData->CastAnimMontage)
+	{
+		Caster->PlayAnimMontage(SkillData->CastAnimMontage, 1.0f, SkillData->CastAnimSectionName);
+	}
+}
+
+// 모든 클라이언트에서 동일한 적중(Hit) 폭발과 사운드를 재생합니다.
+void UACSkillComponent::NetMulticast_PlayHitVisuals_Implementation(const UPE_SkillData* SkillData, AActor* Target)
+{
+	if (!SkillData || !Target) return;
+
+	if (SkillData->HitVFX) { UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->HitVFX, Target->GetActorLocation()); }
+	if (SkillData->HitSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), SkillData->HitSFX, Target->GetActorLocation()); }
 }
