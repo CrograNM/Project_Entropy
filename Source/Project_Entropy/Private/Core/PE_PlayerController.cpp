@@ -20,7 +20,8 @@
 #include "CardSystem/PE_DataTypes.h"
 #include "Characters/PE_EnemyBase.h"
 #include "Components/ACSkillComponent.h"
-
+#include "Grid/ACGridSystem.h"
+#include "Grid/ACTile.h"
 
 APE_PlayerController::APE_PlayerController()
 {
@@ -163,7 +164,7 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 		{
 			ValidRangeTiles.Empty();
 			LastHoveredTilePos = FIntPoint(-999, -999);
-			if (GridSystem) GridSystem->ClearAllHighlights();
+			if (GridSystem) GridSystem->ClearAllHighlightsFor(GetCachedPlayerCharacter());
 			Server_ClearHighlight();
 		}
 	}
@@ -188,7 +189,10 @@ void APE_PlayerController::UpdateGridHovering()
 			if (CurrentTilePos != LastHoveredTilePos)
 			{
 				LastHoveredTilePos = CurrentTilePos;
-				GridSystem->HighlightPath(PC->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+
+				// [수정됨] 경로를 그릴 때도 호출 주체를 넘깁니다. 서버로도 경로 하이라이트를 전송합니다.
+				GridSystem->HighlightPath(PC, PC->GetGridMovementComponent()->GetGridPosition(), CurrentTilePos, ValidRangeTiles);
+				Server_HighlightPath(CurrentTilePos);
 			}
 		}
 	}
@@ -205,9 +209,7 @@ void APE_PlayerController::UpdateGridHovering()
 		// 사거리가 아직 계산되지 않았다면 진입 시 1회 계산
 		if (ValidRangeTiles.IsEmpty())
 		{
-			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), SkillData->BaseRange);
-
-			// 나의 캐스팅 범위를 멀티플레이어 환경에 공유
+			ValidRangeTiles = GridSystem->ShowMovementRange(PC, PC->GetGridMovementComponent()->GetGridPosition(), SkillData->BaseRange);
 			Server_ShowRangeIntent(SkillData->BaseRange, true);
 		}
 
@@ -231,9 +233,8 @@ void APE_PlayerController::UpdateGridHovering()
 				{
 					LastHoveredTilePos = CurrentTilePos;
 
-					// 1. 하이라이트 초기화 및 사거리 재표시
-					GridSystem->ClearAllHighlights();
-					GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), SkillData->BaseRange);
+					// [수정됨] 기존 조준점만 초기화합니다.
+					GridSystem->ClearPathFor(PC);
 
 					// 2. 타겟팅 유효성 검사 (Snap 여부)
 					bool bIsValidTarget = false;
@@ -262,7 +263,8 @@ void APE_PlayerController::UpdateGridHovering()
 					// 3. 타겟팅 결과 시각화 및 타 클라이언트에 공유
 					if (bIsValidTarget)
 					{
-						HoveredTile->SetHighlightState(ETileHighlightType::SkillTarget);
+						// [수정됨] 타겟 하이라이트 기능 사용
+						GridSystem->HighlightTarget(PC, CurrentTilePos);
 						Server_HighlightTarget(CurrentTilePos);
 					}
 					else
@@ -310,9 +312,9 @@ void APE_PlayerController::ToggleGridMovementActivation()
 		if (PC && PC->GetGridMovementComponent() && PC->GetStatComponent())
 		{
 			const int32 Range = PC->GetStatComponent()->GetMoveRange();
-			ValidRangeTiles = GridSystem->ShowMovementRange(PC->GetGridMovementComponent()->GetGridPosition(), Range);
-			
-			// 나의 이동 범위를 멀티플레이어 환경에 공유
+
+			// [수정됨] 호출 주체(PC)를 넘겨줍니다.
+			ValidRangeTiles = GridSystem->ShowMovementRange(PC, PC->GetGridMovementComponent()->GetGridPosition(), Range);
 			Server_ShowRangeIntent(Range, false);
 		}
 	}
@@ -344,7 +346,10 @@ void APE_PlayerController::CancelCurrentAction()
 	{
 		bIsGridMoveActivated = false;
 		if (CardInteractionComp) CardInteractionComp->SetInteractionEnabled(true);
-		if (GridSystem) GridSystem->ClearAllHighlights();
+
+		// [수정됨] 내 것만 지웁니다.
+		if (GridSystem) GridSystem->ClearAllHighlightsFor(PC);
+		Server_ClearHighlight();
 
 		ValidRangeTiles.Empty();
 		LastHoveredTilePos = FIntPoint(-999, -999);
@@ -487,7 +492,7 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 				CardInteractionComp->OnInstantCastFinished();
 				ValidRangeTiles.Empty();
 				LastHoveredTilePos = FIntPoint(-999, -999);
-				GridSystem->ClearAllHighlights();
+				GridSystem->ClearAllHighlightsFor(GetCachedPlayerCharacter());
 				Server_ClearHighlight();
 			}
 			else {
@@ -754,45 +759,54 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 void APE_PlayerController::Server_ShowRangeIntent_Implementation(int32 Range, bool bIsSkill)
 {
 	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
-	{
-		NetMulticast_ShowRangeIntent(PC->GetGridMovementComponent()->GetGridPosition(), Range, bIsSkill);
-	}
+		NetMulticast_ShowRangeIntent(PC, Range, bIsSkill);
 }
 
-void APE_PlayerController::NetMulticast_ShowRangeIntent_Implementation(FIntPoint StartPos, int32 Range, bool bIsSkill)
+void APE_PlayerController::NetMulticast_ShowRangeIntent_Implementation(APE_PlayerCharacter* Caster, int32 Range, bool bIsSkill)
 {
 	// 로컬 플레이어는 스스로 렌더링하므로 무시
 	if (IsLocalController() || !GridSystem) return;
 
-	// 다른 플레이어의 의도를 화면에 하이라이트 (시각적 혼동을 피하기 위해 추후 색상 분리 가능)
-	GridSystem->ShowMovementRange(StartPos, Range);
+	// 다른 플레이어의 의도를 화면에 띄움
+	GridSystem->ShowMovementRange(Caster, Caster->GetGridMovementComponent()->GetGridPosition(), Range);
+}
+
+void APE_PlayerController::Server_HighlightPath_Implementation(FIntPoint TargetPos)
+{
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
+		NetMulticast_HighlightPath(PC, TargetPos);
+}
+
+void APE_PlayerController::NetMulticast_HighlightPath_Implementation(APE_PlayerCharacter* Caster, FIntPoint TargetPos)
+{
+	if (!Caster || Caster == GetCachedPlayerCharacter() || !GridSystem) return;
+
+	// 상대방이 바라보는 경로(의도) 시각화. (상대방의 이동 범위 배열은 내부적으로 저장됨)
+	GridSystem->HighlightPath(Caster, Caster->GetGridMovementComponent()->GetGridPosition(), TargetPos, TArray<AACTile*>());
 }
 
 void APE_PlayerController::Server_HighlightTarget_Implementation(FIntPoint TargetPos)
 {
-	NetMulticast_HighlightTarget(TargetPos);
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
+		NetMulticast_HighlightTarget(PC, TargetPos);
 }
 
-void APE_PlayerController::NetMulticast_HighlightTarget_Implementation(FIntPoint TargetPos)
+void APE_PlayerController::NetMulticast_HighlightTarget_Implementation(APE_PlayerCharacter* Caster, FIntPoint TargetPos)
 {
-	// 로컬 플레이어는 이미 Tick에서 그렸으므로 무시
-	if (IsLocalController() || !GridSystem) return;
-
-	if (AACTile* Tile = GridSystem->GetTileAtPosition(TargetPos))
-	{
-		Tile->SetHighlightState(ETileHighlightType::SkillTarget);
-	}
+	if (!Caster || Caster == GetCachedPlayerCharacter() || !GridSystem) return;
+	GridSystem->HighlightTarget(Caster, TargetPos);
 }
 
 void APE_PlayerController::Server_ClearHighlight_Implementation()
 {
-	NetMulticast_ClearHighlight();
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
+		NetMulticast_ClearHighlight(PC);
 }
 
-void APE_PlayerController::NetMulticast_ClearHighlight_Implementation()
+void APE_PlayerController::NetMulticast_ClearHighlight_Implementation(APE_PlayerCharacter* Caster)
 {
-	if (IsLocalController() || !GridSystem) return;
+	if (!Caster || Caster == GetCachedPlayerCharacter() || !GridSystem) return;
 
-	// 타겟팅 잔상을 멀티플레이어 환경에서 지움 (최적화 상 사거리 외곽선은 건드리지 않음)
-	GridSystem->ClearAllHighlights();
+	// 해당 클라이언트가 취소를 눌렀다면 그 플레이어의 잔상만 글로벌에서 제거
+	GridSystem->ClearAllHighlightsFor(Caster);
 }

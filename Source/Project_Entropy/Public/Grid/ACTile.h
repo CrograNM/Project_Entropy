@@ -32,9 +32,11 @@ public:
 	FIntPoint GetGridPosition() const { return GridPosition; }
 	FVector GetCenterWorldLocation() const;
 
-	/** 타일의 하이라이트 상태를 변경하여 이미시브 컬러를 제어하는 함수 */
+	// 단일 상태 지정에서, 특정 액터(플레이어)의 요청을 추가/삭제하는 방식으로 변경
+	void RequestHighlight(AActor* Requester, ETileHighlightType Type);
+
 	void SetHighlightState(ETileHighlightType NewState);
-	
+
 	// 장애물 시스템 관련 함수
 	UFUNCTION(BlueprintCallable, Category = "Tile|Obstacle")
 	bool IsObstacle() const { return bIsObstacle; }
@@ -73,6 +75,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	float InsideOpacityValue = 0.15f;
 
+	// --- [로컬 플레이어 전용 색상] ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor DefaultColor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f); 
 	
@@ -87,4 +90,21 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor SkillTargetColor = FLinearColor(1.0f, 0.2f, 0.2f, 1.0f);
+
+	// --- [다른 플레이어 시각화 전용 색상] ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor OtherInRangeColor = FLinearColor(0.2f, 0.8f, 0.2f, 0.5f); // 흐릿한 연두색
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor OtherHoveredColor = FLinearColor(0.0f, 0.4f, 0.0f, 1.0f); // 진한 녹색
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor OtherPathColor = FLinearColor(0.1f, 0.6f, 0.1f, 0.8f);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor OtherSkillTargetColor = FLinearColor(0.0f, 0.4f, 0.0f, 1.0f); // 진한 녹색
+
+private:
+	// 타일 색상을 재계산하여 메터리얼에 적용하는 내부 함수
+	void UpdateVisuals();
+
+	// 어떤 액터(플레이어)가 나에게 무슨 색깔을 켜달라고 요청했는지 기억하는 맵
+	TMap<AActor*, ETileHighlightType> HighlightRequests;
 };

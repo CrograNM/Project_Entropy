@@ -1,6 +1,7 @@
 // Copyright CrograNM
 
 #include "Grid/ACTile.h"
+#include "GameFramework/PlayerController.h"
 
 AACTile::AACTile()
 {
@@ -39,49 +40,86 @@ FVector AACTile::GetCenterWorldLocation() const
 
 void AACTile::SetHighlightState(ETileHighlightType NewState)
 {
-	if (!DynamicMaterial) return;
+	// nullptr을 전달하여 '시스템 전역 요청'으로 처리합니다.
+	RequestHighlight(nullptr, NewState);
+}
 
-	FLinearColor TargetColor; 
-
-	switch (NewState)
+void AACTile::RequestHighlight(AActor* Requester, ETileHighlightType Type)
+{
+	if (Type == ETileHighlightType::None)
 	{
-	case ETileHighlightType::InRange:
-		TargetColor = InRangeColor;
-		break;
-	case ETileHighlightType::Hovered:
-		TargetColor = HoveredColor;
-		break;
-	case ETileHighlightType::Path:
-		TargetColor = PathColor;
-		break;
-	case ETileHighlightType::SkillTarget:
-		TargetColor = SkillTargetColor;
-		break;
-	case ETileHighlightType::None:
-		TargetColor = DefaultColor;
-		break;
-	default:
-		TargetColor = DefaultColor;
-		break;
+		HighlightRequests.Remove(Requester);
+	}
+	else
+	{
+		HighlightRequests.Add(Requester, Type);
 	}
 
-	DynamicMaterial->SetVectorParameterValue(EmissiveParamName, TargetColor);
-	DynamicMaterial->SetScalarParameterValue(InsideOpacityParamName, TargetColor == DefaultColor ? 0.0f : InsideOpacityValue);
+	UpdateVisuals();
+}
+
+void AACTile::UpdateVisuals()
+{
+	if (!DynamicMaterial) return;
+
+	if (HighlightRequests.IsEmpty())
+	{
+		DynamicMaterial->SetVectorParameterValue(EmissiveParamName, DefaultColor);
+		DynamicMaterial->SetScalarParameterValue(InsideOpacityParamName, 0.0f);
+		return;
+	}
+
+	FLinearColor FinalColor = FLinearColor::Black;
+	float FinalOpacity = 0.0f;
+
+	// 화면을 보고 있는 나 자신(로컬 플레이어 폰)을 구합니다.
+	AActor* LocalPawn = GetWorld()->GetFirstPlayerController() ? GetWorld()->GetFirstPlayerController()->GetPawn() : nullptr;
+
+	for (const auto& Pair : HighlightRequests)
+	{
+		AActor* RequesterActor = Pair.Key;
+		ETileHighlightType Type = Pair.Value;
+
+		// nullptr인 경우(시스템/맵툴 호출)는 로컬 취급(기본 색상)하여 렌더링합니다.
+		bool bIsLocal = (RequesterActor == nullptr) || (RequesterActor == LocalPawn);
+
+		FLinearColor TypeColor = DefaultColor;
+
+		switch (Type)
+		{
+		case ETileHighlightType::InRange:
+			TypeColor = bIsLocal ? InRangeColor : OtherInRangeColor; break;
+		case ETileHighlightType::Hovered:
+			TypeColor = bIsLocal ? HoveredColor : OtherHoveredColor; break;
+		case ETileHighlightType::Path:
+			TypeColor = bIsLocal ? PathColor : OtherPathColor; break;
+		case ETileHighlightType::SkillTarget:
+			TypeColor = bIsLocal ? SkillTargetColor : OtherSkillTargetColor; break;
+		}
+
+		FinalColor += TypeColor;
+		FinalOpacity = FMath::Max(FinalOpacity, InsideOpacityValue);
+	}
+
+	// 색상이 하얗게 타버리는 것을 방지하기 위해 Clamp
+	FinalColor.R = FMath::Min(FinalColor.R, 1.0f);
+	FinalColor.G = FMath::Min(FinalColor.G, 1.0f);
+	FinalColor.B = FMath::Min(FinalColor.B, 1.0f);
+	FinalColor.A = 1.0f;
+
+	DynamicMaterial->SetVectorParameterValue(EmissiveParamName, FinalColor);
+	DynamicMaterial->SetScalarParameterValue(InsideOpacityParamName, FinalOpacity);
 }
 
 void AACTile::SetObstacle(bool bInObstacle)
 {
 	bIsObstacle = bInObstacle;
-	
-	if (ObstacleMesh)
-	{
-		ObstacleMesh->SetVisibility(bIsObstacle);
-	}
-	
-	// 장애물이 생기면 기본 하이라이트로 초기화
+	if (ObstacleMesh) { ObstacleMesh->SetVisibility(bIsObstacle); }
+
 	if (bIsObstacle)
 	{
-		SetHighlightState(ETileHighlightType::None);
+		HighlightRequests.Empty();
+		UpdateVisuals();
 	}
 }
 

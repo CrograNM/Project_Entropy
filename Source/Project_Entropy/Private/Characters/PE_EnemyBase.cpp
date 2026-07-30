@@ -186,7 +186,10 @@ void APE_EnemyBase::NetMulticast_ShowSkillIntent_Implementation(AACTile* TargetT
 {
 	if (TargetTile)
 	{
-		TargetTile->SetHighlightState(ETileHighlightType::SkillTarget);
+		if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+		{
+			GridSystem->HighlightTarget(this, TargetTile->GetGridPosition());
+		}
 	}
 }
 
@@ -194,8 +197,8 @@ void APE_EnemyBase::NetMulticast_ShowMoveIntent_Implementation(FIntPoint StartPo
 {
 	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
 	{
-		TArray<AACTile*> RangeTiles = GridSystem->ShowMovementRange(StartPos, MoveRange);
-		GridSystem->HighlightPath(StartPos, DestinationTile->GetGridPosition(), RangeTiles);
+		TArray<AACTile*> RangeTiles = GridSystem->ShowMovementRange(this,StartPos, MoveRange);
+		GridSystem->HighlightPath(this, StartPos, DestinationTile->GetGridPosition(), RangeTiles);
 	}
 }
 
@@ -203,6 +206,6 @@ void APE_EnemyBase::NetMulticast_ClearIntent_Implementation()
 {
 	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
 	{
-		GridSystem->ClearAllHighlights();
+		GridSystem->ClearAllHighlightsFor(this);
 	}
 }

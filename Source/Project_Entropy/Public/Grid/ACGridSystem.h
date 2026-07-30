@@ -26,14 +26,14 @@ public:
 	/** 특정 좌표의 타일 반환 */
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
 
-	/** 플레이어 주변 사거리 내의 모든 타일을 하이라이트하고 목록을 반환 */
-	TArray<AACTile*> ShowMovementRange(FIntPoint CenterPos, int32 Range);
-	
-	/** 마우스 툴팁/오버 시 특정 도착지까지의 경로를 하이라이트 */
-	void HighlightPath(FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
+	// 모든 함수가 '누가 요청했는지(Instigator)'를 받도록 변경
+	TArray<AACTile*> ShowMovementRange(AActor* Requester, FIntPoint CenterPos, int32 Range);
+	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
+	void HighlightTarget(AActor* Requester, FIntPoint TargetPos);
 
-	/** 전장의 모든 타일 하이라이트 원상복구 */
-	void ClearAllHighlights();
+	void ClearAllHighlightsFor(AActor* Requester);
+	void ClearPathFor(AActor* Requester);
+	void ClearRangeFor(AActor* Requester);
 
 	/** 시작점부터 도착점까지의 단순 그리드 최단 경로를 계산하여 반환 */
 	TArray<AACTile*> CalculatePath(FIntPoint StartPos, FIntPoint EndPos);
@@ -82,10 +82,7 @@ protected:
 	TMap<FIntPoint, AACTile*> GridTiles;
 	
 private:
-	// 실시간 연산 추적용 임시 변수들
-	UPROPERTY()
-	TArray<AACTile*> CurrentRangeTiles;
-
-	UPROPERTY()
-	TArray<AACTile*> CurrentPathTiles;
+	// 각 플레이어(Instigator)가 활성화한 타일 목록을 개별 추적합니다.
+	TMap<AActor*, TArray<AACTile*>> PlayerRangeTiles;
+	TMap<AActor*, TArray<AACTile*>> PlayerPathTiles;
 };

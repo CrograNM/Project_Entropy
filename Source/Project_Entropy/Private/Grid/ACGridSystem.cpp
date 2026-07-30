@@ -19,12 +19,11 @@ AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 	return nullptr;
 }
 
-TArray<AACTile*> AACGridSystem::ShowMovementRange(FIntPoint CenterPos, int32 Range)
+TArray<AACTile*> AACGridSystem::ShowMovementRange(AActor* Requester, FIntPoint CenterPos, int32 Range)
 {
-	ClearAllHighlights();
-	CurrentRangeTiles.Empty();
+	ClearRangeFor(Requester);
+	TArray<AACTile*>& RangeArray = PlayerRangeTiles.FindOrAdd(Requester);
 
-	// 타일을 밟으며 퍼져나가는 BFS (너비 우선 탐색) 로직 적용
 	TQueue<TPair<FIntPoint, int32>> Queue;
 	TSet<FIntPoint> Visited;
 
@@ -41,28 +40,23 @@ TArray<AACTile*> AACGridSystem::ShowMovementRange(FIntPoint CenterPos, int32 Ran
 		FIntPoint CurrentPos = CurrentNode.Key;
 		int32 CurrentCost = CurrentNode.Value;
 
-		// 타일을 찾아서 하이라이트 (시작점 자신은 시각화에서 뺄 수 있지만 경로 탐색을 위해 맵에는 포함)
 		if (AACTile* Tile = GetTileAtPosition(CurrentPos))
 		{
-			if (CurrentCost > 0) // 시작점(나 자신) 하이라이트 제외
+			if (CurrentCost > 0)
 			{
-				Tile->SetHighlightState(ETileHighlightType::InRange);
-				CurrentRangeTiles.Add(Tile);
+				Tile->RequestHighlight(Requester, ETileHighlightType::InRange);
+				RangeArray.Add(Tile);
 			}
 		}
 
-		// 이동력(Range) 한계에 도달하면 더 이상 이 길로는 뻗어나가지 않음
 		if (CurrentCost >= Range) continue;
 
 		for (const FIntPoint& Dir : Directions)
 		{
 			FIntPoint NeighborPos = CurrentPos + Dir;
-
 			if (!Visited.Contains(NeighborPos))
 			{
 				AACTile* NeighborTile = GetTileAtPosition(NeighborPos);
-				
-				// 이웃 타일이 존재하고, '장애물이 아닐 때만' 이동 가능 구역으로 취급
 				if (NeighborTile && !NeighborTile->IsObstacle())
 				{
 					Visited.Add(NeighborPos);
@@ -71,8 +65,7 @@ TArray<AACTile*> AACGridSystem::ShowMovementRange(FIntPoint CenterPos, int32 Ran
 			}
 		}
 	}
-
-	return CurrentRangeTiles;
+	return RangeArray;
 }
 
 TArray<AACTile*> AACGridSystem::CalculatePath(FIntPoint StartPos, FIntPoint EndPos)
@@ -130,45 +123,74 @@ TArray<AACTile*> AACGridSystem::CalculatePath(FIntPoint StartPos, FIntPoint EndP
 	return Path;
 }
 
-void AACGridSystem::HighlightPath(FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles)
+void AACGridSystem::HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles)
 {
-	// 기존 경로 초기화 (범위 내 색상인 InRange로 원상복구)
-	for (AACTile* Tile : CurrentPathTiles)
-	{
-		if (InRangeTiles.Contains(Tile))
-		{
-			Tile->SetHighlightState(ETileHighlightType::InRange);
-		}
-	}
-	CurrentPathTiles.Empty();
+	ClearPathFor(Requester);
 
 	AACTile* TargetTile = GetTileAtPosition(EndPos);
 	if (!TargetTile || !InRangeTiles.Contains(TargetTile)) return;
 
-	// 새 경로 연산 및 하이라이트
-	CurrentPathTiles = CalculatePath(StartPos, EndPos);
-	
-	for (AACTile* Tile : CurrentPathTiles)
+	TArray<AACTile*> NewPath = CalculatePath(StartPos, EndPos);
+	TArray<AACTile*>& PathArray = PlayerPathTiles.FindOrAdd(Requester);
+
+	for (AACTile* Tile : NewPath)
 	{
-		if (Tile == TargetTile)
-		{
-			Tile->SetHighlightState(ETileHighlightType::Hovered); // 목적지
-		}
-		else
-		{
-			Tile->SetHighlightState(ETileHighlightType::Path); // 이동 경로
-		}
+		ETileHighlightType Type = (Tile == TargetTile) ? ETileHighlightType::Hovered : ETileHighlightType::Path;
+		Tile->RequestHighlight(Requester, Type);
+		PathArray.Add(Tile);
 	}
 }
 
-void AACGridSystem::ClearAllHighlights()
+void AACGridSystem::HighlightTarget(AActor* Requester, FIntPoint TargetPos)
 {
-	for (auto& Pair : GridTiles)
+	ClearPathFor(Requester);
+
+	if (AACTile* Tile = GetTileAtPosition(TargetPos))
 	{
-		Pair.Value->SetHighlightState(ETileHighlightType::None);
+		Tile->RequestHighlight(Requester, ETileHighlightType::SkillTarget);
+		PlayerPathTiles.FindOrAdd(Requester).Add(Tile);
 	}
-	CurrentRangeTiles.Empty();
-	CurrentPathTiles.Empty();
+}
+
+void AACGridSystem::ClearPathFor(AActor* Requester)
+{
+	if (TArray<AACTile*>* PathArray = PlayerPathTiles.Find(Requester))
+	{
+		TArray<AACTile*>* RangeArray = PlayerRangeTiles.Find(Requester);
+		for (AACTile* Tile : *PathArray)
+		{
+			if (Tile)
+			{
+				if (RangeArray && RangeArray->Contains(Tile))
+				{
+					Tile->RequestHighlight(Requester, ETileHighlightType::InRange);
+				}
+				else
+				{
+					Tile->RequestHighlight(Requester, ETileHighlightType::None);
+				}
+			}
+		}
+		PathArray->Empty();
+	}
+}
+
+void AACGridSystem::ClearRangeFor(AActor* Requester)
+{
+	if (TArray<AACTile*>* RangeArray = PlayerRangeTiles.Find(Requester))
+	{
+		for (AACTile* Tile : *RangeArray)
+		{
+			if (Tile) Tile->RequestHighlight(Requester, ETileHighlightType::None);
+		}
+		RangeArray->Empty();
+	}
+	ClearPathFor(Requester);
+}
+
+void AACGridSystem::ClearAllHighlightsFor(AActor* Requester)
+{
+	ClearRangeFor(Requester);
 }
 
 void AACGridSystem::BeginPlay()
