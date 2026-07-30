@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/ACCameraControlComponent.h"
 #include "Components/ACStatComponent.h"
+#include "Components/ACTargetingVisualizerComponent.h"
 #include "Core/PE_BattleGameMode.h"
 #include "Core/PE_GameState.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -34,6 +35,8 @@ APE_PlayerCharacter::APE_PlayerCharacter()
 	
 	// 카메라 제어 컴포넌트 생성
 	CameraControlComponent = CreateDefaultSubobject<UACCameraControlComponent>(TEXT("CameraControlComponent"));
+
+	TargetingVisualizer = CreateDefaultSubobject<UACTargetingVisualizerComponent>(TEXT("TargetingVisualizer"));
 }
 
 void APE_PlayerCharacter::BeginPlay()

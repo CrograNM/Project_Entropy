@@ -61,20 +61,6 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_CancelCurrentAction();
 
-	// --- [타겟팅 시각화 동기화 RPC] ---
-	UFUNCTION(Server, Unreliable)
-	void Server_HighlightPath(FIntPoint TargetPos);
-
-	UFUNCTION(Server, Unreliable)
-	void Server_HighlightTarget(FIntPoint TargetPos);
-
-	UFUNCTION(Server, Unreliable)
-	void Server_ClearHighlight();
-
-	// 다른 플레이어에게 나의 사거리(이동/캐스팅) 의도 보여주기
-	UFUNCTION(Server, Reliable)
-	void Server_ShowRangeIntent(int32 Range, bool bIsSkill);
-
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

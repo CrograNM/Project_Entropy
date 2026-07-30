@@ -27,7 +27,7 @@ public:
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
 
 	// 모든 함수가 '누가 요청했는지(Instigator)'를 받도록 변경
-	TArray<AACTile*> ShowMovementRange(AActor* Requester, FIntPoint CenterPos, int32 Range);
+	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint CenterPos, int32 Range);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
 	void HighlightTarget(AActor* Requester, FIntPoint TargetPos);
 

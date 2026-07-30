@@ -19,7 +19,7 @@ AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 	return nullptr;
 }
 
-TArray<AACTile*> AACGridSystem::ShowMovementRange(AActor* Requester, FIntPoint CenterPos, int32 Range)
+TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint CenterPos, int32 Range)
 {
 	ClearRangeFor(Requester);
 	TArray<AACTile*>& RangeArray = PlayerRangeTiles.FindOrAdd(Requester);
