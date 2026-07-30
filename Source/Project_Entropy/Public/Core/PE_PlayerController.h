@@ -64,24 +64,16 @@ public:
 	// --- [타겟팅 시각화 동기화 RPC] ---
 	UFUNCTION(Server, Unreliable)
 	void Server_HighlightPath(FIntPoint TargetPos);
-	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_HighlightPath(class APE_PlayerCharacter* Caster, FIntPoint TargetPos);
 
 	UFUNCTION(Server, Unreliable)
 	void Server_HighlightTarget(FIntPoint TargetPos);
-	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_HighlightTarget(class APE_PlayerCharacter* Caster, FIntPoint TargetPos);
 
 	UFUNCTION(Server, Unreliable)
 	void Server_ClearHighlight();
-	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_ClearHighlight(class APE_PlayerCharacter* Caster);
 
 	// 다른 플레이어에게 나의 사거리(이동/캐스팅) 의도 보여주기
 	UFUNCTION(Server, Reliable)
 	void Server_ShowRangeIntent(int32 Range, bool bIsSkill);
-	UFUNCTION(NetMulticast, Reliable)
-	void NetMulticast_ShowRangeIntent(class APE_PlayerCharacter* Caster, int32 Range, bool bIsSkill);
 
 protected:
 	virtual void BeginPlay() override;

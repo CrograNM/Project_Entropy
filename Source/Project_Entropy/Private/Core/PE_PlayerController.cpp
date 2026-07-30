@@ -759,54 +759,43 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 void APE_PlayerController::Server_ShowRangeIntent_Implementation(int32 Range, bool bIsSkill)
 {
 	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
-		NetMulticast_ShowRangeIntent(PC, Range, bIsSkill);
-}
-
-void APE_PlayerController::NetMulticast_ShowRangeIntent_Implementation(APE_PlayerCharacter* Caster, int32 Range, bool bIsSkill)
-{
-	// 로컬 플레이어는 스스로 렌더링하므로 무시
-	if (IsLocalController() || !GridSystem) return;
-
-	// 다른 플레이어의 의도를 화면에 띄움
-	GridSystem->ShowMovementRange(Caster, Caster->GetGridMovementComponent()->GetGridPosition(), Range);
+	{
+		if (UACGridMovementComponent* MoveComp = PC->GetGridMovementComponent())
+		{
+			MoveComp->NetMulticast_ShowRangeIntent(Range, bIsSkill);
+		}
+	}
 }
 
 void APE_PlayerController::Server_HighlightPath_Implementation(FIntPoint TargetPos)
 {
 	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
-		NetMulticast_HighlightPath(PC, TargetPos);
-}
-
-void APE_PlayerController::NetMulticast_HighlightPath_Implementation(APE_PlayerCharacter* Caster, FIntPoint TargetPos)
-{
-	if (!Caster || Caster == GetCachedPlayerCharacter() || !GridSystem) return;
-
-	// 상대방이 바라보는 경로(의도) 시각화. (상대방의 이동 범위 배열은 내부적으로 저장됨)
-	GridSystem->HighlightPath(Caster, Caster->GetGridMovementComponent()->GetGridPosition(), TargetPos, TArray<AACTile*>());
+	{
+		if (UACGridMovementComponent* MoveComp = PC->GetGridMovementComponent())
+		{
+			MoveComp->NetMulticast_HighlightPath(TargetPos);
+		}
+	}
 }
 
 void APE_PlayerController::Server_HighlightTarget_Implementation(FIntPoint TargetPos)
 {
 	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
-		NetMulticast_HighlightTarget(PC, TargetPos);
-}
-
-void APE_PlayerController::NetMulticast_HighlightTarget_Implementation(APE_PlayerCharacter* Caster, FIntPoint TargetPos)
-{
-	if (!Caster || Caster == GetCachedPlayerCharacter() || !GridSystem) return;
-	GridSystem->HighlightTarget(Caster, TargetPos);
+	{
+		if (UACGridMovementComponent* MoveComp = PC->GetGridMovementComponent())
+		{
+			MoveComp->NetMulticast_HighlightTarget(TargetPos);
+		}
+	}
 }
 
 void APE_PlayerController::Server_ClearHighlight_Implementation()
 {
 	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
-		NetMulticast_ClearHighlight(PC);
-}
-
-void APE_PlayerController::NetMulticast_ClearHighlight_Implementation(APE_PlayerCharacter* Caster)
-{
-	if (!Caster || Caster == GetCachedPlayerCharacter() || !GridSystem) return;
-
-	// 해당 클라이언트가 취소를 눌렀다면 그 플레이어의 잔상만 글로벌에서 제거
-	GridSystem->ClearAllHighlightsFor(Caster);
+	{
+		if (UACGridMovementComponent* MoveComp = PC->GetGridMovementComponent())
+		{
+			MoveComp->NetMulticast_ClearHighlight();
+		}
+	}
 }

@@ -4,6 +4,8 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Grid/ACTile.h"
+#include "Grid/ACGridSystem.h"
+#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 
 UACGridMovementComponent::UACGridMovementComponent()
@@ -130,5 +132,52 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 		
 		CurrentPathIndex++;
 		SetNextPathStep();
+	}
+}
+
+// --- [시각화 멀티캐스트 구현부] ---
+void UACGridMovementComponent::NetMulticast_ShowRangeIntent_Implementation(int32 Range, bool bIsSkill)
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	// 로컬 컨트롤러(조작 중인 본인)는 이미 자체적으로 그렸으므로 무시하여 중복 연산 방지
+	if (!OwnerPawn || OwnerPawn->IsLocallyControlled()) return;
+
+	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		GridSystem->ShowMovementRange(OwnerPawn, GridPosition, Range);
+	}
+}
+
+void UACGridMovementComponent::NetMulticast_HighlightPath_Implementation(FIntPoint TargetPos)
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn || OwnerPawn->IsLocallyControlled()) return;
+
+	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		GridSystem->HighlightPath(OwnerPawn, GridPosition, TargetPos, TArray<AACTile*>());
+	}
+}
+
+void UACGridMovementComponent::NetMulticast_HighlightTarget_Implementation(FIntPoint TargetPos)
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn || OwnerPawn->IsLocallyControlled()) return;
+
+	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		GridSystem->HighlightTarget(OwnerPawn, TargetPos);
+	}
+}
+
+void UACGridMovementComponent::NetMulticast_ClearHighlight_Implementation()
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn || OwnerPawn->IsLocallyControlled()) return;
+
+	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		// 요청 취소한 상대방의 잔상만 정확하게 지워줍니다.
+		GridSystem->ClearAllHighlightsFor(OwnerPawn);
 	}
 }

@@ -35,6 +35,19 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath);
 
+	// --- [멀티플레이어 시각화 동기화 RPC] ---
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_ShowRangeIntent(int32 Range, bool bIsSkill);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_HighlightPath(FIntPoint TargetPos);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_HighlightTarget(FIntPoint TargetPos);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void NetMulticast_ClearHighlight();
+
 protected:
 	virtual void BeginPlay() override;
 
