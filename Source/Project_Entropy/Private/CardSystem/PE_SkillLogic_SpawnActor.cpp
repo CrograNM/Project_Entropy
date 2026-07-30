@@ -31,14 +31,17 @@ void UPE_SkillLogic_SpawnActor::ExecuteSkill_Implementation(AActor* Instigator, 
 
 void UPE_SkillLogic_SpawnActor::ApplySkillEffect_Implementation(AActor* Instigator, AActor* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
 {
-	if (!Target || !Instigator || !InSkillData) return;
+	if (!Instigator || !InSkillData) return;
 
-	// 3. 적중 (Hit) 처리 (서버에서만 HP 감소)
-	UGameplayStatics::ApplyDamage(Target, CalculatedDamage, Instigator->GetInstigatorController(), Instigator, UDamageType::StaticClass());
+	// 3. 적중 (Hit) 처리 (타겟 액터가 존재할 때만 데미지 적용)
+	if (Target)
+	{
+		UGameplayStatics::ApplyDamage(Target, CalculatedDamage, Instigator->GetInstigatorController(), Instigator, UDamageType::StaticClass());
+	}
 
-	// 폭발 이펙트 역시 멀티캐스트로 위임합니다.
+	// 폭발 이펙트는 Target 액터 여부와 상관없이 무조건 TargetLocation 좌표 기반으로 재생 명령을 내립니다.
 	if (UACSkillComponent* SkillComp = Instigator->FindComponentByClass<UACSkillComponent>())
 	{
-		SkillComp->NetMulticast_PlayHitVisuals(InSkillData, Target);
+		SkillComp->NetMulticast_PlayHitVisuals(InSkillData, TargetLocation);
 	}
 }

@@ -11,19 +11,13 @@
 
 APE_SkillActionActor::APE_SkillActionActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
-
+	// Tick을 활성화하여 궤적 보간을 수행합니다.
+	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
-	SetReplicateMovement(true);
 
-	// 기본 충돌체는 구체(Sphere)로 설정하되, BP에서 모양 변경 가능
-	USphereComponent* SphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComp"));
-	SphereCollision->InitSphereRadius(20.0f);
-	SphereCollision->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
-	SphereCollision->OnComponentBeginOverlap.AddDynamic(this, &APE_SkillActionActor::OnOverlapBegin);
-
-	CollisionComp = SphereCollision;
-	RootComponent = CollisionComp;
+	// 물리 충돌 컴포넌트(USphereComponent, UProjectileMovementComponent)를 완전히 삭제하고 SceneRoot 기반으로 변경
+	RootScene = CreateDefaultSubobject<USceneComponent>(TEXT("RootScene"));
+	RootComponent = RootScene;
 
 	ActionVFXComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ActionVFX"));
 	ActionVFXComponent->SetupAttachment(RootComponent);
@@ -32,12 +26,6 @@ APE_SkillActionActor::APE_SkillActionActor()
 	ActionSFXComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ActionSFX"));
 	ActionSFXComponent->SetupAttachment(RootComponent);
 	ActionSFXComponent->SetAutoActivate(false);
-
-	MovementComponent = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("MovementComp"));
-	MovementComponent->InitialSpeed = 800.f;
-	MovementComponent->MaxSpeed = 800.f;
-	MovementComponent->bRotationFollowsVelocity = true;
-	MovementComponent->ProjectileGravityScale = 0.f;
 }
 
 void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -45,35 +33,29 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APE_SkillActionActor, RepSkillData);
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetActor);
+	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
 void APE_SkillActionActor::InitializeActionActor(UPE_SkillLogicBase* InLogic, AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage)
 {
-	// 이 함수는 서버에서만 호출됩니다.
 	SkillLogicInstance = InLogic;
 	Caster = InInstigator;
 	DamageToApply = InDamage;
 
-	// 복제용 변수에 담아 클라이언트에게 전송 유도
 	RepTargetActor = InTarget;
 	RepSkillData = InData;
+	RepTargetLocation = InLoc; // 목표 타일 좌표 동기화
+	StartLocation = GetActorLocation(); // 출발지 확정
 
-	// 서버도 시각적 효과를 봐야 하므로 OnRep 함수를 수동 호출해 줍니다.
+	// 서버 측 시각 효과 및 비행 변수 초기화를 위해 직접 호출
 	OnRep_SkillData();
-
-	// 투사체 이동 로직은 복제되지만, 초기 속도 부여는 서버가 주도합니다.
-	if (RepSkillData && MovementComponent && RepSkillData->ProjectileSpeed > 0.f)
-	{
-		if (!RepSkillData->bIsHoming)
-		{
-			FVector Direction = (InLoc - GetActorLocation()).GetSafeNormal();
-			MovementComponent->Velocity = Direction * MovementComponent->InitialSpeed;
-		}
-	}
 }
 
 void APE_SkillActionActor::OnRep_SkillData()
 {
+	// 클라이언트 측 시작 위치 보정 (서버에서 스폰된 위치가 클라이언트로 넘어온 직후)
+	StartLocation = GetActorLocation();
+
 	if (RepSkillData)
 	{
 		if (RepSkillData->ActionVFX)
@@ -87,45 +69,74 @@ void APE_SkillActionActor::OnRep_SkillData()
 			ActionSFXComponent->Play();
 		}
 
-		if (MovementComponent)
+		// 이동이 필요한 투사체인지 검사
+		if (RepSkillData->ProjectileSpeed > 0.f)
 		{
-			MovementComponent->InitialSpeed = RepSkillData->ProjectileSpeed;
-			MovementComponent->MaxSpeed = RepSkillData->ProjectileSpeed;
-			MovementComponent->ProjectileGravityScale = RepSkillData->ProjectileGravity;
+			float Distance = FVector::Distance(StartLocation, RepTargetLocation);
+			FlightDuration = Distance / RepSkillData->ProjectileSpeed; // 거리 / 속도 = 걸리는 시간 보장
 
-			if (RepSkillData->ProjectileSpeed > 0.f && RepSkillData->bIsHoming && RepTargetActor)
-			{
-				MovementComponent->bIsHomingProjectile = true;
-				MovementComponent->HomingTargetComponent = RepTargetActor->GetRootComponent();
-				MovementComponent->HomingAccelerationMagnitude = RepSkillData->HomingAcceleration;
-			}
+			// ProjectileGravity 변수를 포물선의 최대 높이 값(ArcHeight)으로 활용합니다.
+			ArcHeight = RepSkillData->ProjectileGravity;
+
+			bIsFlying = true;
+		}
+		else
+		{
+			// 제자리 생성 장판/즉발일 경우 즉시 폭발
+			Explode();
 		}
 	}
 }
 
-void APE_SkillActionActor::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+void APE_SkillActionActor::Tick(float DeltaTime)
 {
-	// 충돌 판정은 오직 서버에서만 처리합니다. (다중 히트 방지)
-	if (!HasAuthority()) return;
+	Super::Tick(DeltaTime);
 
-	if (OtherActor && OtherActor != Caster && OtherActor != this)
+	if (!bIsFlying) return;
+
+	CurrentFlightTime += DeltaTime;
+	float Alpha = FMath::Clamp(CurrentFlightTime / FlightDuration, 0.f, 1.f);
+
+	// 1. X, Y 축 직선 보간
+	FVector LerpXY = FMath::Lerp(StartLocation, RepTargetLocation, Alpha);
+
+	// 2. Z 축 포물선(Sine Curve) 연산 추가
+	// Alpha가 0.5(중간)일 때 Sin(0.5 * PI) = 1 이 되어 최고점(ArcHeight)에 도달합니다.
+	float ZOffset = FMath::Sin(Alpha * PI) * ArcHeight;
+	LerpXY.Z += ZOffset;
+
+	// 3. 이동 방향으로 회전 적용
+	FVector MoveDirection = (LerpXY - GetActorLocation()).GetSafeNormal();
+	if (!MoveDirection.IsNearlyZero())
 	{
-		if (SkillLogicInstance)
-		{
-			SkillLogicInstance->ApplySkillEffect(Caster, OtherActor, GetActorLocation(), RepSkillData, DamageToApply);
-		}
+		SetActorRotation(MoveDirection.Rotation());
+	}
 
-		if (RepSkillData && RepSkillData->bDestroyOnHit)
-		{
-			if (CollisionComp) CollisionComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			if (MovementComponent)
-			{
-				MovementComponent->MaxSpeed = 0;
-				MovementComponent->HomingAccelerationMagnitude = 0;
-				MovementComponent->StopMovementImmediately();
-			}
-			if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.5f, 0.f);
-			SetLifeSpan(2.0f); // 2초 뒤 서버에서 완전히 소멸 (클라이언트도 동기화되어 소멸)
-		}
+	// 4. 위치 갱신
+	SetActorLocation(LerpXY);
+
+	// 5. 정확히 목표 타일에 도달 시
+	if (Alpha >= 1.0f)
+	{
+		bIsFlying = false;
+		Explode();
+	}
+}
+
+void APE_SkillActionActor::Explode()
+{
+	// 스킬 로직 적용은 '서버'에서만 단 1회 수행합니다. (멀티캐스트 이펙트는 Logic이 컴포넌트를 통해 알아서 뿌려줌)
+	if (HasAuthority() && SkillLogicInstance)
+	{
+		SkillLogicInstance->ApplySkillEffect(Caster, RepTargetActor, RepTargetLocation, RepSkillData, DamageToApply);
+	}
+
+	// 폭발 후 잔여물(투사체 액터) 정리 (서버/클라 공통)
+	if (RepSkillData && RepSkillData->bDestroyOnHit)
+	{
+		if (ActionVFXComponent) ActionVFXComponent->Deactivate();
+		if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.2f, 0.f);
+
+		SetLifeSpan(0.5f); // 이펙트가 자연스럽게 꺼질 짧은 여유 시간 후 소멸
 	}
 }

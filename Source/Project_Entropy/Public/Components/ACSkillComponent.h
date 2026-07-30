@@ -37,7 +37,7 @@ public:
 	void NetMulticast_PlayCastVisuals(const UPE_SkillData* SkillData);
 
 	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_PlayHitVisuals(const UPE_SkillData* SkillData, AActor* Target);
+	void NetMulticast_PlayHitVisuals(const UPE_SkillData* SkillData, FVector TargetLocation);
 
 protected:
 	virtual void BeginPlay() override;

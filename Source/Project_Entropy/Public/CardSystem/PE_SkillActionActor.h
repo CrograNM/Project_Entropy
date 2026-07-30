@@ -27,16 +27,11 @@ public:
 	void InitializeActionActor(UPE_SkillLogicBase* InLogic, AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage);
 
 protected:
-	UFUNCTION()
-	virtual void OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	virtual void Tick(float DeltaTime) override;
 
-	// 자식 BP에서 Sphere, Box 등으로 교체할 수 있도록 UShapeComponent로 선언
+	// 물리 엔진 의존성을 없애고 순수 렌더링용 루트로 변경
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UShapeComponent> CollisionComp;
-
-	// 이동이 필요 없는 스킬일 경우, 자식 BP에서 컴포넌트 비활성화
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UProjectileMovementComponent> MovementComponent;
+	TObjectPtr<USceneComponent> RootScene;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNiagaraComponent> ActionVFXComponent;
@@ -45,7 +40,7 @@ protected:
 	TObjectPtr<UAudioComponent> ActionSFXComponent;
 
 private:
-	// --- [데이터 복제를 통한 클라이언트 VFX/SFX 동기화] ---
+	// --- [데이터 복제] ---
 	UFUNCTION()
 	void OnRep_SkillData();
 
@@ -55,6 +50,10 @@ private:
 	UPROPERTY(Replicated)
 	TObjectPtr<AActor> RepTargetActor;
 
+	// 클라이언트도 동일한 도착지점을 향해 궤적을 그리도록 복제
+	UPROPERTY(Replicated)
+	FVector RepTargetLocation;
+
 	UPROPERTY()
 	TObjectPtr<UPE_SkillLogicBase> SkillLogicInstance;
 
@@ -62,4 +61,14 @@ private:
 	TObjectPtr<AActor> Caster;
 
 	float DamageToApply;
+
+	// --- [수학적 궤적(포물선) 연산용 변수] ---
+	FVector StartLocation;
+	float FlightDuration = 0.f;
+	float CurrentFlightTime = 0.f;
+	float ArcHeight = 0.f;
+	bool bIsFlying = false;
+
+	// 목표 도착 시 폭발 처리
+	void Explode();
 };
