@@ -2,6 +2,7 @@
 
 #include "Grid/ACTile.h"
 #include "GameFramework/PlayerController.h"
+#include "Characters/PE_EnemyBase.h"
 
 AACTile::AACTile()
 {
@@ -82,19 +83,28 @@ void AACTile::UpdateVisuals()
 
 		// nullptr인 경우(시스템/맵툴 호출)는 로컬 취급(기본 색상)하여 렌더링합니다.
 		bool bIsLocal = (RequesterActor == nullptr) || (RequesterActor == LocalPawn);
+		bool bIsEnemy = RequesterActor && RequesterActor->IsA(APE_EnemyBase::StaticClass()); 
 
 		FLinearColor TypeColor = DefaultColor;
 
 		switch (Type)
 		{
 		case ETileHighlightType::InRange:
-			TypeColor = bIsLocal ? InRangeColor : OtherInRangeColor; break;
+			if (bIsEnemy) TypeColor = EnemyInRangeColor;
+			else TypeColor = bIsLocal ? InRangeColor : OtherInRangeColor;
+			break;
 		case ETileHighlightType::Hovered:
-			TypeColor = bIsLocal ? HoveredColor : OtherHoveredColor; break;
+			if (bIsEnemy) TypeColor = EnemySkillTargetColor;
+			else TypeColor = bIsLocal ? HoveredColor : OtherHoveredColor;
+			break;
 		case ETileHighlightType::Path:
-			TypeColor = bIsLocal ? PathColor : OtherPathColor; break;
+			if (bIsEnemy) TypeColor = EnemyPathColor;
+			else TypeColor = bIsLocal ? PathColor : OtherPathColor;
+			break;
 		case ETileHighlightType::SkillTarget:
-			TypeColor = bIsLocal ? SkillTargetColor : OtherSkillTargetColor; break;
+			if (bIsEnemy) TypeColor = EnemySkillTargetColor;
+			else TypeColor = bIsLocal ? SkillTargetColor : OtherSkillTargetColor;
+			break;
 		}
 
 		FinalColor += TypeColor;

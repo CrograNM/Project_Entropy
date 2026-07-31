@@ -66,6 +66,25 @@ void APE_PlayerController::BeginPlay()
 		DeckManagerComp->InitializeDeck(TestStartingDeck);
 	}
 }
+void APE_PlayerController::SetPawn(APawn* InPawn)
+{
+	Super::SetPawn(InPawn);
+
+	// 폰이 배정되었으므로 캐싱을 갱신하고 카메라 모드를 적용합니다.
+	PlayerCharacter = Cast<APE_PlayerCharacter>(InPawn);
+	ApplyCameraMode();
+}
+void APE_PlayerController::ApplyCameraMode()
+{
+	if (APE_PlayerCharacter* PC = GetCachedPlayerCharacter())
+	{
+		if (UACCameraControlComponent* CameraComp = PC->GetCameraControlComponent())
+		{
+			bool bIsFreeMode = (CurrentInputMode == EPEGameState::Battle);
+			CameraComp->SetCameraFreeMode(bIsFreeMode);
+		}
+	}
+}
 
 // 지연 초기화 헬퍼 함수 구현 (접근 시 비어있다면 동적으로 채워넣음)
 APE_PlayerCharacter* APE_PlayerController::GetCachedPlayerCharacter()
@@ -582,7 +601,8 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 {
 	CurrentInputMode = NewState;
 
-	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+	ApplyCameraMode();
+
 	CancelCurrentAction(); // 모드 전환 시 모든 액션 초기화
 
 	// 향상된 입력 서브시스템 가져오기
@@ -600,13 +620,6 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 	{
 	case EPEGameState::Base:
 	{
-		// 카메라 고정 모드로 강제 전환
-		if (PC && PC->GetCameraControlComponent())
-		{
-			GetCachedPlayerCharacter()->GetCameraControlComponent()->SetCameraFreeMode(false);
-			PC->GetCameraControlComponent()->ResetCameraPosition();
-		}
-
 		if (IMC_DirectMove)
 		{
 			Subsystem->AddMappingContext(IMC_DirectMove, 0);
@@ -620,13 +633,6 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 
 	case EPEGameState::Battle:
 	{
-		// 카메라 자유 모드로 강제 전환
-		if (PC && PC->GetCameraControlComponent())
-		{
-			GetCachedPlayerCharacter()->GetCameraControlComponent()->SetCameraFreeMode(true);
-			PC->GetCameraControlComponent()->ResetCameraPosition();
-		}
-
 		if (IMC_Battle)
 		{
 			Subsystem->AddMappingContext(IMC_Battle, 0);

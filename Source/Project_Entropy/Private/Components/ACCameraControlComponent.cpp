@@ -40,6 +40,11 @@ void UACCameraControlComponent::InitCameraComponents(USceneComponent* InCameraBa
 	CameraBase = InCameraBase;
 	CameraBoom = InCameraBoom;
 	TopDownCamera = InTopDownCamera;
+
+	// [수정됨] 물리 컴포넌트가 세팅되었으므로, 미리 변수에 저장되어 있던 목표 모드(bIsCameraFree)를 실제 물리 객체에 확정 적용합니다.
+	bool bTargetState = bIsCameraFree;
+	bIsCameraFree = !bTargetState; // 강제로 상태 변화를 주기 위해 임시 반전
+	SetCameraFreeMode(bTargetState); // 정상 상태로 원복하며 로직 수행
 }
 
 void UACCameraControlComponent::PanCamera(FVector2D PanInput)
@@ -102,14 +107,19 @@ void UACCameraControlComponent::ToggleCameraFreeMode()
 
 void UACCameraControlComponent::SetCameraFreeMode(bool bEnable)
 {
-	if (bIsCameraFree == bEnable || !CameraBase) return;
-	
+	if (bIsCameraFree == bEnable) return;
+
+	// 아직 물리 컴포넌트(!CameraBase)가 없더라도 '의도 상태'는 무조건 저장
 	bIsCameraFree = bEnable;
+
+	if (!CameraBase) return;
+
 	AActor* OwnerActor = GetOwner();
 
 	if (bIsCameraFree)
 	{
 		CameraBase->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+		UE_LOG(LogTemp, Warning, TEXT("[UACCameraControlComponent] 카메라 자유 모드"));
 	}
 	else
 	{
@@ -118,5 +128,6 @@ void UACCameraControlComponent::SetCameraFreeMode(bool bEnable)
 			CameraBase->AttachToComponent(OwnerActor->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
 		}
 		ResetCameraPosition();
+		UE_LOG(LogTemp, Warning, TEXT("[UACCameraControlComponent] 카메라 플레이어 추적 모드"));
 	}
 }

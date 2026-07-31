@@ -91,7 +91,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor SkillTargetColor = FLinearColor(1.0f, 0.2f, 0.2f, 1.0f);
 
-	// --- [다른 플레이어 시각화 전용 색상] ---
+	// --- [다른 아군 시각화 전용 색상] ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor OtherInRangeColor = FLinearColor(0.2f, 0.8f, 0.2f, 0.5f); // 흐릿한 연두색
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
@@ -100,6 +100,14 @@ protected:
 	FLinearColor OtherPathColor = FLinearColor(0.1f, 0.6f, 0.1f, 0.8f);
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor OtherSkillTargetColor = FLinearColor(0.0f, 0.4f, 0.0f, 1.0f); // 진한 녹색
+
+	// --- [적군 의도 전용 색상] ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor EnemyInRangeColor = FLinearColor(0.5f, 0.0f, 0.0f, 0.5f); // 어두운 피바다 느낌
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor EnemyPathColor = FLinearColor(0.8f, 0.1f, 0.1f, 0.8f);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor EnemySkillTargetColor = FLinearColor(1.0f, 0.0f, 0.0f, 1.0f); // 새빨간 경고
 
 private:
 	// 타일 색상을 재계산하여 메터리얼에 적용하는 내부 함수

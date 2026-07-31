@@ -65,6 +65,9 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 
+	virtual void SetPawn(APawn* InPawn) override;
+	void ApplyCameraMode();
+
 	// --- [안전한 멀티플레이어 참조 헬퍼 함수] ---
 	UFUNCTION(BlueprintCallable, Category = "References")
 	APE_PlayerCharacter* GetCachedPlayerCharacter();
