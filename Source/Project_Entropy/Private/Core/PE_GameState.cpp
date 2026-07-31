@@ -30,6 +30,12 @@ void APE_GameState::ProcessNextAction()
 	if (ActionQueue.IsEmpty())
 	{
 		bIsProcessingAction = false;
+
+		// 큐가 완전히 비워진 순간, 턴 매니저가 만장일치로 대기 중이었다면 턴을 끝냅니다.
+		if (TurnManager && TurnManager->IsPendingTurnEnd())
+		{
+			TurnManager->ExecuteTurnEnd();
+		}
 		return;
 	}
 

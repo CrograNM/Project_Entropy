@@ -255,6 +255,8 @@ void APE_PlayerController::UpdateGridHovering()
 // ----- [Public Functions] -----
 void APE_PlayerController::ToggleGridMovementActivation()
 {
+	if (bIsReadyForTurnEnd) return; // 레디 상태면 이동 불가
+
 	// 맵 툴이 켜져 있다면 이동 모드 진입을 차단
 	if (UPE_CheatManager* CM = Cast<UPE_CheatManager>(CheatManager))
 	{
@@ -360,6 +362,7 @@ void APE_PlayerController::OnDirectMove(const FInputActionValue& Value)
 // ----- [Select Action] -----
 void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 {
+	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
 	if (!GridSystem) return;
 
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
@@ -484,6 +487,7 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 }
 void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
 {
+	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
 	if (bIsGridMoveActivated) return;
 
 	if (CardInteractionComp)
@@ -729,4 +733,35 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 		// 이 순간부터 해당 PC의 TargetGridPosition이 갱신됨
 		PC->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
 	}
+}
+
+void APE_PlayerController::ToggleTurnReadyState()
+{
+	if (CurrentInputMode != EPEGameState::Battle) return;
+
+	UPE_TurnManagerComponent* TM = GetCachedTurnManager();
+	if (!TM || TM->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
+
+	bIsReadyForTurnEnd = !bIsReadyForTurnEnd;
+	Server_SetTurnReadyState(bIsReadyForTurnEnd);
+
+	// 레디를 눌렀다면 쥐고 있던 카드나 조준, 이동 모드를 모두 강제로 취소하여 손을 비웁니다.
+	if (bIsReadyForTurnEnd)
+	{
+		CancelCurrentAction();
+	}
+}
+
+void APE_PlayerController::Server_SetTurnReadyState_Implementation(bool bReady)
+{
+	bIsReadyForTurnEnd = bReady;
+	if (UPE_TurnManagerComponent* TM = GetCachedTurnManager())
+	{
+		TM->RequestTurnEnd(this, bReady);
+	}
+}
+
+void APE_PlayerController::Client_ResetReadyState_Implementation()
+{
+	bIsReadyForTurnEnd = false;
 }

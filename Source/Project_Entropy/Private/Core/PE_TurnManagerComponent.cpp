@@ -1,9 +1,9 @@
 // Copyright CrograNM
 
 #include "Core/PE_TurnManagerComponent.h"
-
 #include "Characters/PE_EnemyBase.h"
 #include "Core/PE_PlayerController.h"
+#include "Core/PE_GameState.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
@@ -25,6 +25,9 @@ void UPE_TurnManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 	// 클라이언트들이 턴 수와 현재 페이즈를 알 수 있도록 복제
 	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentPhase);
 	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentTurnCount);
+	DOREPLIFETIME(UPE_TurnManagerComponent, ReadyPlayerCount);
+	DOREPLIFETIME(UPE_TurnManagerComponent, TotalPlayerCount);
+	DOREPLIFETIME(UPE_TurnManagerComponent, bPendingTurnEnd);
 }
 
 void UPE_TurnManagerComponent::BeginPlay()
@@ -88,7 +91,22 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 	// 서버 로컬 델리게이트 발동 (클라이언트는 OnRep_CurrentPhase에서 발동)
 	OnRep_CurrentPhase(OldPhase);
 
-	if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
+	// [추가됨] 플레이어 턴이 시작될 때 모든 레디 상태를 초기화합니다.
+	if (CurrentPhase == EPEBattlePhase::PlayerTurn)
+	{
+		bPendingTurnEnd = false;
+		ReadyPlayers.Empty();
+		ReadyPlayerCount = 0;
+
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+			{
+				PC->Client_ResetReadyState();
+			}
+		}
+	}
+	else if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
 	{
 		EndCurrentPhase();
 	}
@@ -101,6 +119,55 @@ void UPE_TurnManagerComponent::OnRep_CurrentPhase(EPEBattlePhase OldPhase)
 
 	// 클라이언트 및 서버 모두 이 델리게이트를 통해 UI 갱신 등 반응
 	OnPhaseChanged.Broadcast(CurrentPhase);
+}
+
+void UPE_TurnManagerComponent::RequestTurnEnd(APE_PlayerController* PC, bool bReady)
+{
+	if (!GetOwner()->HasAuthority()) return;
+
+	if (bReady) ReadyPlayers.AddUnique(PC);
+	else ReadyPlayers.Remove(PC);
+
+	ReadyPlayerCount = ReadyPlayers.Num();
+
+	TotalPlayerCount = 0;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (It->Get()) TotalPlayerCount++;
+	}
+
+	EvaluateTurnEnd();
+}
+
+void UPE_TurnManagerComponent::EvaluateTurnEnd()
+{
+	// 전원 만장일치 달성
+	if (TotalPlayerCount > 0 && ReadyPlayerCount >= TotalPlayerCount)
+	{
+		bPendingTurnEnd = true;
+
+		APE_GameState* GS = Cast<APE_GameState>(GetOwner());
+		// 큐마저 모두 비워져 있다면 즉시 턴을 넘깁니다. (안 비워져 있다면 ProcessNextAction에서 알아서 호출해줌)
+		if (GS && !GS->IsActionQueueActive())
+		{
+			ExecuteTurnEnd();
+		}
+	}
+	else
+	{
+		bPendingTurnEnd = false; // 누군가 레디를 풀었다면 대기 취소
+	}
+}
+
+void UPE_TurnManagerComponent::ExecuteTurnEnd()
+{
+	if (!GetOwner()->HasAuthority()) return;
+
+	bPendingTurnEnd = false;
+	ReadyPlayers.Empty();
+	ReadyPlayerCount = 0;
+
+	EndCurrentPhase(); // 진짜 턴 종료 페이즈 진입
 }
 
 void UPE_TurnManagerComponent::StartEnemyPhase()

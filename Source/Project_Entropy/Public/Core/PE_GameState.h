@@ -25,6 +25,9 @@ public:
 	void EnqueueSkillAction(const FPESkillActionPayload& Payload); // 스킬 발동을 대기열에 추가
 	void CompleteCurrentAction();	// 현재 발동 중인 액션(투사체 적중 등)이 완전히 끝났음을 알림
 
+	// 현재 큐에 남은 행동이 있거나, 누군가 스킬을 실행 중인지 확인합니다.
+	bool IsActionQueueActive() const { return bIsProcessingAction || !ActionQueue.IsEmpty(); }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
 	TObjectPtr<UPE_TurnManagerComponent> TurnManager;

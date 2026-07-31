@@ -41,6 +41,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Turn System")
 	void EndCurrentPhase();
 
+	// --- [턴 종료 만장일치 시스템] ---
+	void RequestTurnEnd(class APE_PlayerController* PC, bool bReady);
+	bool IsPendingTurnEnd() const { return bPendingTurnEnd; }
+	void ExecuteTurnEnd(); // 큐와 레디가 모두 달성되었을 때 내부 호출됨
+
 	/** 현재 페이즈 반환 */
 	FORCEINLINE EPEBattlePhase GetCurrentPhase() const { return CurrentPhase; }
 	FORCEINLINE int32 GetCurrentTurnCount() const { return CurrentTurnCount; }
@@ -72,4 +77,19 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Replicated, Category = "Turn System")
 	int32 CurrentTurnCount;
+
+	// --- [추가됨: 멀티플레이어 동기화 변수] ---
+	UPROPERTY()
+	TArray<class APE_PlayerController*> ReadyPlayers;
+
+	UPROPERTY(VisibleAnywhere, Replicated, Category = "Turn System|Ready")
+	int32 ReadyPlayerCount = 0;
+
+	UPROPERTY(VisibleAnywhere, Replicated, Category = "Turn System|Ready")
+	int32 TotalPlayerCount = 0;
+
+	UPROPERTY(VisibleAnywhere, Replicated, Category = "Turn System|Ready")
+	bool bPendingTurnEnd = false; // 모두가 레디를 눌렀지만 큐가 덜 끝나서 대기 중인 상태
+
+	void EvaluateTurnEnd();
 };

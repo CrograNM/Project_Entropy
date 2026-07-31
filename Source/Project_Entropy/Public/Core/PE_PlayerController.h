@@ -61,6 +61,19 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_CancelCurrentAction();
 
+	// --- [Turn End System] ---
+	UFUNCTION(BlueprintCallable, Category = "Turn System")
+	void ToggleTurnReadyState();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetTurnReadyState(bool bReady);
+
+	UFUNCTION(Client, Reliable)
+	void Client_ResetReadyState(); // 서버가 턴 시작 시 강제로 로컬 레디를 풀어줌
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Turn System")
+	bool bIsReadyForTurnEnd = false;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
