@@ -51,7 +51,7 @@ protected:
 
 	/** --- 카메라 세팅 변수들 --- */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-	bool bIsCameraFree = false;
+	bool bIsCameraFree = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Settings")
 	float CameraPanSpeed = 15.f;

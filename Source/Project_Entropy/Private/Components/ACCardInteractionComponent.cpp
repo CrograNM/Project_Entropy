@@ -174,15 +174,7 @@ void UACCardInteractionComponent::ProcessCasting()
 
 void UACCardInteractionComponent::GrabCard()
 {
-	// [Casting] - 캐스팅 취소
-	if (CurrentState == EPEInteractionState::Casting)
-	{
-		if (HoveredCard && HoveredCard == CastingCard)
-		{
-			CancelCasting();
-		}
-		return;
-	}
+	// [Casting] - 캐스팅 취소 -> 플레이어 컨트롤러에서 처리
 
 	if (CurrentState != EPEInteractionState::Hovering) return;
 

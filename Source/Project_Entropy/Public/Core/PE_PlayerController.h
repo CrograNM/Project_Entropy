@@ -150,11 +150,6 @@ private:
 	bool bIsGridMoveActivated = false;	// 이동 모드 활성화 여부
 
 	// ----- [Temporary Variables] -----
-	UPROPERTY()
-	TArray<AACTile*> ValidRangeTiles;
-
-	FIntPoint LastHoveredTilePos = FIntPoint(-999, -999);
-
 	float StoredMouseX = 0.f;
 	float StoredMouseY = 0.f;
 };
