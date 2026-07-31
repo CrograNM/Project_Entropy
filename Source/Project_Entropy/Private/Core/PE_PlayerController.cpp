@@ -497,6 +497,8 @@ void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
 }
 void APE_PlayerController::OnCardRelease(const FInputActionValue& Value)
 {
+	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
+
 	if (CardInteractionComp)
 	{
 		CardInteractionComp->ReleaseCard();
