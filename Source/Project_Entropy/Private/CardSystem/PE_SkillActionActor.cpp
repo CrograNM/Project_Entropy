@@ -8,6 +8,7 @@
 #include "CardSystem/PE_SkillData.h"
 #include "NiagaraComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Core/PE_GameState.h"
 
 APE_SkillActionActor::APE_SkillActionActor()
 {
@@ -125,10 +126,18 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 
 void APE_SkillActionActor::Explode()
 {
-	// 스킬 로직 적용은 '서버'에서만 단 1회 수행합니다. (멀티캐스트 이펙트는 Logic이 컴포넌트를 통해 알아서 뿌려줌)
-	if (HasAuthority() && SkillLogicInstance)
+	if (HasAuthority())
 	{
-		SkillLogicInstance->ApplySkillEffect(Caster, RepTargetActor, RepTargetLocation, RepSkillData, DamageToApply);
+		if (SkillLogicInstance)
+		{
+			SkillLogicInstance->ApplySkillEffect(Caster, RepTargetActor, RepTargetLocation, RepSkillData, DamageToApply);
+		}
+
+		// 스킬 이펙트 적용이 끝났으므로, GameState에 내 액션이 끝났음을 알립니다!
+		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+		{
+			GS->CompleteCurrentAction();
+		}
 	}
 
 	// 폭발 후 잔여물(투사체 액터) 정리 (서버/클라 공통)
@@ -137,6 +146,6 @@ void APE_SkillActionActor::Explode()
 		if (ActionVFXComponent) ActionVFXComponent->Deactivate();
 		if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.2f, 0.f);
 
-		SetLifeSpan(0.5f); // 이펙트가 자연스럽게 꺼질 짧은 여유 시간 후 소멸
+		SetLifeSpan(0.2f); // 이펙트가 자연스럽게 꺼질 짧은 여유 시간 후 소멸
 	}
 }

@@ -26,5 +26,23 @@ enum class EPECardRarity : uint8
 	Legendary   UMETA(DisplayName = "전설 (Legendary)")
 };
 
-// 속성 태그(Element.Normal.Fire 등)는 언리얼 에디터의 [프로젝트 세팅 -> Gameplay Tags] 메뉴에서 직접 타이핑하여 추가
-// C++에서는 FGameplayTag 구조체를 사용하여 이 태그들을 받을 수 있음
+USTRUCT(BlueprintType)
+struct FPESkillActionPayload
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	class APE_CharacterBase* Instigator = nullptr;
+
+	UPROPERTY()
+	class AACTile* TargetTile = nullptr;
+
+	UPROPERTY()
+	class APE_CharacterBase* TargetCharacter = nullptr;
+
+	UPROPERTY()
+	class UPE_SkillData* SkillData = nullptr;
+
+	UPROPERTY()
+	float CalculatedDamage = 0.f;
+};

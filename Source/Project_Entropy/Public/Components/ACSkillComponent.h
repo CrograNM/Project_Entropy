@@ -28,6 +28,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Skill System")
 	bool TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage);
 
+	// GameState의 큐가 자신의 차례일 때 스킬을 물리적으로 발동시키는 함수
+	void ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage);
+
 	/** 현재 장착된 스킬 목록 반환 */
 	UFUNCTION(BlueprintCallable, Category = "Skill System")
 	TArray<UPE_SkillData*> GetActiveSkills() const { return ActiveSkills; }

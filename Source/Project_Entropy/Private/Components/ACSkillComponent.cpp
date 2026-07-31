@@ -8,6 +8,7 @@
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Core/PE_GameState.h"
 
 UACSkillComponent::UACSkillComponent()
 {
@@ -53,7 +54,7 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 
 	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
 
-	// 1. 타겟 조건이 맞는지 1차 검증 (TargetType 기반)
+	// 타겟 조건이 맞는지 1차 검증 (TargetType 기반)
 	if (SkillData->TargetType == EPESkillTargetType::Tile && !TargetTile)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[SkillSystem] 타일 타겟팅 스킬인데 타일이 지정되지 않았습니다."));
@@ -65,26 +66,23 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 		return false;
 	}
 
-	// 2. AP 결제 시도 (AP가 부족하면 실패 처리)
+	// AP 결제 시도 (AP가 부족하면 실패 처리)
 	if (OwnerStatComponent->ConsumeAP(SkillData->BaseAPCost))
 	{
-		// 3. 결제 성공 시, 데이터에 명시된 로직 클래스를 동적으로 생성(Instancing)하여 실행합니다.
-		if (SkillData->LogicClass)
+		// 2. 결제가 성공하면 스킬 로직을 즉시 실행하지 않고, 명세서를 만들어 큐에 집어넣습니다!
+		FPESkillActionPayload Payload;
+		Payload.Instigator = Caster;
+		Payload.TargetTile = TargetTile;
+		Payload.TargetCharacter = TargetCharacter;
+		Payload.SkillData = SkillData;
+		Payload.CalculatedDamage = CalculatedDamage;
+
+		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
-			UPE_SkillLogicBase* SkillLogic = NewObject<UPE_SkillLogicBase>(this, SkillData->LogicClass);
-
-			// 타일이 존재한다면 타일의 위치를, 아니라면 ZeroVector를 넘겨줍니다.
-			FVector TargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
-
-			// BlueprintNativeEvent 호출 (로직 실행)
-			SkillLogic->ExecuteSkill(Caster, TargetCharacter, TargetLoc, SkillData, CalculatedDamage);
-
-			return true;
+			GS->EnqueueSkillAction(Payload);
 		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[SkillSystem] SkillData에 LogicClass가 지정되지 않았습니다: %s"), *SkillData->SkillID.ToString());
-		}
+
+		return true; // 큐 등록 성공 (손패에서 카드가 버려짐)
 	}
 	else
 	{
@@ -92,6 +90,28 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 	}
 
 	return false;
+}
+
+// 큐에서 대기하다가 자기 차례가 오면 GameState가 이 함수를 부릅니다.
+void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage)
+{
+	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
+
+	if (SkillData && SkillData->LogicClass)
+	{
+		UPE_SkillLogicBase* SkillLogic = NewObject<UPE_SkillLogicBase>(this, SkillData->LogicClass);
+		FVector TargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
+
+		SkillLogic->ExecuteSkill(Caster, TargetCharacter, TargetLoc, SkillData, CalculatedDamage);
+	}
+	else
+	{
+		// 로직 클래스가 없어 스폰에 실패했다면 큐가 영원히 멈추지 않도록 강제로 완료 신호를 쏩니다.
+		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+		{
+			GS->CompleteCurrentAction();
+		}
+	}
 }
 
 // 모든 클라이언트에서 동일한 시전(Cast) 애니메이션과 사운드를 재생합니다.
