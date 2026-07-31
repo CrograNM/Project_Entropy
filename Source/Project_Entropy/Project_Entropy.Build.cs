@@ -14,9 +14,10 @@ public class Project_Entropy : ModuleRules
 			"Core", 
 			"CoreUObject", 
 			"Engine", 
-			"InputCore", 
-			"EnhancedInput",
-            "GameplayTags"
+			"InputCore",
+            "EnhancedInput",
+            "GameplayTags",
+            "CoreOnline"
         });
 
         // Private
