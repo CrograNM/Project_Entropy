@@ -45,6 +45,19 @@ int32 UPE_RunManagerSubsystem::GetRandomIntInRange(int32 Min, int32 Max) const
 	return RunRandomStream.RandRange(Min, Max);
 }
 
+int32 UPE_RunManagerSubsystem::GetPlayerRandomIntInRange(const FString& PlayerUniqueId, int32 Min, int32 Max) const
+{
+	// 메인 런 시드와 플레이어 고유 문자열의 해시를 조합하여 플레이어만의 고유 시드 생성
+	int32 PlayerSpecificSeed = CurrentSeed ^ FCrc::StrCrc32(*PlayerUniqueId);
+
+	// 이 플레이어만을 위한 일회성 난수 스트림 생성 및 초기화
+	FRandomStream PlayerStream;
+	PlayerStream.Initialize(PlayerSpecificSeed);
+
+	// 접속 순서와 무관하게 이 플레이어에게만 고정된 난수 반환
+	return PlayerStream.RandRange(Min, Max);
+}
+
 float UPE_RunManagerSubsystem::GetRandomFloatInRange(float Min, float Max) const
 {
 	return RunRandomStream.FRandRange(Min, Max);

@@ -27,6 +27,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Run|Random")
 	int32 GetRandomIntInRange(int32 Min, int32 Max) const;
 
+	/** 시드 기반 랜덤 정수 반환 (플레이어 고유 ID를 기반으로 한 고정 난수) */
+	UFUNCTION(BlueprintPure, Category = "Run|Random")
+	int32 GetPlayerRandomIntInRange(const FString& PlayerUniqueId, int32 Min, int32 Max) const;
+
 	/** 시드 기반 랜덤 실수 반환 */
 	UFUNCTION(BlueprintPure, Category = "Run|Random")
 	float GetRandomFloatInRange(float Min, float Max) const;
