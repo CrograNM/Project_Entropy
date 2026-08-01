@@ -3,6 +3,7 @@
 #include "Grid/ACTile.h"
 #include "GameFramework/PlayerController.h"
 #include "Characters/PE_EnemyBase.h"
+#include "Characters/PE_CharacterBase.h"
 
 AACTile::AACTile()
 {
@@ -75,34 +76,46 @@ void AACTile::UpdateVisuals()
 
 	// 화면을 보고 있는 나 자신(로컬 플레이어 폰)을 구합니다.
 	AActor* LocalPawn = GetWorld()->GetFirstPlayerController() ? GetWorld()->GetFirstPlayerController()->GetPawn() : nullptr;
+	APE_CharacterBase* LocalChar = Cast<APE_CharacterBase>(LocalPawn);
+
+	// 관전자나 예외 상황을 고려하여 내 팀이 없으면 -1 취급
+	int32 LocalTeamID = LocalChar ? LocalChar->GetTeamID() : -1;
 
 	for (const auto& Pair : HighlightRequests)
 	{
 		AActor* RequesterActor = Pair.Key;
 		ETileHighlightType Type = Pair.Value;
 
-		// nullptr인 경우(시스템/맵툴 호출)는 로컬 취급(기본 색상)하여 렌더링합니다.
 		bool bIsLocal = (RequesterActor == nullptr) || (RequesterActor == LocalPawn);
-		bool bIsEnemy = RequesterActor && RequesterActor->IsA(APE_EnemyBase::StaticClass()); 
+		bool bIsHostile = false;
+
+		// TeamID를 비교하여 서로 팀이 다르면 붉은색(적대)으로 간주 (PVP 대응)
+		if (RequesterActor && LocalChar)
+		{
+			if (APE_CharacterBase* ReqChar = Cast<APE_CharacterBase>(RequesterActor))
+			{
+				bIsHostile = (ReqChar->GetTeamID() != LocalTeamID);
+			}
+		}
 
 		FLinearColor TypeColor = DefaultColor;
 
 		switch (Type)
 		{
 		case ETileHighlightType::InRange:
-			if (bIsEnemy) TypeColor = EnemyInRangeColor;
+			if (bIsHostile) TypeColor = EnemyInRangeColor;
 			else TypeColor = bIsLocal ? InRangeColor : OtherInRangeColor;
 			break;
 		case ETileHighlightType::Hovered:
-			if (bIsEnemy) TypeColor = EnemySkillTargetColor;
+			if (bIsHostile) TypeColor = EnemySkillTargetColor;
 			else TypeColor = bIsLocal ? HoveredColor : OtherHoveredColor;
 			break;
 		case ETileHighlightType::Path:
-			if (bIsEnemy) TypeColor = EnemyPathColor;
+			if (bIsHostile) TypeColor = EnemyPathColor;
 			else TypeColor = bIsLocal ? PathColor : OtherPathColor;
 			break;
 		case ETileHighlightType::SkillTarget:
-			if (bIsEnemy) TypeColor = EnemySkillTargetColor;
+			if (bIsHostile) TypeColor = EnemySkillTargetColor;
 			else TypeColor = bIsLocal ? SkillTargetColor : OtherSkillTargetColor;
 			break;
 		}

@@ -14,6 +14,9 @@ APE_EnemyBase::APE_EnemyBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true; // 적 캐릭터 복제 활성화
+
+	// 몬스터는 기본적으로 1팀(적대 세력)으로 간주
+	TeamID = 1;
 }
 
 void APE_EnemyBase::BeginPlay()

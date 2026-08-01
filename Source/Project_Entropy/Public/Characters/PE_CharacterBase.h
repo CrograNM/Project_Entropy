@@ -30,10 +30,18 @@ public:
 	
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
+	// 범용 피아식별용 TeamID 반환 함수
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	virtual int32 GetTeamID() const;
+
 protected:
 	/** 스탯 컴포넌트의 OnDeath 델리게이트에 바인딩될 공통 사망 처리 함수 */
 	UFUNCTION()
 	virtual void HandleDeath();
+
+	// 몬스터 등 PlayerState가 없는 AI들을 위한 기본 팀 ID
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
+	int32 TeamID = 1;
 
 	/** 전장(Grid) 이동 제어 컴포넌트 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

@@ -8,7 +8,8 @@
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Components/CapsuleComponent.h" // 캡슐 컴포넌트 제어를 위해 추가
+#include "Components/CapsuleComponent.h"
+#include "Core/PE_PlayerState.h"
 
 APE_CharacterBase::APE_CharacterBase()
 {
@@ -111,4 +112,19 @@ void APE_CharacterBase::HandleDeath()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[%s] 사망 처리되었습니다."), *GetName());
 	// 충돌체 끄기, 랙돌 전환 또는 파괴 로직 등의 공통 처리를 이곳에서 진행합니다.
+}
+
+int32 APE_CharacterBase::GetTeamID() const
+{
+	// 1. 만약 내가 플레이어라서 PlayerState를 가지고 있다면, 그 상태 객체의 정확한 팀 ID를 가져옵니다.
+	if (APlayerState* PS = GetPlayerState())
+	{
+		if (APE_PlayerState* PE_PS = Cast<APE_PlayerState>(PS))
+		{
+			return PE_PS->GetTeamID();
+		}
+	}
+
+	// 2. AI 몬스터처럼 State가 없다면 내 자체 TeamID(기본 1)를 반환합니다.
+	return TeamID;
 }
