@@ -39,6 +39,9 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "UI")
 	void ShowToastMessage(const FText& Message); // [UI] 토스트 메시지 출력
 
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "UI")
+	void SetBattleUIVisibility(bool bVisible); // [UI] 배틀 UI 표시/숨김
+
 	// ----- [Test Functions] -----
 	UFUNCTION(BlueprintCallable, Category = "Test")
 	void OnTestDrawCard(int32 Count); // [Test] 카드 드로우

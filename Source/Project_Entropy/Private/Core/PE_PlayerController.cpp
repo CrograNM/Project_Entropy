@@ -633,6 +633,9 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 		// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
 		FInputModeGameOnly InputModeDataGame;
 		SetInputMode(InputModeDataGame);
+
+		SetBattleUIVisibility(false);
+
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 기지 모드로 전환"));
 		break;
 	}
@@ -648,6 +651,9 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 		InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		InputModeDataUI.SetHideCursorDuringCapture(false);
 		SetInputMode(InputModeDataUI);
+
+		SetBattleUIVisibility(true);
+
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
 		break;
 	}
