@@ -34,6 +34,11 @@ void APE_PVPLobbyPlayerController::JoinLobby(const FString& IPAddress)
 
 void APE_PVPLobbyPlayerController::RequestTeamChange(int32 NewTeamID)
 {
+	if (APE_PlayerState* PS = GetPlayerState<APE_PlayerState>())
+	{
+		PS->SetTeamIDLocal(NewTeamID); // 즉시 0프레임 내에 UI가 갱신됨
+	}
+
 	Server_RequestTeamChange(NewTeamID);
 }
 
@@ -43,12 +48,6 @@ void APE_PVPLobbyPlayerController::Server_RequestTeamChange_Implementation(int32
 	if (APE_PlayerState* PS = GetPlayerState<APE_PlayerState>())
 	{
 		PS->SetTeamID(NewTeamID);
-
-		// 누군가 팀을 바꿨으니 UI 새로고침 방송
-		if (APE_PVPLobbyGameState* GS = GetWorld()->GetGameState<APE_PVPLobbyGameState>())
-		{
-			GS->NetMulticast_RefreshLobbyUI();
-		}
 	}
 }
 
