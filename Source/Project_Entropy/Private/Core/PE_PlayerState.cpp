@@ -15,6 +15,17 @@ void APE_PlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(APE_PlayerState, TeamID);
 }
 
+void APE_PlayerState::CopyProperties(APlayerState* PlayerState)
+{
+	Super::CopyProperties(PlayerState);
+
+	if (APE_PlayerState* NewPS = Cast<APE_PlayerState>(PlayerState))
+	{
+		// 로비에서 들고 있던 TeamID를 전투 맵의 새 PlayerState에 복사합니다.
+		NewPS->TeamID = this->TeamID;
+	}
+}
+
 void APE_PlayerState::SetTeamID(int32 InTeamID)
 {
 	if (HasAuthority())

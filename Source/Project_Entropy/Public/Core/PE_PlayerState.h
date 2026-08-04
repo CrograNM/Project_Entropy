@@ -14,6 +14,7 @@ class PROJECT_ENTROPY_API APE_PlayerState : public APlayerState
 public:
 	APE_PlayerState();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void CopyProperties(APlayerState* PlayerState) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Team")
 	int32 GetTeamID() const { return TeamID; }
