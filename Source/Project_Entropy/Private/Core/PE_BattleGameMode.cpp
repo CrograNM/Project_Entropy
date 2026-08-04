@@ -13,6 +13,8 @@
 APE_BattleGameMode::APE_BattleGameMode()
 {
 	CurrentState = EPEGameState::Battle;
+
+	bUseSeamlessTravel = true;
 }
 
 void APE_BattleGameMode::BeginPlay()

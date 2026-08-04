@@ -9,6 +9,8 @@ APE_GameMode::APE_GameMode()
 {
 	// 기본 상태: 기지(Base) 모드로 설정
 	CurrentState = EPEGameState::Base;
+
+	bUseSeamlessTravel = true;
 }
 
 void APE_GameMode::BeginPlay()

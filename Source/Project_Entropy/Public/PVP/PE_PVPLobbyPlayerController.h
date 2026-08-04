@@ -14,17 +14,6 @@ class PROJECT_ENTROPY_API APE_PVPLobbyPlayerController : public APlayerControlle
 public:
 	APE_PVPLobbyPlayerController();
 
-	// --- [UI 연동: 방 생성 및 접속 (테스트용)] ---
-
-	// 'PvP' 버튼을 눌렀을 때 로비 맵을 Listen 서버로 엽니다.
-	UFUNCTION(BlueprintCallable, Category = "Lobby|Network")
-	void HostLobby(FString MapName);
-
-	// 'Find' 버튼을 눌렀을 때 IP를 입력받아 해당 방으로 접속합니다.
-	UFUNCTION(BlueprintCallable, Category = "Lobby|Network")
-	void JoinLobby(const FString& IPAddress);
-
-
 	// --- [UI 연동: 로비 조작] ---
 
 	// 왼쪽/오른쪽 패널을 눌러 팀을 바꿀 때 호출
@@ -41,6 +30,9 @@ public:
 
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_RequestStartGame(const FString& MapName);
+
+	UFUNCTION(Client, Reliable)
+	void Client_PrepareForTravel();
 
 protected:
 	virtual void BeginPlay() override;
