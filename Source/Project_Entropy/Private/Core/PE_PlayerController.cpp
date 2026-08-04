@@ -225,15 +225,20 @@ void APE_PlayerController::UpdateGridHovering()
 					}
 					else if (CastingCard->GetSkillData()->TargetType == EPESkillTargetType::Snap_Enemy)
 					{
-						TArray<AActor*> Enemies;
-						UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), Enemies);
-						for (AActor* EnemyActor : Enemies)
+						// TeamID를 기반으로 피아 식별 진행 (PVP 및 PVE 완벽 대응)
+						TArray<AActor*> AllChars;
+						UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+						for (AActor* Actor : AllChars)
 						{
-							APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(EnemyActor);
-							if (Enemy && Enemy->GetGridMovementComponent()->GetGridPosition() == HoveredTile->GetGridPosition())
+							APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
+							// 살아있고, 자신과 팀이 다른 캐릭터만 타겟으로 인정합니다.
+							if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
 							{
-								bIsValidTarget = true;
-								break;
+								if (TargetChar->GetGridMovementComponent()->GetGridPosition() == HoveredTile->GetGridPosition())
+								{
+									bIsValidTarget = true;
+									break;
+								}
 							}
 						}
 					}
@@ -445,16 +450,20 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 				}
 				else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
 				{
-					TArray<AActor*> Enemies;
-					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), Enemies);
-					for (AActor* EnemyActor : Enemies)
+					// [수정됨] TeamID 기반 적 스냅 판별
+					TArray<AActor*> AllChars;
+					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+					for (AActor* Actor : AllChars)
 					{
-						APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(EnemyActor);
-						if (Enemy && Enemy->GetGridMovementComponent()->GetGridPosition() == TargetTile->GetGridPosition())
+						APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
+						if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
 						{
-							TargetCharacter = Enemy; // 스냅된 적 캐릭터 캐싱
-							bIsValidTarget = true;
-							break;
+							if (TargetChar->GetGridMovementComponent()->GetGridPosition() == TargetTile->GetGridPosition())
+							{
+								TargetCharacter = TargetChar; // 스냅된 적 캐릭터 캐싱
+								bIsValidTarget = true;
+								break;
+							}
 						}
 					}
 				}
