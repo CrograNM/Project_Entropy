@@ -6,6 +6,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Containers/Queue.h"
 #include "CardSystem/PE_DataTypes.h"
+#include "Core/PE_GameMode.h"
 #include "PE_GameState.generated.h"
 
 class UPE_TurnManagerComponent;
@@ -17,6 +18,8 @@ class PROJECT_ENTROPY_API APE_GameState : public AGameStateBase
 
 public:
 	APE_GameState();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void BeginPlay() override; // [추가됨]
 
 	/** 전역에서 쉽게 턴 매니저에 접근할 수 있도록 Getter 제공 */
 	FORCEINLINE UPE_TurnManagerComponent* GetTurnManager() const { return TurnManager; }
@@ -31,6 +34,13 @@ public:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
 	TObjectPtr<UPE_TurnManagerComponent> TurnManager;
+
+	// [추가됨] 현재 게임의 상태를 모든 클라이언트에 복제합니다.
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentState, Category = "State")
+	EPEGameState CurrentState;
+
+	UFUNCTION()
+	void OnRep_CurrentState();
 
 private:
 	// 스킬 발동 대기열

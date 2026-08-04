@@ -4,11 +4,43 @@
 #include "Core/PE_TurnManagerComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Components/ACSkillComponent.h"
+#include "Net/UnrealNetwork.h" // [추가됨]
+#include "Core/PE_PlayerController.h" // [추가됨]
 
 APE_GameState::APE_GameState()
 {
 	// 턴 매니저 컴포넌트 생성 및 부착 (기존 GameMode에서 이관)
 	TurnManager = CreateDefaultSubobject<UPE_TurnManagerComponent>(TEXT("TurnManager"));
+}
+
+void APE_GameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(APE_GameState, CurrentState);
+}
+
+void APE_GameState::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 서버인 경우 GameMode(새 맵의 룰)에서 현재 상태를 가져와 동기화 변수에 세팅합니다.
+	if (HasAuthority())
+	{
+		if (APE_GameMode* GM = Cast<APE_GameMode>(GetWorld()->GetAuthGameMode()))
+		{
+			CurrentState = GM->GetCurrentState();
+			OnRep_CurrentState(); // 서버 자신도 로컬 갱신을 위해 수동 호출
+		}
+	}
+}
+
+void APE_GameState::OnRep_CurrentState()
+{
+	// 새 맵에 진입하여 상태가 복제되면, 로컬 플레이어의 컨트롤러 모드를 즉각 강제 변경합니다.
+	if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetWorld()->GetFirstPlayerController()))
+	{
+		PC->SwitchInputMode(CurrentState);
+	}
 }
 
 void APE_GameState::EnqueueSkillAction(const FPESkillActionPayload& Payload)

@@ -44,23 +44,6 @@ void APE_PlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 멀티플레이어 환경에서는 GameMode가 서버에만 존재하므로 HasAuthority 체크를 먼저 수행
-	if (HasAuthority())
-	{
-		APE_GameMode* GameMode = Cast<APE_GameMode>(UGameplayStatics::GetGameMode(this));
-		if (GameMode)
-		{
-			SwitchInputMode(GameMode->GetCurrentState());
-			// 서버인 경우 클라이언트의 인풋도 맞춰주기 위해 RPC 호출
-			Client_SetupInputMode(GameMode->GetCurrentState());
-		}
-	}
-	// 클라이언트/서버 공통 참조 초기화 (GameMode 의존성 제거)
-	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
-	{
-		GridSystem = Cast<AACGridSystem>(FoundGridActor);
-	}
-
 	if (DeckManagerComp && TestStartingDeck.Num() > 0)
 	{
 		DeckManagerComp->InitializeDeck(TestStartingDeck);
@@ -72,7 +55,22 @@ void APE_PlayerController::SetPawn(APawn* InPawn)
 
 	// 폰이 배정되었으므로 캐싱을 갱신하고 카메라 모드를 적용합니다.
 	PlayerCharacter = Cast<APE_PlayerCharacter>(InPawn);
-	ApplyCameraMode();
+
+	// [추가됨] 맵이 심리스 트래블로 넘어가도 SetPawn은 새 맵에서 캐릭터가 생성될 때 다시 호출됩니다.
+	// 따라서 여기서 새 맵에 배치된 GridSystem 등을 다시 찾아 캐싱해 주어야 합니다!
+	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
+	{
+		GridSystem = Cast<AACGridSystem>(FoundGridActor);
+	}
+
+	if (IsLocalController())
+	{
+		SwitchInputMode(CurrentInputMode);
+	}
+	else
+	{
+		ApplyCameraMode();
+	}
 }
 void APE_PlayerController::ApplyCameraMode()
 {
@@ -162,10 +160,6 @@ void APE_PlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(IA_CameraHeight, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraHeight);
 		}
 	}
-}
-void APE_PlayerController::Client_SetupInputMode_Implementation(EPEGameState NewState)
-{
-	SwitchInputMode(NewState);
 }
 
 // ----- [Update] -----
@@ -616,13 +610,12 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 {
 	CurrentInputMode = NewState;
 
-	ApplyCameraMode();
-
-	CancelCurrentAction(); // 모드 전환 시 모든 액션 초기화
-
-	// 향상된 입력 서브시스템 가져오기
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!LocalPlayer) return;
+
+	// 이 시점에서는 LocalPlayer와 Pawn이 모두 존재하므로 완벽하게 세팅
+	ApplyCameraMode();
+	CancelCurrentAction();
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
 	if (!Subsystem) return;
