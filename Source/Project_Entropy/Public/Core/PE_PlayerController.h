@@ -166,6 +166,8 @@ private:
 	EPEGameState CurrentInputMode = EPEGameState::Base; // 현재 입력 모드 (Base/Battle)
 	bool bIsGridMoveActivated = false;	// 이동 모드 활성화 여부
 
+	bool IsMyTurn() const; // 현재 턴이 내 팀의 턴인지 확인
+
 	// ----- [Temporary Variables] -----
 	float StoredMouseX = 0.f;
 	float StoredMouseY = 0.f;

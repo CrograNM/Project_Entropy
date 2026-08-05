@@ -34,7 +34,7 @@ protected:
 	
 	/** 턴 매니저의 페이즈 변경 신호를 받을 콜백 함수 */
 	UFUNCTION()
-	void OnBattlePhaseChanged(EPEBattlePhase NewPhase);
+	void OnTeamTurnStarted(int32 InTeamID);
 	
 protected:
 	/** --- Camera --- */

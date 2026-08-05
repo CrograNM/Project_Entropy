@@ -11,8 +11,7 @@ enum class EPEBattlePhase : uint8
 {
 	None,
 	BattleStart,     // 전투 초기화 (덱 셔플, 초기 카드 드로우 등)
-	PlayerTurn,      // 플레이어 행동 페이즈
-	EnemyTurn,       // 적 AI 행동 페이즈
+	TeamTurn,
 	EnvironmentTurn, // 환경 페이즈 (원소 타일 지속시간 감소, 화상 데미지 등)
 	BattleEnd        // 전투 종료 (승/패)
 };
@@ -21,6 +20,9 @@ class APE_EnemyBase;
 
 // 턴 변경 이벤트 방송용 델리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPhaseChangedSignature, EPEBattlePhase, NewPhase);
+
+// 팀 턴이 시작될 때 어떤 팀의 턴인지 UI에 알려주는 전용 델리게이트
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTeamTurnStartedSignature, int32, TeamID);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class PROJECT_ENTROPY_API UPE_TurnManagerComponent : public UActorComponent
@@ -34,6 +36,9 @@ public:
 	/** 페이즈가 바뀔 때마다 발동하는 이벤트 */
 	UPROPERTY(BlueprintAssignable, Category = "Turn System")
 	FOnPhaseChangedSignature OnPhaseChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Turn System")
+	FOnTeamTurnStartedSignature OnTeamTurnStarted;
 
 	UFUNCTION(BlueprintCallable, Category = "Turn System")
 	void StartBattle();
@@ -49,6 +54,7 @@ public:
 	/** 현재 페이즈 반환 */
 	FORCEINLINE EPEBattlePhase GetCurrentPhase() const { return CurrentPhase; }
 	FORCEINLINE int32 GetCurrentTurnCount() const { return CurrentTurnCount; }
+	FORCEINLINE int32 GetCurrentTeamTurn() const { return CurrentTeamTurn; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -56,8 +62,7 @@ protected:
 private:
 	/** 실제 페이즈 변경 및 델리게이트 방송을 처리하는 내부 함수 */
 	void ChangePhase(EPEBattlePhase NewPhase);
-	
-	void StartEnemyPhase();
+	void PrepareTeamTurn(); // 팀 턴 시작 시 초기화 및 AI 가동
 	
 	UFUNCTION()
 	void ProcessNextEnemy();
@@ -74,6 +79,15 @@ private:
 
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentPhase, Category = "Turn System")
 	EPEBattlePhase CurrentPhase;
+
+	UFUNCTION() 
+	void OnRep_CurrentTeamTurn();
+
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentTeamTurn, Category = "Turn System")
+	int32 CurrentTeamTurn = 0; // 현재 턴을 진행 중인 팀 ID
+
+	UPROPERTY(EditDefaultsOnly, Category = "Turn System")
+	int32 MaxTeams = 2; // 교전에 참여하는 최대 팀 수 (0팀, 1팀)
 
 	UPROPERTY(VisibleAnywhere, Replicated, Category = "Turn System")
 	int32 CurrentTurnCount;

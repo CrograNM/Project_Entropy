@@ -54,15 +54,15 @@ void APE_PlayerCharacter::BeginPlay()
 	{
 		if (UPE_TurnManagerComponent* TurnManager = GS->GetTurnManager())
 		{
-			TurnManager->OnPhaseChanged.AddDynamic(this, &APE_PlayerCharacter::OnBattlePhaseChanged);
+			TurnManager->OnTeamTurnStarted.AddDynamic(this, &APE_PlayerCharacter::OnTeamTurnStarted);
 		}
 	}
 }
 
-void APE_PlayerCharacter::OnBattlePhaseChanged(EPEBattlePhase NewPhase)
+void APE_PlayerCharacter::OnTeamTurnStarted(int32 InTeamID)
 {
 	// 턴 매니저가 플레이어 턴의 시작을 알리면 즉시 AP를 최대로 리셋!
-	if (NewPhase == EPEBattlePhase::PlayerTurn)
+	if (InTeamID == GetTeamID())
 	{
 		if (StatComponent)
 		{

@@ -2,8 +2,10 @@
 
 #include "Core/PE_TurnManagerComponent.h"
 #include "Characters/PE_EnemyBase.h"
+#include "Characters/PE_PlayerCharacter.h"
 #include "Core/PE_PlayerController.h"
 #include "Core/PE_GameState.h"
+#include "Components/ACStatComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
@@ -16,6 +18,8 @@ UPE_TurnManagerComponent::UPE_TurnManagerComponent()
 
 	CurrentPhase = EPEBattlePhase::None;
 	CurrentTurnCount = 0;
+	CurrentTeamTurn = 0;
+	MaxTeams = 2; // 기본 2파전 (0팀 vs 1팀)
 }
 
 void UPE_TurnManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -24,6 +28,7 @@ void UPE_TurnManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 
 	// 클라이언트들이 턴 수와 현재 페이즈를 알 수 있도록 복제
 	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentPhase);
+	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentTeamTurn);
 	DOREPLIFETIME(UPE_TurnManagerComponent, CurrentTurnCount);
 	DOREPLIFETIME(UPE_TurnManagerComponent, ReadyPlayerCount);
 	DOREPLIFETIME(UPE_TurnManagerComponent, TotalPlayerCount);
@@ -39,12 +44,14 @@ void UPE_TurnManagerComponent::StartBattle()
 {
 	CurrentTurnCount = 1;
 	UE_LOG(LogTemp, Warning, TEXT("[UPE_TurnManagerComponent::StartBattle] 전투가 시작되었습니다! 턴: %d"), CurrentTurnCount);
-	
+
+	CurrentTeamTurn = 0; // 항상 0팀부터 시작
+
 	// 배틀 시작 세팅 페이즈 호출 후, 플레이어 턴으로 넘김
 	ChangePhase(EPEBattlePhase::BattleStart);
 	
 	// ---- 연출용 딜레이 필요하면 타이머 걸기 ----
-	ChangePhase(EPEBattlePhase::PlayerTurn);
+	ChangePhase(EPEBattlePhase::TeamTurn);
 }
 
 void UPE_TurnManagerComponent::EndCurrentPhase()
@@ -53,26 +60,44 @@ void UPE_TurnManagerComponent::EndCurrentPhase()
 	if (!GetOwner()->HasAuthority()) return;
 	switch (CurrentPhase)
 	{
-	case EPEBattlePhase::PlayerTurn:
-		// 모든 컨트롤러를 순회하며(멀티플레이어 대응), 강제 조작 취소 RPC 전송
-		for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	case EPEBattlePhase::TeamTurn:
+	{
+		// 1. 턴을 마치는 팀 소속 플레이어들의 조작 강제 취소
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 		{
-			if (APE_PlayerController* PC = Cast<APE_PlayerController>(Iterator->Get()))
+			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
 			{
-				PC->Client_CancelCurrentAction();
+				if (APE_PlayerCharacter* Char = Cast<APE_PlayerCharacter>(PC->GetPawn()))
+				{
+					if (Char->GetTeamID() == CurrentTeamTurn)
+					{
+						PC->Client_CancelCurrentAction();
+					}
+				}
 			}
 		}
-		StartEnemyPhase();
-		break;
 
-	case EPEBattlePhase::EnemyTurn:
-		ChangePhase(EPEBattlePhase::EnvironmentTurn);
+		// 2. 다음 팀으로 바톤 터치
+		CurrentTeamTurn++;
+		if (CurrentTeamTurn >= MaxTeams)
+		{
+			// 모든 팀의 턴이 끝났다면 환경 턴으로
+			ChangePhase(EPEBattlePhase::EnvironmentTurn);
+		}
+		else
+		{
+			// 팀만 바뀌고 페이즈(TeamTurn)는 유지되므로, 델리게이트와 준비 함수를 수동 호출
+			OnRep_CurrentTeamTurn();
+			PrepareTeamTurn();
+		}
 		break;
+	}
 
 	case EPEBattlePhase::EnvironmentTurn:
 		CurrentTurnCount++;
+		CurrentTeamTurn = 0; // 다시 0팀 턴으로 복구
 		UE_LOG(LogTemp, Warning, TEXT("[UPE_TurnManagerComponent::EndCurrentPhase] --- 새로운 턴 시작: %d ---"), CurrentTurnCount);
-		ChangePhase(EPEBattlePhase::PlayerTurn);
+		ChangePhase(EPEBattlePhase::TeamTurn);
 		break;
 
 	default:
@@ -91,20 +116,9 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 	// 서버 로컬 델리게이트 발동 (클라이언트는 OnRep_CurrentPhase에서 발동)
 	OnRep_CurrentPhase(OldPhase);
 
-	// [추가됨] 플레이어 턴이 시작될 때 모든 레디 상태를 초기화합니다.
-	if (CurrentPhase == EPEBattlePhase::PlayerTurn)
+	if (CurrentPhase == EPEBattlePhase::TeamTurn)
 	{
-		bPendingTurnEnd = false;
-		ReadyPlayers.Empty();
-		ReadyPlayerCount = 0;
-
-		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-		{
-			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
-			{
-				PC->Client_ResetReadyState();
-			}
-		}
+		PrepareTeamTurn();
 	}
 	else if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
 	{
@@ -112,13 +126,81 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 	}
 }
 
+void UPE_TurnManagerComponent::PrepareTeamTurn()
+{
+	bPendingTurnEnd = false;
+	ReadyPlayers.Empty();
+	ReadyPlayerCount = 0;
+
+	// 현재 턴인 팀 소속 플레이어들의 레디 상태만 초기화
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+		{
+			if (APE_PlayerCharacter* Char = Cast<APE_PlayerCharacter>(PC->GetPawn()))
+			{
+				if (Char->GetTeamID() == CurrentTeamTurn)
+				{
+					PC->Client_ResetReadyState();
+				}
+			}
+		}
+	}
+
+	// AI 팀 행동 준비: 이번 턴 팀(CurrentTeamTurn)과 ID가 일치하는 몬스터들만 긁어모음
+	EnemyQueue.Empty();
+	TArray<AActor*> FoundEnemies;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), FoundEnemies);
+	for (AActor* Actor : FoundEnemies)
+	{
+		if (APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(Actor))
+		{
+			if (Enemy->GetTeamID() == CurrentTeamTurn && Enemy->GetStatComponent() && !Enemy->GetStatComponent()->IsDead())
+			{
+				EnemyQueue.Add(Enemy);
+			}
+		}
+	}
+
+	// 몬스터가 한 마리라도 있으면 큐 가동
+	if (EnemyQueue.Num() > 0)
+	{
+		GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
+	}
+	else
+	{
+		// 몬스터가 없다면? 이 팀에 플레이어도 있는지 검사해본다. (완전 빈 팀인지 순수 유저 팀인지)
+		int32 TeamPlayerCount = 0;
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+			{
+				if (APE_PlayerCharacter* Char = Cast<APE_PlayerCharacter>(PC->GetPawn()))
+				{
+					if (Char->GetTeamID() == CurrentTeamTurn) TeamPlayerCount++;
+				}
+			}
+		}
+
+		if (TeamPlayerCount == 0)
+		{
+			// 유저도 없고 몬스터도 없는 빈 팀(Empty Team)이라면 허공에 턴을 낭비하지 않고 즉시 스킵
+			UE_LOG(LogTemp, Warning, TEXT("[TurnManager] %d 팀에는 아무도 없어 턴을 스킵합니다."), CurrentTeamTurn);
+			EndCurrentPhase();
+		}
+	}
+}
+
 void UPE_TurnManagerComponent::OnRep_CurrentPhase(EPEBattlePhase OldPhase)
 {
-	FString PhaseName = UEnum::GetValueAsString(CurrentPhase);
-	UE_LOG(LogTemp, Warning, TEXT("[UPE_TurnManagerComponent::ChangePhase] 페이즈 변경: %s"), *PhaseName);
-
 	// 클라이언트 및 서버 모두 이 델리게이트를 통해 UI 갱신 등 반응
 	OnPhaseChanged.Broadcast(CurrentPhase);
+}
+
+void UPE_TurnManagerComponent::OnRep_CurrentTeamTurn()
+{
+	UE_LOG(LogTemp, Warning, TEXT("[TurnManager] --- %d 팀의 턴이 시작되었습니다! ---"), CurrentTeamTurn);
+	OnTeamTurnStarted.Broadcast(CurrentTeamTurn);
 }
 
 void UPE_TurnManagerComponent::RequestTurnEnd(APE_PlayerController* PC, bool bReady)
@@ -129,25 +211,34 @@ void UPE_TurnManagerComponent::RequestTurnEnd(APE_PlayerController* PC, bool bRe
 	else ReadyPlayers.Remove(PC);
 
 	ReadyPlayerCount = ReadyPlayers.Num();
-
-	TotalPlayerCount = 0;
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		if (It->Get()) TotalPlayerCount++;
-	}
-
 	EvaluateTurnEnd();
 }
 
 void UPE_TurnManagerComponent::EvaluateTurnEnd()
 {
-	// 전원 만장일치 달성
-	if (TotalPlayerCount > 0 && ReadyPlayerCount >= TotalPlayerCount)
+	TotalPlayerCount = 0;
+	int32 ReadyTeamPlayerCount = 0;
+
+	// [수정됨] 맵에 접속한 '모든' 유저가 아니라, '현재 턴을 진행 중인 팀'에 속한 유저만 필터링해서 만장일치를 검사합니다.
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+		{
+			if (APE_PlayerCharacter* Char = Cast<APE_PlayerCharacter>(PC->GetPawn()))
+			{
+				if (Char->GetTeamID() == CurrentTeamTurn)
+				{
+					TotalPlayerCount++;
+					if (ReadyPlayers.Contains(PC)) ReadyTeamPlayerCount++;
+				}
+			}
+		}
+	}
+
+	if (TotalPlayerCount > 0 && ReadyTeamPlayerCount >= TotalPlayerCount)
 	{
 		bPendingTurnEnd = true;
-
 		APE_GameState* GS = Cast<APE_GameState>(GetOwner());
-		// 큐마저 모두 비워져 있다면 즉시 턴을 넘깁니다. (안 비워져 있다면 ProcessNextAction에서 알아서 호출해줌)
 		if (GS && !GS->IsActionQueueActive())
 		{
 			ExecuteTurnEnd();
@@ -155,7 +246,7 @@ void UPE_TurnManagerComponent::EvaluateTurnEnd()
 	}
 	else
 	{
-		bPendingTurnEnd = false; // 누군가 레디를 풀었다면 대기 취소
+		bPendingTurnEnd = false;
 	}
 }
 
@@ -170,57 +261,42 @@ void UPE_TurnManagerComponent::ExecuteTurnEnd()
 	EndCurrentPhase(); // 진짜 턴 종료 페이즈 진입
 }
 
-void UPE_TurnManagerComponent::StartEnemyPhase()
-{
-	ChangePhase(EPEBattlePhase::EnemyTurn);
-
-	EnemyQueue.Empty();
-	
-	TArray<AActor*> FoundEnemies;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_EnemyBase::StaticClass(), FoundEnemies);
-
-	for (AActor* Actor : FoundEnemies)
-	{
-		if (APE_EnemyBase* Enemy = Cast<APE_EnemyBase>(Actor))
-		{
-			EnemyQueue.Add(Enemy);
-		}
-	}
-
-	// 다음 틱 부터 ProcessNextEnemy를 호출하여 적들의 행동을 순차적으로 처리
-	GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
-}
-
 void UPE_TurnManagerComponent::ProcessNextEnemy()
 {
 	if (EnemyQueue.IsEmpty())
 	{
-		// 큐가 비었다면 모든 적이 행동을 마친 것이므로 환경(Environment) 턴으로 넘김
-		UE_LOG(LogTemp, Warning, TEXT("[TurnManager] 모든 적의 행동이 종료되었습니다."));
-		CurrentPhase = EPEBattlePhase::EnemyTurn; // 상태 무결성 보장
-		EndCurrentPhase(); 
+		// AI 큐가 끝남. 만약 이 팀이 AI 전용 팀(플레이어 0명)이라면 자동으로 턴 종료를 넘겨줌.
+		int32 TeamPlayerCount = 0;
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+			{
+				if (APE_PlayerCharacter* Char = Cast<APE_PlayerCharacter>(PC->GetPawn()))
+				{
+					if (Char->GetTeamID() == CurrentTeamTurn) TeamPlayerCount++;
+				}
+			}
+		}
+
+		if (TeamPlayerCount == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[TurnManager] %d 팀 소속 AI의 모든 행동 종료. 다음 턴으로 넘깁니다."), CurrentTeamTurn);
+			EndCurrentPhase();
+		}
 		return;
 	}
 
-	// 큐에서 맨 앞의 적을 하나 뽑아냄
 	APE_EnemyBase* NextEnemy = EnemyQueue[0];
 	EnemyQueue.RemoveAt(0);
 
 	if (IsValid(NextEnemy))
 	{
-		// 이전 적이 등록했을 수 있는 델리게이트를 깔끔히 정리하여 중복 트리거를 방지합니다.
 		NextEnemy->OnTurnFinished.RemoveDynamic(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
-		
-		// 이번 적이 끝나면 다음 틱에 안전하게 ProcessNextEnemy가 예약되도록 람다 함수나 단일 타겟 바인딩을 활용합니다.
-		// 동기식 재귀 호출을 원천 차단하기 위해 델리게이트 수신 시 '한 프레임 미뤄서' 실행하도록 유도합니다.
 		NextEnemy->OnTurnFinished.AddUniqueDynamic(this, &UPE_TurnManagerComponent::TriggerNextEnemyWithDelay);
-		
-		// 적 턴 가동
 		NextEnemy->StartTurn();
 	}
 	else
 	{
-		// 죽었거나 소멸한 적이라면 스택을 쌓지 않고 다음 틱에 다음 적 처리
 		GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UPE_TurnManagerComponent::ProcessNextEnemy);
 	}
 }

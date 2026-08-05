@@ -91,6 +91,15 @@ void APE_PlayerController::ApplyCameraMode()
 		}
 	}
 }
+bool APE_PlayerController::IsMyTurn() const
+{
+	UPE_TurnManagerComponent* TM = const_cast<APE_PlayerController*>(this)->GetCachedTurnManager();
+	APE_PlayerCharacter* PC = const_cast<APE_PlayerController*>(this)->GetCachedPlayerCharacter();
+
+	if (!TM || !PC) return false;
+
+	return (TM->GetCurrentPhase() == EPEBattlePhase::TeamTurn && TM->GetCurrentTeamTurn() == PC->GetTeamID());
+}
 
 // 지연 초기화 헬퍼 함수 구현 (접근 시 비어있다면 동적으로 채워넣음)
 APE_PlayerCharacter* APE_PlayerController::GetCachedPlayerCharacter()
@@ -263,6 +272,7 @@ void APE_PlayerController::UpdateGridHovering()
 void APE_PlayerController::ToggleGridMovementActivation()
 {
 	if (bIsReadyForTurnEnd) return; // 레디 상태면 이동 불가
+	if (!IsMyTurn()) return;
 
 	// 맵 툴이 켜져 있다면 이동 모드 진입을 차단
 	if (UPE_CheatManager* CM = Cast<UPE_CheatManager>(CheatManager))
@@ -274,9 +284,6 @@ void APE_PlayerController::ToggleGridMovementActivation()
 	if (!GridSystem) return;
 	if (CurrentInputMode != EPEGameState::Battle) return;
 
-	// 동적 턴 매니저 호출 및 Null 예외 처리
-	UPE_TurnManagerComponent* TM = GetCachedTurnManager();
-	if (!TM || TM->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
 
 	// 이동 모드 토글
 	if (!bIsGridMoveActivated)
@@ -370,6 +377,7 @@ void APE_PlayerController::OnDirectMove(const FInputActionValue& Value)
 void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 {
 	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
+	if (!IsMyTurn()) return;		// 내 턴이 아니면 클릭 불가
 	if (!GridSystem) return;
 
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
@@ -499,6 +507,7 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
 {
 	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
+	if (!IsMyTurn()) return;
 	if (bIsGridMoveActivated) return;
 
 	if (CardInteractionComp)
@@ -509,6 +518,7 @@ void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
 void APE_PlayerController::OnCardRelease(const FInputActionValue& Value)
 {
 	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
+	if (!IsMyTurn()) return;
 
 	if (CardInteractionComp)
 	{
@@ -756,9 +766,7 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 void APE_PlayerController::ToggleTurnReadyState()
 {
 	if (CurrentInputMode != EPEGameState::Battle) return;
-
-	UPE_TurnManagerComponent* TM = GetCachedTurnManager();
-	if (!TM || TM->GetCurrentPhase() != EPEBattlePhase::PlayerTurn) return;
+	if (!IsMyTurn()) return; // 내 팀의 턴일 때만 턴 종료(Ready)를 누를 수 있음
 
 	bIsReadyForTurnEnd = !bIsReadyForTurnEnd;
 	Server_SetTurnReadyState(bIsReadyForTurnEnd);
