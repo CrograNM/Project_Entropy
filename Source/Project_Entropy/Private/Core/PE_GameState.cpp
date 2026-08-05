@@ -36,10 +36,15 @@ void APE_GameState::BeginPlay()
 
 void APE_GameState::OnRep_CurrentState()
 {
-	// 새 맵에 진입하여 상태가 복제되면, 로컬 플레이어의 컨트롤러 모드를 즉각 강제 변경합니다.
-	if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetWorld()->GetFirstPlayerController()))
+	UE_LOG(LogTemp, Warning, TEXT("[APE_GameState] CurrentState가 복제됨: %s"), *UEnum::GetValueAsString(CurrentState));
+
+	// 존재하는 모든 플레이어 컨트롤러를 순회하며 확실하게 찔러줍니다. 
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
-		PC->SwitchInputMode(CurrentState);
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+		{
+			PC->SwitchInputMode(CurrentState);
+		}
 	}
 }
 

@@ -31,6 +31,8 @@ public:
 	// 현재 큐에 남은 행동이 있거나, 누군가 스킬을 실행 중인지 확인합니다.
 	bool IsActionQueueActive() const { return bIsProcessingAction || !ActionQueue.IsEmpty(); }
 
+	FORCEINLINE EPEGameState GetCurrentState() const { return CurrentState; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
 	TObjectPtr<UPE_TurnManagerComponent> TurnManager;

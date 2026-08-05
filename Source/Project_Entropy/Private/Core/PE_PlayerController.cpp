@@ -63,8 +63,16 @@ void APE_PlayerController::SetPawn(APawn* InPawn)
 		GridSystem = Cast<AACGridSystem>(FoundGridActor);
 	}
 
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+	{
+		CurrentInputMode = GS->GetCurrentState();
+	}
+
 	if (IsLocalController())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] SetPawn 호출: 캐릭터 %s, 최종 확정 상태: %s"),
+			PlayerCharacter ? *PlayerCharacter->GetName() : TEXT("null"),
+			*UEnum::GetValueAsString(CurrentInputMode)); 
 		SwitchInputMode(CurrentInputMode);
 	}
 	else
