@@ -119,6 +119,7 @@ void UPE_TurnManagerComponent::ChangePhase(EPEBattlePhase NewPhase)
 	if (CurrentPhase == EPEBattlePhase::TeamTurn)
 	{
 		PrepareTeamTurn();
+		OnRep_CurrentTeamTurn();
 	}
 	else if (CurrentPhase == EPEBattlePhase::EnvironmentTurn)
 	{
