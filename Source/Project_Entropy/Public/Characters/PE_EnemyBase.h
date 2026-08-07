@@ -28,6 +28,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** 이동 딜레이를 주기 위한 시간 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Behavior")
@@ -64,6 +65,10 @@ private:
 	TObjectPtr<class APE_CharacterBase> PendingSkillTargetCharacter;
 
 	void ExecutePendingSkill();
+
+	// [추가됨] 스킬을 발사한 후, 투사체가 적중하여 GameState의 큐가 비워질 때까지 기다리는 함수
+	FTimerHandle QueueWaitTimerHandle;
+	void CheckQueueAndEvaluate();
 
 	/** --- 멀티플레이어 시각화 RPC --- */
 	// 공격 의도 표시

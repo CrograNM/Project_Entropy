@@ -9,6 +9,7 @@
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
+#include "Core/PE_GameState.h"
 
 APE_EnemyBase::APE_EnemyBase()
 {
@@ -26,6 +27,17 @@ void APE_EnemyBase::BeginPlay()
 	if (HasAuthority() && GridMovement)
 	{
 		GridMovement->OnMovementFinished.AddDynamic(this, &APE_EnemyBase::OnMovementCompleted);
+	}
+}
+
+void APE_EnemyBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	if (HasAuthority())
+	{
+		GetWorldTimerManager().ClearTimer(ActionDelayTimerHandle);
+		GetWorldTimerManager().ClearTimer(QueueWaitTimerHandle);
 	}
 }
 
@@ -152,7 +164,22 @@ void APE_EnemyBase::ExecutePendingSkill()
 		SkillComponent->TryExecuteSkill(PendingSkillIndex, PendingSkillTargetTile, PendingSkillTargetCharacter);
 	}
 
-	EvaluateAndTakeAction();
+	// 0.1초마다 GameState의 큐가 비워졌는지(투사체가 폭발했는지) 감시하는 타이머를 돌립니다.
+	GetWorldTimerManager().SetTimer(QueueWaitTimerHandle, this, &APE_EnemyBase::CheckQueueAndEvaluate, 0.1f, true);
+}
+
+void APE_EnemyBase::CheckQueueAndEvaluate()
+{
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+	{
+		// 투사체가 목표에 도달하여 터지면 IsActionQueueActive가 false가 됩니다.
+		if (!GS->IsActionQueueActive())
+		{
+			// 큐가 비워졌음을 확인했으니, 감시 타이머를 끄고 다음 행동(AP 확인 후 스킬/이동/턴종료)을 고민합니다.
+			GetWorldTimerManager().ClearTimer(QueueWaitTimerHandle);
+			EvaluateAndTakeAction();
+		}
+	}
 }
 
 void APE_EnemyBase::ExecutePendingMovement()
