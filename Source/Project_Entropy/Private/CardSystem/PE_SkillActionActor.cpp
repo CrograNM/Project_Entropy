@@ -4,11 +4,17 @@
 #include "Components/SphereComponent.h"
 #include "Components/AudioComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "CardSystem/PE_SkillLogicBase.h"
 #include "CardSystem/PE_SkillData.h"
 #include "NiagaraComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/PE_GameState.h"
+#include "CardSystem/PE_SkillEffectModule.h"
+#include "Characters/PE_CharacterBase.h"
+#include "Components/ACGridMovementComponent.h"
+#include "Components/ACSkillComponent.h"
+#include "Grid/ACTile.h"
+#include "Grid/ACGridSystem.h"
+#include "Kismet/GameplayStatics.h"
 
 APE_SkillActionActor::APE_SkillActionActor()
 {
@@ -37,9 +43,8 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
-void APE_SkillActionActor::InitializeActionActor(UPE_SkillLogicBase* InLogic, AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage)
+void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage)
 {
-	SkillLogicInstance = InLogic;
 	Caster = InInstigator;
 	DamageToApply = InDamage;
 
@@ -128,24 +133,126 @@ void APE_SkillActionActor::Explode()
 {
 	if (HasAuthority())
 	{
-		if (SkillLogicInstance)
+		// 1. [Delivery]: 타겟 긁어모으기
+		TSet<APE_CharacterBase*> AffectedTargets;
+
+		if (RepSkillData->AoEShape == EPEAoEShape::None)
 		{
-			SkillLogicInstance->ApplySkillEffect(Caster, RepTargetActor, RepTargetLocation, RepSkillData, DamageToApply);
+			// 단일 타겟
+			if (APE_CharacterBase* TC = Cast<APE_CharacterBase>(RepTargetActor))
+			{
+				AffectedTargets.Add(TC);
+			}
+		}
+		else
+		{
+			// 광역(AoE) 타겟 연산 (기존 AoE Logic에 있던 수학 연산 흡수)
+			FIntPoint CenterPos(-999, -999);
+			if (RepTargetActor)
+			{
+				if (UACGridMovementComponent* MoveComp = RepTargetActor->FindComponentByClass<UACGridMovementComponent>())
+					CenterPos = MoveComp->GetGridPosition();
+			}
+			else
+			{
+				TArray<AActor*> Tiles;
+				UGameplayStatics::GetAllActorsOfClass(GetWorld(), AACTile::StaticClass(), Tiles);
+				for (AActor* Actor : Tiles)
+				{
+					if (Actor->GetActorLocation().Equals(RepTargetLocation, 50.f))
+					{
+						CenterPos = Cast<AACTile>(Actor)->GetGridPosition();
+						break;
+					}
+				}
+			}
+
+			if (CenterPos != FIntPoint(-999, -999))
+			{
+				TSet<FIntPoint> AffectedPositions;
+				AffectedPositions.Add(CenterPos);
+
+				if (RepSkillData->AoEShape == EPEAoEShape::Cross)
+				{
+					for (int32 i = 1; i <= RepSkillData->AoESize; ++i)
+					{
+						AffectedPositions.Add(CenterPos + FIntPoint(i, 0));
+						AffectedPositions.Add(CenterPos + FIntPoint(-i, 0));
+						AffectedPositions.Add(CenterPos + FIntPoint(0, i));
+						AffectedPositions.Add(CenterPos + FIntPoint(0, -i));
+					}
+				}
+				else if (RepSkillData->AoEShape == EPEAoEShape::Square)
+				{
+					for (int32 x = -RepSkillData->AoESize; x <= RepSkillData->AoESize; ++x)
+						for (int32 y = -RepSkillData->AoESize; y <= RepSkillData->AoESize; ++y)
+							AffectedPositions.Add(CenterPos + FIntPoint(x, y));
+				}
+				else if (RepSkillData->AoEShape == EPEAoEShape::Ring)
+				{
+					for (int32 x = -RepSkillData->AoESize; x <= RepSkillData->AoESize; ++x)
+						for (int32 y = -RepSkillData->AoESize; y <= RepSkillData->AoESize; ++y)
+							if (FMath::Abs(x) == RepSkillData->AoESize || FMath::Abs(y) == RepSkillData->AoESize)
+								AffectedPositions.Add(CenterPos + FIntPoint(x, y));
+				}
+				else if (RepSkillData->AoEShape == EPEAoEShape::Custom)
+				{
+					for (const FIntPoint& Offset : RepSkillData->CustomAoEOffsets)
+						AffectedPositions.Add(CenterPos + Offset);
+				}
+
+				// 범위 내 캐릭터 추출
+				TArray<AActor*> AllChars;
+				UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+				for (AActor* Actor : AllChars)
+				{
+					if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+					{
+						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+						{
+							if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
+							{
+								AffectedTargets.Add(Char);
+							}
+						}
+					}
+				}
+			}
 		}
 
-		// 스킬 이펙트 적용이 끝났으므로, GameState에 내 액션이 끝났음을 알립니다!
+		// 2. [Execution]: 수집된 모든 타겟에게 스킬에 장착된 모듈(데미지, 넉백 등) 순차 적용
+		for (APE_CharacterBase* TargetChar : AffectedTargets)
+		{
+			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
+			{
+				if (Module)
+				{
+					Module->ApplyEffect(Caster, TargetChar, RepTargetLocation, RepSkillData, DamageToApply);
+				}
+			}
+		}
+
+		// 3. 중앙 폭발 시각 효과
+		if (Caster)
+		{
+			if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
+			{
+				SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, RepTargetLocation);
+			}
+		}
+
+		// 4. 액션 종료 통보
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
 			GS->CompleteCurrentAction();
 		}
 	}
 
-	// 폭발 후 잔여물(투사체 액터) 정리 (서버/클라 공통)
+	// 잔여물 정리
 	if (RepSkillData && RepSkillData->bDestroyOnHit)
 	{
 		if (ActionVFXComponent) ActionVFXComponent->Deactivate();
 		if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.2f, 0.f);
-
-		SetLifeSpan(0.2f); // 이펙트가 자연스럽게 꺼질 짧은 여유 시간 후 소멸
+		SetLifeSpan(0.2f);
 	}
 }

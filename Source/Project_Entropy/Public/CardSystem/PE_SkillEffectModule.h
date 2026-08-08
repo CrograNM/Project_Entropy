@@ -1,0 +1,51 @@
+// Copyright CrograNM
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "UObject/NoExportTypes.h"
+#include "PE_SkillEffectModule.generated.h"
+
+class UPE_SkillData;
+class APE_CharacterBase;
+
+/**
+ * 스킬 조립을 위한 기본 효과 모듈 뼈대 (GAS의 GameplayEffect 역할)
+ */
+UCLASS(Abstract, DefaultToInstanced, EditInlineNew, Blueprintable)
+class PROJECT_ENTROPY_API UPE_SkillEffectModule : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	// 타겟에게 효과를 적용하는 가상 함수
+	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) PURE_VIRTUAL(UPE_SkillEffectModule::ApplyEffect, );
+};
+
+/**
+ * [모듈 1] 기본 데미지 적용 모듈
+ */
+UCLASS(DisplayName = "Effect: Damage")
+class PROJECT_ENTROPY_API UPE_SkillEffect_Damage : public UPE_SkillEffectModule
+{
+	GENERATED_BODY()
+
+public:
+	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
+};
+
+/**
+ * [모듈 2] 넉백(밀치기) 적용 모듈
+ */
+UCLASS(DisplayName = "Effect: Push (Knockback)")
+class PROJECT_ENTROPY_API UPE_SkillEffect_Push : public UPE_SkillEffectModule
+{
+	GENERATED_BODY()
+
+public:
+	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
+
+protected:
+	UPROPERTY(EditAnywhere, Category = "Push")
+	int32 PushDistance = 1; // 뒤로 몇 칸 밀 것인가?
+};

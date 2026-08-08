@@ -8,7 +8,7 @@
 #include "CardSystem/PE_DataTypes.h"
 #include "PE_SkillData.generated.h"
 
-class UPE_SkillLogicBase;
+class UPE_SkillEffectModule;
 class APE_SkillActionActor;
 class UNiagaraSystem;
 class USoundBase;
@@ -25,10 +25,10 @@ public:
 	FName SkillID;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Logic")
-	TSubclassOf<UPE_SkillLogicBase> LogicClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Logic")
 	EPESkillTargetType TargetType;
+
+	UPROPERTY(EditAnywhere, Instanced, BlueprintReadOnly, Category = "Skill|Effects")
+	TArray<TObjectPtr<UPE_SkillEffectModule>> EffectModules;
 
 	// ---- 스킬 액터 (투사체, 장판 등) 및 물리/동작 설정
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")

@@ -8,7 +8,6 @@
 
 class UShapeComponent;
 class UProjectileMovementComponent;
-class UPE_SkillLogicBase;
 class UPE_SkillData;
 class UNiagaraComponent;
 class UAudioComponent;
@@ -24,7 +23,7 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 public:
 	APE_SkillActionActor(); 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
-	void InitializeActionActor(UPE_SkillLogicBase* InLogic, AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage);
+	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
@@ -53,9 +52,6 @@ private:
 	// 클라이언트도 동일한 도착지점을 향해 궤적을 그리도록 복제
 	UPROPERTY(Replicated)
 	FVector RepTargetLocation;
-
-	UPROPERTY()
-	TObjectPtr<UPE_SkillLogicBase> SkillLogicInstance;
 
 	UPROPERTY()
 	TObjectPtr<AActor> Caster;

@@ -2,7 +2,7 @@
 
 #include "Components/ACSkillComponent.h"
 #include "CardSystem/PE_SkillData.h"
-#include "CardSystem/PE_SkillLogicBase.h"
+#include "CardSystem/PE_SkillActionActor.h"
 #include "Components/ACStatComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Grid/ACTile.h"
@@ -97,16 +97,23 @@ void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* Ta
 {
 	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
 
-	if (SkillData && SkillData->LogicClass)
+	if (SkillData && SkillData->SkillActorClass)
 	{
-		UPE_SkillLogicBase* SkillLogic = NewObject<UPE_SkillLogicBase>(this, SkillData->LogicClass);
-		FVector TargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
+		NetMulticast_PlayCastVisuals(SkillData);
 
-		SkillLogic->ExecuteSkill(Caster, TargetCharacter, TargetLoc, SkillData, CalculatedDamage);
+		FTransform SpawnTransform = Caster->GetActorTransform();
+		SpawnTransform.SetLocation(SpawnTransform.GetLocation() + SpawnTransform.GetRotation().Vector() * 70.0f);
+
+		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform);
+		if (ActionActor)
+		{
+			FVector TargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
+			ActionActor->InitializeActionActor(Caster, TargetCharacter, TargetLoc, SkillData, CalculatedDamage);
+		}
 	}
 	else
 	{
-		// 로직 클래스가 없어 스폰에 실패했다면 큐가 영원히 멈추지 않도록 강제로 완료 신호를 쏩니다.
+		// 투사체가 아예 없는 순수 버프 등의 경우 액터 스폰 없이 큐를 즉시 비웁니다.
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
 			GS->CompleteCurrentAction();
