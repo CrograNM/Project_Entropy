@@ -66,6 +66,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
 	int32 BaseRange = 1;
 
+	// --- [넉백 커스텀 데이터] ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (Push)")
+	bool bDoesPush = false; // 밀치기 기능 활성화 여부
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (Push)", meta = (EditCondition = "bDoesPush"))
+	int32 PushDistance = 1; // 뒤로 몇 칸 밀 것인가?
+
+	// --- [광역 공격(AoE) 커스텀 데이터] ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)")
+	EPEAoEShape AoEShape = EPEAoEShape::None; // 광역 모양
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape != EPEAoEShape::None && AoEShape != EPEAoEShape::Custom"))
+	int32 AoESize = 1; // 십자 모양의 가지 길이, 정사각형의 반경 등
+
+	// Custom 선택 시 에디터에서 직접 칠할 수 있는 타일 오프셋 배열 (0,0 은 타겟 중심점)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
+	TArray<FIntPoint> CustomAoEOffsets;
+
 	// ---- 1단계: 시전 (Cast) 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
 	TObjectPtr<UAnimMontage> CastAnimMontage;

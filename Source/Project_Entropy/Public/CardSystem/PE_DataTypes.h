@@ -46,3 +46,14 @@ struct FPESkillActionPayload
 	UPROPERTY()
 	float CalculatedDamage = 0.f;
 };
+
+// 광역 스킬(AoE)의 형태 정의
+UENUM(BlueprintType)
+enum class EPEAoEShape : uint8
+{
+	None    UMETA(DisplayName = "단일 공격 (Single)"),
+	Cross   UMETA(DisplayName = "십자 (Cross)"),
+	Square  UMETA(DisplayName = "정사각형 (Square)"),
+	Ring    UMETA(DisplayName = "도넛/링 (Ring)"),
+	Custom  UMETA(DisplayName = "커스텀 (Custom Offset)")
+};
