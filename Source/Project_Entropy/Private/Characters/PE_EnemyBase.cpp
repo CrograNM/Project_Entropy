@@ -63,6 +63,19 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 {
 	if (!HasAuthority()) return;
 
+	// 밀치기 등으로 강제 이동이 끝났을 때 턴이 무시되는 현상 방어
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+	{
+		if (UPE_TurnManagerComponent* TM = GS->GetTurnManager())
+		{
+			// 현재 전투 페이즈가 '팀 턴'이 아니거나, '내 팀(1팀)'의 차례가 아니라면 무조건 차단!
+			if (TM->GetCurrentPhase() != EPEBattlePhase::TeamTurn || TM->GetCurrentTeamTurn() != GetTeamID())
+			{
+				return;
+			}
+		}
+	}
+
 	// 1. AP가 없거나 죽었다면 즉시 턴 종료
 	if (StatComponent->GetCurrentAP() <= 0 || StatComponent->IsDead())
 	{
