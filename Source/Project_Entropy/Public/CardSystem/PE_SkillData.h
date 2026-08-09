@@ -43,12 +43,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
 	float ProjectileGravity = 0.f;	// 포물선 곡사 여부 (0이면 직사)
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
-	bool bIsHoming = false;			// 타겟을 끝까지 쫓아가는 유도탄 여부
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor", meta = (EditCondition = "bIsHoming"))
-	float HomingAcceleration = 2000.f;	// 유도 꺾임 성능, bIsHoming이 true일 때만 적용됨
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Element")
 	FGameplayTag ElementTag;
 
@@ -65,13 +59,6 @@ public:
 	// 사거리 (타일 수)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
 	int32 BaseRange = 1;
-
-	// --- [넉백 커스텀 데이터] ---
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (Push)")
-	bool bDoesPush = false; // 밀치기 기능 활성화 여부
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (Push)", meta = (EditCondition = "bDoesPush"))
-	int32 PushDistance = 1; // 뒤로 몇 칸 밀 것인가?
 
 	// --- [광역 공격(AoE) 커스텀 데이터] ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)")
