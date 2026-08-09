@@ -131,7 +131,7 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 
 		if (MinDistance <= MainSkill->BaseRange && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
 		{
-			NetMulticast_ShowSkillIntent(PlayerTile);
+			NetMulticast_ShowSkillIntent(MainSkill, PlayerTile);
 			PendingSkillIndex = 0;
 			PendingSkillTargetTile = PlayerTile;
 			PendingSkillTargetCharacter = TargetPlayer;
@@ -149,6 +149,7 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 	for (int32 i = 0; i < FullPath.Num(); ++i)
 	{
 		if (FullPath[i]->GetGridPosition() == PlayerPos) break;
+		if (GridSystem->IsTileOccupied(FullPath[i]->GetGridPosition(), this)) break;
 		MovePath.Add(FullPath[i]);
 		if (MovePath.Num() >= MoveRange) break;
 	}
@@ -225,13 +226,25 @@ void APE_EnemyBase::FinishTurn()
 }
 
 /* --- 멀티캐스트 시각화 구현부 --- */
-void APE_EnemyBase::NetMulticast_ShowSkillIntent_Implementation(AACTile* TargetTile)
+void APE_EnemyBase::NetMulticast_ShowSkillIntent_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile)
 {
-	if (TargetTile)
+	if (TargetTile && SkillData)
 	{
 		if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
 		{
-			GridSystem->HighlightTarget(this, TargetTile->GetGridPosition());
+			// 적 AI도 사거리(Range)를 아군에게 붉은 색으로 보여줍니다.
+			GridSystem->HighlightArea(this, GridMovement->GetGridPosition(), SkillData->BaseRange);
+
+			// 단일/AOE 여부에 따라 타겟팅을 칠합니다.
+			if (SkillData->AoEShape != EPEAoEShape::None)
+			{
+				TSet<FIntPoint> AoE = SkillData->GetAffectedGridPositions(TargetTile->GetGridPosition());
+				GridSystem->HighlightAoE(this, AoE);
+			}
+			else
+			{
+				GridSystem->HighlightTarget(this, TargetTile->GetGridPosition());
+			}
 		}
 	}
 }

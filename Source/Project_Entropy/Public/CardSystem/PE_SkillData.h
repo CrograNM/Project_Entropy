@@ -71,6 +71,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
 	TArray<FIntPoint> CustomAoEOffsets;
 
+	// 설정된 모양에 맞춰 영향받는 타일들의 그리드 좌표 세트를 반환하는 헬퍼 함수
+	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CenterPos) const;
+
 	// ---- 1단계: 시전 (Cast) 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
 	TObjectPtr<UAnimMontage> CastAnimMontage;

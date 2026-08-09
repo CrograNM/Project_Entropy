@@ -73,7 +73,7 @@ private:
 	/** --- 멀티플레이어 시각화 RPC --- */
 	// 공격 의도 표시
 	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_ShowSkillIntent(AACTile* TargetTile);
+	void NetMulticast_ShowSkillIntent(class UPE_SkillData* SkillData, AACTile* TargetTile);
 
 	// 이동 의도 표시
 	UFUNCTION(NetMulticast, Unreliable)

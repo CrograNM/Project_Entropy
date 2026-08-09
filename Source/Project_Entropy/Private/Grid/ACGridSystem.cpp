@@ -2,6 +2,10 @@
 
 #include "Grid/ACGridSystem.h"
 #include "Containers/Queue.h"
+#include "Characters/PE_CharacterBase.h"
+#include "Components/ACGridMovementComponent.h"
+#include "Components/ACStatComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 AACGridSystem::AACGridSystem()
 {
@@ -150,6 +154,49 @@ void AACGridSystem::HighlightTarget(AActor* Requester, FIntPoint TargetPos)
 		Tile->RequestHighlight(Requester, ETileHighlightType::SkillTarget);
 		PlayerPathTiles.FindOrAdd(Requester).Add(Tile);
 	}
+}
+
+void AACGridSystem::HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPositions)
+{
+	ClearPathFor(Requester); // 기존 타겟 시각화 지우기
+
+	TArray<AACTile*>& PathArray = PlayerPathTiles.FindOrAdd(Requester);
+
+	for (const FIntPoint& Pos : AoEPositions)
+	{
+		if (AACTile* Tile = GetTileAtPosition(Pos))
+		{
+			Tile->RequestHighlight(Requester, ETileHighlightType::SkillTarget);
+			PathArray.Add(Tile);
+		}
+	}
+}
+
+bool AACGridSystem::IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor) const
+{
+	TArray<AActor*> AllChars;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
+	for (AActor* Actor : AllChars)
+	{
+		if (Actor == IgnoreActor) continue;
+
+		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+		{
+			// 죽은 캐릭터는 길을 막지 않음
+			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+
+			if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+			{
+				// 현재 위치해 있거나, 그곳을 향해 이동 중(예약)이라면 충돌!
+				if (MoveComp->GetGridPosition() == Pos || MoveComp->GetTargetGridPosition() == Pos)
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 void AACGridSystem::ClearPathFor(AActor* Requester)

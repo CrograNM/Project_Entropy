@@ -23,19 +23,21 @@ class PROJECT_ENTROPY_API AACGridSystem : public AActor
 public:	
 	AACGridSystem();
 
-	/** 특정 좌표의 타일 반환 */
+	// 특정 좌표의 타일 반환
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
 
-	// 모든 함수가 '누가 요청했는지(Instigator)'를 받도록 변경
 	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint CenterPos, int32 Range);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
 	void HighlightTarget(AActor* Requester, FIntPoint TargetPos);
+	void HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPositions);
 
 	void ClearAllHighlightsFor(AActor* Requester);
 	void ClearPathFor(AActor* Requester);
 	void ClearRangeFor(AActor* Requester);
 
-	/** 시작점부터 도착점까지의 단순 그리드 최단 경로를 계산하여 반환 */
+	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
+
+	// 시작점-도착점 단순 그리드 최단 경로 반환
 	TArray<AACTile*> CalculatePath(FIntPoint StartPos, FIntPoint EndPos);
 	
 protected:

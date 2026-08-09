@@ -26,11 +26,9 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// --- [로컬 컨트롤러 호출용 인터페이스] ---
-	void SetTargetingMode(ETargetingMode NewMode, int32 InRange);
+	void SetTargetingMode(ETargetingMode NewMode, int32 InRange, const class UPE_SkillData* InSkillData = nullptr);
 	void UpdateHoveredTile(FIntPoint NewPos);
 	void ClearTargeting();
-
-	// [추가됨] 컨트롤러가 클릭 시 사거리 유효성을 검사할 수 있도록 제공하는 헬퍼 함수
 	bool IsTileInRange(AACTile* TargetTile) const;
 
 	// 로컬 예측(Local Prediction) 및 동기화를 위한 핵심 렌더링 함수
@@ -38,6 +36,13 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	// --- [서버 상태 업데이트 RPC] ---
+	UFUNCTION(Server, Reliable)
+	void Server_SetTargetingState(ETargetingMode NewMode, int32 InRange, const UPE_SkillData* InSkillData);
+
+	UFUNCTION(Server, Reliable)
+	void Server_UpdateHoveredTile(FIntPoint NewPos);
 
 private:
 	// --- [네트워크 동기화 상태 변수] ---
@@ -50,17 +55,14 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_TargetingState)
 	int32 RepRange = 0;
 
+	// 시각화를 동기화할 스킬 데이터 캐싱
+	UPROPERTY(ReplicatedUsing = OnRep_TargetingState)
+	TObjectPtr<const UPE_SkillData> RepSkillData;
+
 	UPROPERTY(ReplicatedUsing = OnRep_HoveredTile)
 	FIntPoint RepHoveredTile = FIntPoint(-999, -999);
 
 	// 현재 시각화에 사용 중인 유효 타일 목록 (내부 보관용)
 	UPROPERTY()
 	TArray<AACTile*> CurrentValidTiles;
-
-	// --- [서버 상태 업데이트 RPC] ---
-	UFUNCTION(Server, Reliable)
-	void Server_SetTargetingState(ETargetingMode NewMode, int32 InRange);
-
-	UFUNCTION(Server, Reliable)
-	void Server_UpdateHoveredTile(FIntPoint NewPos);
 };

@@ -529,7 +529,7 @@ void APE_PlayerController::OnCardRelease(const FInputActionValue& Value)
 		APE_CardActor* CastingCard = CardInteractionComp->GetCastingCard();
 		if (PC && PC->GetTargetingVisualizer() && CastingCard && CastingCard->GetSkillData())
 		{
-			PC->GetTargetingVisualizer()->SetTargetingMode(ETargetingMode::Skill, CastingCard->GetSkillData()->BaseRange);
+			PC->GetTargetingVisualizer()->SetTargetingMode(ETargetingMode::Skill, CastingCard->GetSkillData()->BaseRange, CastingCard->GetSkillData());
 		}
 	}
 }
@@ -714,51 +714,20 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 
 	if (Path.IsEmpty()) return;
 
-	AACTile* FinalDestination = Path.Last();
-
-	// [도착지 충돌 보정 로직]: 모든 컨트롤러를 순회하며 겹치는 목적지가 있는지 확인
-	bool bDestinationOccupied = false;
-	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	// GridSystem의 전역 함수를 사용하여 이동 경로의 끝이 안전한지 확인하고 가지치기
+	while (Path.Num() > 0 && GridSystem->IsTileOccupied(Path.Last()->GetGridPosition(), PC))
 	{
-		APE_PlayerController* OtherPC = Cast<APE_PlayerController>(Iterator->Get());
-		if (OtherPC && OtherPC != this && OtherPC->GetCachedPlayerCharacter())
-		{
-			if (UACGridMovementComponent* OtherMoveComp = OtherPC->GetCachedPlayerCharacter()->GetGridMovementComponent())
-			{
-				FIntPoint OtherPos = OtherMoveComp->GetGridPosition();
-				FIntPoint OtherTarget = OtherMoveComp->GetTargetGridPosition();
-				FIntPoint MyTarget = FinalDestination->GetGridPosition();
-
-				// 이미 누군가 위치해 있거나 해당 지점을 향해 이동(예약) 중이라면 충돌
-				if (MyTarget == OtherPos || MyTarget == OtherTarget)
-				{
-					bDestinationOccupied = true;
-					break;
-				}
-			}
-		}
+		Path.Pop(); // 누군가 있으면 그 앞 칸으로 목적지 보정
 	}
 
-	// 겹친다면 이전 타일로 보정
-	if (bDestinationOccupied)
+	if (Path.IsEmpty())
 	{
-		if (Path.Num() > 1)
-		{
-			Path.Pop();
-			FinalDestination = Path.Last();
-		}
-		else
-		{
-			// 제자리에서 막힌 경우 이동 취소
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 도착지가 모두 막혀 이동을 취소합니다."));
-			return;
-		}
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 도착지가 모두 막혀 이동을 취소합니다."));
+		return;
 	}
 
-	// 서버 권한으로 AP 소모 후 멀티캐스트 전송
 	if (PC->GetStatComponent()->ConsumeAP(1))
 	{
-		// 이 순간부터 해당 PC의 TargetGridPosition이 갱신됨
 		PC->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
 	}
 }

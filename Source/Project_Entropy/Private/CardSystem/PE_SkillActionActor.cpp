@@ -169,37 +169,8 @@ void APE_SkillActionActor::Explode()
 
 			if (CenterPos != FIntPoint(-999, -999))
 			{
-				TSet<FIntPoint> AffectedPositions;
-				AffectedPositions.Add(CenterPos);
-
-				if (RepSkillData->AoEShape == EPEAoEShape::Cross)
-				{
-					for (int32 i = 1; i <= RepSkillData->AoESize; ++i)
-					{
-						AffectedPositions.Add(CenterPos + FIntPoint(i, 0));
-						AffectedPositions.Add(CenterPos + FIntPoint(-i, 0));
-						AffectedPositions.Add(CenterPos + FIntPoint(0, i));
-						AffectedPositions.Add(CenterPos + FIntPoint(0, -i));
-					}
-				}
-				else if (RepSkillData->AoEShape == EPEAoEShape::Square)
-				{
-					for (int32 x = -RepSkillData->AoESize; x <= RepSkillData->AoESize; ++x)
-						for (int32 y = -RepSkillData->AoESize; y <= RepSkillData->AoESize; ++y)
-							AffectedPositions.Add(CenterPos + FIntPoint(x, y));
-				}
-				else if (RepSkillData->AoEShape == EPEAoEShape::Ring)
-				{
-					for (int32 x = -RepSkillData->AoESize; x <= RepSkillData->AoESize; ++x)
-						for (int32 y = -RepSkillData->AoESize; y <= RepSkillData->AoESize; ++y)
-							if (FMath::Abs(x) == RepSkillData->AoESize || FMath::Abs(y) == RepSkillData->AoESize)
-								AffectedPositions.Add(CenterPos + FIntPoint(x, y));
-				}
-				else if (RepSkillData->AoEShape == EPEAoEShape::Custom)
-				{
-					for (const FIntPoint& Offset : RepSkillData->CustomAoEOffsets)
-						AffectedPositions.Add(CenterPos + Offset);
-				}
+				// PE_SkillData의 일원화된 헬퍼 함수 호출
+				TSet<FIntPoint> AffectedPositions = RepSkillData->GetAffectedGridPositions(CenterPos);
 
 				// 범위 내 캐릭터 추출
 				TArray<AActor*> AllChars;

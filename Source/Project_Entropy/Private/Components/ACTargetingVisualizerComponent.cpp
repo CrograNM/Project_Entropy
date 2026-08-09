@@ -2,6 +2,7 @@
 
 #include "Components/ACTargetingVisualizerComponent.h"
 #include "Components/ACGridMovementComponent.h"
+#include "CardSystem/PE_SkillData.h"
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -26,15 +27,16 @@ void UACTargetingVisualizerComponent::BeginPlay()
 	Super::BeginPlay();
 }
 
-void UACTargetingVisualizerComponent::SetTargetingMode(ETargetingMode NewMode, int32 InRange)
+void UACTargetingVisualizerComponent::SetTargetingMode(ETargetingMode NewMode, int32 InRange, const UPE_SkillData* InSkillData)
 {
 	RepTargetingMode = NewMode;
 	RepRange = InRange;
-	RefreshVisuals(); // 즉각적인 로컬 반응 (Local Prediction)
+	RepSkillData = InSkillData;
+	RefreshVisuals();
 
 	if (!GetOwner()->HasAuthority())
 	{
-		Server_SetTargetingState(NewMode, InRange);
+		Server_SetTargetingState(NewMode, InRange, InSkillData);
 	}
 }
 
@@ -63,11 +65,12 @@ bool UACTargetingVisualizerComponent::IsTileInRange(AACTile* TargetTile) const
 	return TargetTile && CurrentValidTiles.Contains(TargetTile);
 }
 
-void UACTargetingVisualizerComponent::Server_SetTargetingState_Implementation(ETargetingMode NewMode, int32 InRange)
+void UACTargetingVisualizerComponent::Server_SetTargetingState_Implementation(ETargetingMode NewMode, int32 InRange, const UPE_SkillData* InSkillData)
 {
 	RepTargetingMode = NewMode;
 	RepRange = InRange;
-	RefreshVisuals(); // 서버가 직접 시각화 갱신
+	RepSkillData = InSkillData;
+	RefreshVisuals();
 }
 
 void UACTargetingVisualizerComponent::Server_UpdateHoveredTile_Implementation(FIntPoint NewPos)
@@ -107,7 +110,15 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 		}
 		else if (RepTargetingMode == ETargetingMode::Skill)
 		{
-			GridSystem->HighlightTarget(OwnerActor, RepHoveredTile);
+			if (RepSkillData && RepSkillData->AoEShape != EPEAoEShape::None)
+			{
+				TSet<FIntPoint> AoE = RepSkillData->GetAffectedGridPositions(RepHoveredTile);
+				GridSystem->HighlightAoE(OwnerActor, AoE);
+			}
+			else
+			{
+				GridSystem->HighlightTarget(OwnerActor, RepHoveredTile);
+			}
 		}
 	}
 }
