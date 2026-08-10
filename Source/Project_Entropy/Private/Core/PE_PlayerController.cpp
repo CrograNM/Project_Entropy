@@ -710,7 +710,7 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 	if (!GridSystem || !PC || !PC->GetGridMovementComponent() || !PC->GetStatComponent()) return;
 
 	FIntPoint StartPos = PC->GetGridMovementComponent()->GetGridPosition();
-	TArray<AACTile*> Path = GridSystem->CalculatePath(StartPos, TargetTile->GetGridPosition());
+	TArray<AACTile*> Path = GridSystem->CalculatePath(PC, StartPos, TargetTile->GetGridPosition());
 
 	if (Path.IsEmpty()) return;
 

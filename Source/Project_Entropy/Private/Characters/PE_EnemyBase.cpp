@@ -142,7 +142,7 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 	}
 
 	// 3. 이동 판단 로직
-	TArray<AACTile*> FullPath = GridSystem->CalculatePath(MyPos, PlayerPos);
+	TArray<AACTile*> FullPath = GridSystem->CalculatePath(this, MyPos, PlayerPos);
 	TArray<AACTile*> MovePath;
 	int32 MoveRange = StatComponent->GetMoveRange();
 

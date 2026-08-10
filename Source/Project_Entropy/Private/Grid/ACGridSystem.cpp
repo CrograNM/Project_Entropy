@@ -23,6 +23,67 @@ AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 	return nullptr;
 }
 
+TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos)
+{
+	TArray<AACTile*> Path;
+
+	// 장애물을 우회하는 BFS 기반 최단거리 길찾기 알고리즘
+	if (StartPos == EndPos) return Path;
+
+	TQueue<FIntPoint> Queue;
+	TMap<FIntPoint, FIntPoint> CameFrom; // <현재 위치, 나를 발견한 이전 위치>
+
+	Queue.Enqueue(StartPos);
+	CameFrom.Add(StartPos, StartPos);
+
+	FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
+	bool bFound = false;
+
+	while (!Queue.IsEmpty())
+	{
+		FIntPoint Current;
+		Queue.Dequeue(Current);
+
+		if (Current == EndPos)
+		{
+			bFound = true;
+			break;
+		}
+
+		for (const FIntPoint& Dir : Directions)
+		{
+			FIntPoint NextPos = Current + Dir;
+			AACTile* NextTile = GetTileAtPosition(NextPos);
+
+			// 다음 칸이 장애물이 아니고, 아직 방문하지 않은 칸이어야 함
+			if (NextTile && !NextTile->IsObstacle() && !CameFrom.Contains(NextPos))
+			{
+				// 목표 지점이 아닌 중간 경로에 누군가(적, 다른 플레이어, 장애물) 서 있다면 지나갈 수 없음
+				if (NextPos != EndPos && IsTileOccupied(NextPos, Requester))
+				{
+					continue;
+				}
+
+				CameFrom.Add(NextPos, Current);
+				Queue.Enqueue(NextPos);
+			}
+		}
+	}
+
+	// 경로를 찾았다면 EndPos부터 StartPos까지 거꾸로 추적하여 배열 생성
+	if (bFound)
+	{
+		FIntPoint Curr = EndPos;
+		while (Curr != StartPos)
+		{
+			Path.Insert(GetTileAtPosition(Curr), 0); // 배열의 맨 앞에 밀어넣어 순서를 뒤집음 (Start->End)
+			Curr = CameFrom[Curr];
+		}
+	}
+
+	return Path;
+}
+
 TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint CenterPos, int32 Range)
 {
 	ClearRangeFor(Requester);
@@ -72,61 +133,6 @@ TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint Cente
 	return RangeArray;
 }
 
-TArray<AACTile*> AACGridSystem::CalculatePath(FIntPoint StartPos, FIntPoint EndPos)
-{
-	TArray<AACTile*> Path;
-	
-	// 장애물을 우회하는 BFS 기반 최단거리 길찾기 알고리즘
-	if (StartPos == EndPos) return Path;
-
-	TQueue<FIntPoint> Queue;
-	TMap<FIntPoint, FIntPoint> CameFrom; // <현재 위치, 나를 발견한 이전 위치>
-
-	Queue.Enqueue(StartPos);
-	CameFrom.Add(StartPos, StartPos);
-
-	FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
-	bool bFound = false;
-
-	while (!Queue.IsEmpty())
-	{
-		FIntPoint Current;
-		Queue.Dequeue(Current);
-
-		if (Current == EndPos)
-		{
-			bFound = true;
-			break;
-		}
-
-		for (const FIntPoint& Dir : Directions)
-		{
-			FIntPoint NextPos = Current + Dir;
-			AACTile* NextTile = GetTileAtPosition(NextPos);
-
-			// 다음 칸이 장애물이 아니고, 아직 방문하지 않은 칸이어야 함
-			if (NextTile && !NextTile->IsObstacle() && !CameFrom.Contains(NextPos))
-			{
-				CameFrom.Add(NextPos, Current);
-				Queue.Enqueue(NextPos);
-			}
-		}
-	}
-
-	// 경로를 찾았다면 EndPos부터 StartPos까지 거꾸로 추적하여 배열 생성
-	if (bFound)
-	{
-		FIntPoint Curr = EndPos;
-		while (Curr != StartPos)
-		{
-			Path.Insert(GetTileAtPosition(Curr), 0); // 배열의 맨 앞에 밀어넣어 순서를 뒤집음 (Start->End)
-			Curr = CameFrom[Curr];
-		}
-	}
-	
-	return Path;
-}
-
 void AACGridSystem::HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles)
 {
 	ClearPathFor(Requester);
@@ -134,7 +140,7 @@ void AACGridSystem::HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoi
 	AACTile* TargetTile = GetTileAtPosition(EndPos);
 	if (!TargetTile || !InRangeTiles.Contains(TargetTile)) return;
 
-	TArray<AACTile*> NewPath = CalculatePath(StartPos, EndPos);
+	TArray<AACTile*> NewPath = CalculatePath(Requester, StartPos, EndPos);
 	TArray<AACTile*>& PathArray = PlayerPathTiles.FindOrAdd(Requester);
 
 	for (AACTile* Tile : NewPath)

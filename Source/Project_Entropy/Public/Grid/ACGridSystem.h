@@ -38,7 +38,7 @@ public:
 	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 
 	// 시작점-도착점 단순 그리드 최단 경로 반환
-	TArray<AACTile*> CalculatePath(FIntPoint StartPos, FIntPoint EndPos);
+	TArray<AACTile*> CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos);
 	
 protected:
 	virtual void BeginPlay() override;
