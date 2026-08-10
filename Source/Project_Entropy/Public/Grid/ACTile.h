@@ -26,6 +26,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
 	void SetGridPosition(FIntPoint InPos) { GridPosition = InPos; }
@@ -57,9 +58,11 @@ protected:
 	TObjectPtr<UStaticMeshComponent> ObstacleMesh;
 
 	// 장애물 상태 변수
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tile|State")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_IsObstacle, Category = "Tile|State")
 	bool bIsObstacle = false;
-	
+	UFUNCTION()
+	void OnRep_IsObstacle();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile|Data")
 	FIntPoint GridPosition;
 	

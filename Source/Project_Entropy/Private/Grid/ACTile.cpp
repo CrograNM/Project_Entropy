@@ -4,10 +4,13 @@
 #include "GameFramework/PlayerController.h"
 #include "Characters/PE_EnemyBase.h"
 #include "Characters/PE_CharacterBase.h"
+#include "Net/UnrealNetwork.h"
 
 AACTile::AACTile()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	bReplicates = true;
 
 	// 루트 컴포넌트로 static mesh 생성
 	TileMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TileMesh"));
@@ -31,6 +34,12 @@ void AACTile::BeginPlay()
 	{
 		DynamicMaterial = TileMesh->CreateDynamicMaterialInstance(0);
 	}
+}
+
+void AACTile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AACTile, bIsObstacle);
 }
 
 FVector AACTile::GetCenterWorldLocation() const
@@ -134,6 +143,10 @@ void AACTile::UpdateVisuals()
 	DynamicMaterial->SetScalarParameterValue(InsideOpacityParamName, FinalOpacity);
 }
 
+void AACTile::OnRep_IsObstacle()
+{
+	SetObstacle(bIsObstacle);
+}
 void AACTile::SetObstacle(bool bInObstacle)
 {
 	bIsObstacle = bInObstacle;
