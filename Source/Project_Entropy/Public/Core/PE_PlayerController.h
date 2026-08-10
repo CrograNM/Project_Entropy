@@ -137,6 +137,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UACCardInteractionComponent> CardInteractionComp; // 카드 상호작용 컴포넌트
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<class UPE_CheatComponent> CheatNetworkComp;
+
 	// ----- [Test] -----
 	UPROPERTY(EditDefaultsOnly, Category = "Test")
 	TArray<TObjectPtr<UPE_CardData>> TestStartingDeck;

@@ -11,6 +11,7 @@
 #include "Core/PE_BattleGameMode.h"
 #include "Core/PE_GameState.h"
 #include "Core/PE_CheatManager.h"
+#include "Core/PE_CheatComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/ACDeckManagerComponent.h"
 #include "Components/ACCardInteractionComponent.h"
@@ -38,11 +39,18 @@ APE_PlayerController::APE_PlayerController()
 
 	// 덱 매니저 컴포넌트 부착
 	DeckManagerComp = CreateDefaultSubobject<UACDeckManagerComponent>(TEXT("DeckManagerComp"));
+
+	CheatNetworkComp = CreateDefaultSubobject<UPE_CheatComponent>(TEXT("CheatNetworkComp"));
 }
 
 void APE_PlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 개발 및 테스트 환경에서는 클라이언트도 강제로 치트 매니저를 가지도록 허용합니다.
+#if !UE_BUILD_SHIPPING
+	EnableCheats();
+#endif
 
 	if (DeckManagerComp && TestStartingDeck.Num() > 0)
 	{

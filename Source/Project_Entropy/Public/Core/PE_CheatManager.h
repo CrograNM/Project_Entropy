@@ -46,9 +46,6 @@ public:
 	bool IsMapToolActive() const { return bIsMapToolActive; }
 	
 private:
-	// 로컬 플레이어의 스탯 컴포넌트를 가져오는 헬퍼 함수
-	UACStatComponent* GetPlayerStatComponent() const;
-	
 	// Map Tool 활성화 상태 변수
 	bool bIsMapToolActive = false;
 };
