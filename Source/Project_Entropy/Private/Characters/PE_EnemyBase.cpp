@@ -253,7 +253,7 @@ void APE_EnemyBase::NetMulticast_ShowMoveIntent_Implementation(FIntPoint StartPo
 {
 	if (AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
 	{
-		TArray<AACTile*> RangeTiles = GridSystem->HighlightArea(this,StartPos, MoveRange);
+		TArray<AACTile*> RangeTiles = GridSystem->HighlightArea(this, StartPos, MoveRange, true);
 		GridSystem->HighlightPath(this, StartPos, DestinationTile->GetGridPosition(), RangeTiles);
 	}
 }
