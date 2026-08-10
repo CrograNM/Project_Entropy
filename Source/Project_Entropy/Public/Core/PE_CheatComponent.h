@@ -32,4 +32,7 @@ public:
 
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_CheatSetMoveRange(int32 NewRange);
+
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_CheatSetTileObstacle(class AACTile* TargetTile, bool bIsObstacle);
 };

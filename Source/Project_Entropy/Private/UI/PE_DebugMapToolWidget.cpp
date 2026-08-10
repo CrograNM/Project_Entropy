@@ -3,6 +3,7 @@
 #include "UI/PE_DebugMapToolWidget.h"
 
 #include "Core/PE_CheatManager.h"
+#include "Core/PE_CheatComponent.h"
 #include "Grid/ACTile.h"
 #include "GameFramework/PlayerController.h"
 
@@ -94,16 +95,17 @@ FReply UPE_DebugMapToolWidget::NativeOnMouseButtonDown(const FGeometry& InGeomet
 
 		if (AACTile* ClickedTile = Cast<AACTile>(HitResult.GetActor()))
 		{
+			UPE_CheatComponent* CheatNet = PC->FindComponentByClass<UPE_CheatComponent>();
+			if (!CheatNet) return FReply::Handled();
+
 			// 타일 상태 변경 조작
 			switch (CurrentBrush)
 			{
 			case EPEDebugBrushType::Reset:
-				// TODO: Reset 브러시 선택 시, 클릭한 타일을 초기 상태로 되돌린다.
-				//ClickedTile->ClearTile();
-				ClickedTile->SetObstacle(false);
+				CheatNet->Server_CheatSetTileObstacle(ClickedTile, false); 
 				break;
 			case EPEDebugBrushType::Obstacle:
-				ClickedTile->SetObstacle(!ClickedTile->IsObstacle()); // 토글(On/Off)
+				CheatNet->Server_CheatSetTileObstacle(ClickedTile, !ClickedTile->IsObstacle());
 				break;
 			case EPEDebugBrushType::Water:
 				// TODO: ClickedTile->AddTileElement(ETileElement::Water); 

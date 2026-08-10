@@ -53,3 +53,12 @@ void UPE_CheatComponent::Server_CheatSetMoveRange_Implementation(int32 NewRange)
 	GET_STAT_COMP();
 	if (Stat) Stat->SetMoveRange(NewRange);
 }
+
+bool UPE_CheatComponent::Server_CheatSetTileObstacle_Validate(AACTile* TargetTile, bool bIsObstacle) { return true; }
+void UPE_CheatComponent::Server_CheatSetTileObstacle_Implementation(AACTile* TargetTile, bool bIsObstacle)
+{
+	if (TargetTile)
+	{
+		TargetTile->SetObstacle(bIsObstacle);
+	}
+}

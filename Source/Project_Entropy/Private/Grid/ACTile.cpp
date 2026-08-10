@@ -145,16 +145,13 @@ void AACTile::UpdateVisuals()
 
 void AACTile::OnRep_IsObstacle()
 {
-	if (ObstacleMesh) { ObstacleMesh->SetVisibility(bIsObstacle); }
-
-	if (bIsObstacle)
-	{
-		HighlightRequests.Empty();
-		UpdateVisuals();
-	}
+	SetObstacle(bIsObstacle);
 }
+
 void AACTile::SetObstacle(bool bInObstacle)
 {
+	bIsObstacle = bInObstacle; 
+	
 	if (ObstacleMesh) { ObstacleMesh->SetVisibility(bIsObstacle); }
 
 	if (bIsObstacle)
@@ -162,12 +159,9 @@ void AACTile::SetObstacle(bool bInObstacle)
 		HighlightRequests.Empty();
 		UpdateVisuals();
 	}
+
 }
-void AACTile::Server_SetObstacle_Implementation(bool bInObstacle)
-{
-	bIsObstacle = bInObstacle;
-	OnRep_IsObstacle();
-}
+
 // 에디터 프로퍼티 변경 감지 로직
 #if WITH_EDITOR
 void AACTile::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
