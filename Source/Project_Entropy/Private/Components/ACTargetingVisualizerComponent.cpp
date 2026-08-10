@@ -98,7 +98,8 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 	// 2. 모드에 따라 범위를 그립니다.
 	if (RepTargetingMode != ETargetingMode::None && RepRange > 0)
 	{
-		CurrentValidTiles = GridSystem->HighlightArea(OwnerActor, CenterPos, RepRange);
+		bool bIsMovement = (RepTargetingMode == ETargetingMode::Movement);
+		CurrentValidTiles = GridSystem->HighlightArea(OwnerActor, CenterPos, RepRange, bIsMovement);
 	}
 
 	// 3. 목표 지점에 마우스를 올렸다면, 디테일한 조준선/경로를 그립니다.

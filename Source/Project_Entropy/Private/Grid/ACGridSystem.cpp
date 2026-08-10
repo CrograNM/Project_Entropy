@@ -84,53 +84,56 @@ TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint Start
 	return Path;
 }
 
-TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint CenterPos, int32 Range)
+TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement)
 {
 	ClearRangeFor(Requester);
-	TArray<AACTile*>& RangeArray = PlayerRangeTiles.FindOrAdd(Requester);
 
-	TQueue<TPair<FIntPoint, int32>> Queue;
-	TSet<FIntPoint> Visited;
+	TArray<AACTile*>& ValidTiles = PlayerRangeTiles.FindOrAdd(Requester);;
+	TQueue<TPair<FIntPoint, int32>> Queue; // <좌표, 거리>
+	TMap<FIntPoint, int32> Visited;
 
-	Queue.Enqueue(TPair<FIntPoint, int32>(CenterPos, 0));
-	Visited.Add(CenterPos);
+	Queue.Enqueue(TPair<FIntPoint, int32>(StartPos, 0));
+	Visited.Add(StartPos, 0);
 
 	FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
 
 	while (!Queue.IsEmpty())
 	{
-		TPair<FIntPoint, int32> CurrentNode;
-		Queue.Dequeue(CurrentNode);
+		TPair<FIntPoint, int32> Current;
+		Queue.Dequeue(Current);
 
-		FIntPoint CurrentPos = CurrentNode.Key;
-		int32 CurrentCost = CurrentNode.Value;
-
-		if (AACTile* Tile = GetTileAtPosition(CurrentPos))
+		if (AACTile* Tile = GetTileAtPosition(Current.Key))
 		{
-			if (CurrentCost > 0)
-			{
-				Tile->RequestHighlight(Requester, ETileHighlightType::InRange);
-				RangeArray.Add(Tile);
-			}
+			ValidTiles.Add(Tile);
+			Tile->RequestHighlight(Requester, ETileHighlightType::InRange);
 		}
 
-		if (CurrentCost >= Range) continue;
+		if (Current.Value >= Range) continue; // 최대 사거리 도달 시 더 이상 뻗어나가지 않음
 
 		for (const FIntPoint& Dir : Directions)
 		{
-			FIntPoint NeighborPos = CurrentPos + Dir;
-			if (!Visited.Contains(NeighborPos))
+			FIntPoint NextPos = Current.Key + Dir;
+			if (!Visited.Contains(NextPos))
 			{
-				AACTile* NeighborTile = GetTileAtPosition(NeighborPos);
-				if (NeighborTile && !NeighborTile->IsObstacle())
+				AACTile* NextTile = GetTileAtPosition(NextPos);
+
+				// 맵의 뚫린 공간(낙사 지점 등)이나 정적 장애물은 공통으로 통과 불가
+				if (NextTile && !NextTile->IsObstacle())
 				{
-					Visited.Add(NeighborPos);
-					Queue.Enqueue(TPair<FIntPoint, int32>(NeighborPos, CurrentCost + 1));
+					// [핵심] 이동 모드(Movement)일 경우, 누군가 서 있는 타일은 지나갈 수 없음!
+					// (단, 스킬 조준 모드일 때는 타겟 머리 위로 스킬을 던질 수 있어야 하므로 무시)
+					if (bIsMovement && IsTileOccupied(NextPos, Requester))
+					{
+						continue;
+					}
+
+					Visited.Add(NextPos, Current.Value + 1);
+					Queue.Enqueue(TPair<FIntPoint, int32>(NextPos, Current.Value + 1));
 				}
 			}
 		}
 	}
-	return RangeArray;
+	return ValidTiles;
 }
 
 void AACGridSystem::HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles)

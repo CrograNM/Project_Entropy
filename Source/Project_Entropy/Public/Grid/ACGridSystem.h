@@ -26,7 +26,7 @@ public:
 	// 특정 좌표의 타일 반환
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
 
-	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint CenterPos, int32 Range);
+	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
 	void HighlightTarget(AActor* Requester, FIntPoint TargetPos);
 	void HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPositions);

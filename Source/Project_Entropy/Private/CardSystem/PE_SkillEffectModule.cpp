@@ -20,7 +20,7 @@ void UPE_SkillEffect_Damage::ApplyEffect(AActor* Instigator, APE_CharacterBase* 
 // --- [모듈 2: 넉백 구현부] ---
 void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
 {
-	if (Target && Instigator && PushDistance > 0)
+	if (Target && Instigator && PushDistance > 0 && Target->IsPushable())
 	{
 		UACGridMovementComponent* TargetMove = Target->GetGridMovementComponent();
 		UACGridMovementComponent* InstMove = Cast<APE_CharacterBase>(Instigator)->GetGridMovementComponent();

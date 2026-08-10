@@ -8,8 +8,9 @@ APE_ObstacleBase::APE_ObstacleBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	// 제 3세력(중립)으로 설정하여 광역기 등에 무조건 데미지를 받도록 세팅
-	TeamID = -1;
+	
+	TeamID = -1;			// 제 3세력(중립)으로 설정하여 광역기 등에 무조건 데미지를 받도록 세팅
+	bIsPushable = false;	// 장애물은 기본적으로 밀리지 않음 (에디터에서 true로 바꿀 수 있음)
 
 	if (GetCapsuleComponent())
 	{

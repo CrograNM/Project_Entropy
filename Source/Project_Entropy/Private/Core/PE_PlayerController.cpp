@@ -720,6 +720,12 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 		Path.Pop(); // 누군가 있으면 그 앞 칸으로 목적지 보정
 	}
 
+	if (Path.Num() > PC->GetStatComponent()->GetMoveRange())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 최대 이동 거리를 초과했습니다."));
+		return;
+	}
+
 	if (Path.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 도착지가 모두 막혀 이동을 취소합니다."));
