@@ -318,10 +318,12 @@ void UACTargetingVisualizerComponent::GenerateMeshesAlongSpline(USplineComponent
 		SplineMesh->SetEndScale(FVector2D(Thickness));
 		SplineMesh->SetStartAndEnd(P1, T1, EndPos, T2);
 
-		SplineMesh->SetMaterial(0, Mat);
-
 		SplineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SplineMesh->RegisterComponent();
+
+		SplineMesh->SetMaterial(0, Mat);
+		SplineMesh->UpdateMesh();
+
 		GeneratedMeshes.Add(SplineMesh);
 	}
 }
