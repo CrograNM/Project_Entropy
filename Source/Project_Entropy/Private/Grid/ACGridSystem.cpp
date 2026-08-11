@@ -6,6 +6,7 @@
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "CardSystem/PE_SkillData.h"
 
 AACGridSystem::AACGridSystem()
 {
@@ -110,7 +111,7 @@ TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint Start
 	return Path;
 }
 
-TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement)
+TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement, const UPE_SkillData* SkillData)
 {
 	ClearRangeFor(Requester);
 
@@ -142,17 +143,36 @@ TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint Start
 			if (!Visited.Contains(NextPos))
 			{
 				AACTile* NextTile = GetTileAtPosition(NextPos);
+				bool bCanPass = false;
 
-				// 맵의 뚫린 공간(낙사 지점 등)이나 정적 장애물은 공통으로 통과 불가
-				if (NextTile && !NextTile->IsObstacle())
+				if (bIsMovement)
 				{
-					// [핵심] 이동 모드(Movement)일 경우, 누군가 서 있는 타일은 지나갈 수 없음!
-					// (단, 스킬 조준 모드일 때는 타겟 머리 위로 스킬을 던질 수 있어야 하므로 무시)
-					if (bIsMovement && IsTileOccupied(NextPos, Requester))
+					// 이동: 맵에 없는 공간(낙사), 비파괴 장애물, 타일 점유(유닛) 모두 통과 불가
+					if (NextTile && !NextTile->IsObstacle() && !IsTileOccupied(NextPos, Requester))
 					{
-						continue;
+						bCanPass = true;
 					}
+				}
+				else
+				{
+					// 스킬: 맵에 없는 공간(낙사)이나 비파괴 장애물(지진, 용암)은 무조건 범위가 통과함
+					if (SkillData && SkillData->ProjectileSpeed > 0.f && SkillData->ProjectileGravity == 0.f)
+					{
+						// 직사 스킬: 타일 점유(캐릭터/동적장애물)를 통과할 수 없음
+						if (!IsTileOccupied(NextPos, Requester))
+						{
+							bCanPass = true;
+						}
+					}
+					else
+					{
+						// 곡사 스킬: 모든 장애물과 유닛 점유를 통과 가능
+						bCanPass = true;
+					}
+				}
 
+				if (bCanPass)
+				{
 					Visited.Add(NextPos, Current.Value + 1);
 					Queue.Enqueue(TPair<FIntPoint, int32>(NextPos, Current.Value + 1));
 				}

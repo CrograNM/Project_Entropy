@@ -30,7 +30,7 @@ public:
 	// 특정 좌표에 캐릭터/동적 장애물이 존재하는지 여부 반환
 	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 
-	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false);
+	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false, const class UPE_SkillData* SkillData = nullptr);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
 	void HighlightTarget(AActor* Requester, FIntPoint TargetPos);
 	void HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPositions);
