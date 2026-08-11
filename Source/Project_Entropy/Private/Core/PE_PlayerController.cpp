@@ -562,6 +562,12 @@ void APE_PlayerController::OnCameraControlStarted(const FInputActionValue& Value
 	{
 		CardInteractionComp->SetInteractionSuspended(true);
 	}
+
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+	if (PC && PC->GetTargetingVisualizer())
+	{
+		PC->GetTargetingVisualizer()->UpdateHoveredTile(FIntPoint(-999, -999));
+	}
 }
 void APE_PlayerController::OnCameraControlCompleted(const FInputActionValue& Value)
 {
