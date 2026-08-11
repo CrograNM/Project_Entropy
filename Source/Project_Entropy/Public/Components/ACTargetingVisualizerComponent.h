@@ -86,18 +86,27 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
 	TObjectPtr<UMaterialInterface> PushMaterial; 
 
+	// 화살촉 뒤로 당기기 배율
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
-	float TrajectoryThickness = 1.0f; // 궤적 선 두께
+	float ArrowPullbackMultiplier = 1.0f; 
 
+	// 궤적 선 두께
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
-	float TrajectoryArrowSize = 1.5f; // 궤적 화살촉 크기
+	float TrajectoryThickness = 1.0f; 
 
+	// 궤적 화살촉 크기
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
-	float PushThickness = 1.0f; // 밀치기 선 두께
+	float TrajectoryArrowSize = 1.5f; 
 
+	// 밀치기 선 두께
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
-	float PushArrowSize = 1.5f; // 밀치기 화살촉 크기
+	float PushThickness = 1.0f; 
 
+	// 밀치기 화살촉 크기
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	float PushArrowSize = 1.5f; 
+
+	// 밀치기 화살촉을 연장할 거리
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
 	float PushArrowExtension = 25.f;
 

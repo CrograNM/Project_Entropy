@@ -106,7 +106,7 @@ void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* Ta
 		FVector StartLoc = Caster->GetActorLocation();
 		if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
 		{
-			StartLoc.Z = Cap->GetScaledCapsuleHalfHeight() * 0.7f; // 약간 위쪽(가슴 높이)으로 조정
+			StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f; // 약간 위쪽(가슴 높이)으로 조정
 		}
 
 		FTransform SpawnTransform = Caster->GetActorTransform();
@@ -122,7 +122,7 @@ void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* Ta
 			// 타겟 높이는 머리 부분으로 맞추기. (캡슐 기준 80% 정도 높이)
 			if (UCapsuleComponent* TargetCap = FinalTargetChar->FindComponentByClass<UCapsuleComponent>())
 			{
-				FinalTargetLoc.Z = TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
+				FinalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
 			}
 		}
 

@@ -5,6 +5,7 @@
 #include "Components/SplineComponent.h" 
 #include "Components/SplineMeshComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ACStatComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "CardSystem/PE_SkillData.h"
 #include "CardSystem/PE_SkillEffectModule.h"
@@ -13,6 +14,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "DrawDebugHelpers.h" 
+#include "Containers/Queue.h"
 
 UACTargetingVisualizerComponent::UACTargetingVisualizerComponent()
 {
@@ -129,7 +131,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			FVector StartLoc = OwnerActor->GetActorLocation();
 			if (UCapsuleComponent* Cap = OwnerActor->FindComponentByClass<UCapsuleComponent>())
-				StartLoc.Z = Cap->GetScaledCapsuleHalfHeight() * 0.7f;
+				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
 			StartLoc += OwnerActor->GetActorForwardVector() * 70.f;
 
 			FVector EndLoc = FVector::ZeroVector;
@@ -137,7 +139,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			{
 				EndLoc = TargetChar->GetActorLocation();
 				if (UCapsuleComponent* TargetCap = TargetChar->FindComponentByClass<UCapsuleComponent>())
-					EndLoc.Z = TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
+					EndLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
 			}
 			else if (AACTile* HoveredTileActor = GridSystem->GetTileAtPosition(RepHoveredTile))
 			{
@@ -198,7 +200,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				GridSystem->HighlightTarget(OwnerActor, ActualTargetPos);
 			}
 
-			// 밀치기 포인트 생성
+			// --- [가상 보드 및 연쇄 밀치기 시뮬레이션] ---
 			const UPE_SkillEffect_Push* PushModule = nullptr;
 			for (const UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
 			{
@@ -214,12 +216,40 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				int32 PushDist = PushModule->GetPushDistance();
 				FIntPoint InstPos = MoveComp->GetGridPosition();
 
-				// AoE 범위에 있는 '모든 타일'을 순회하며 적을 찾습니다.
+				// 1. 가상 보드 구축 (현재 맵 위의 모든 캐릭터 위치 캡처)
+				TMap<FIntPoint, APE_CharacterBase*> VirtualBoard;
+				TArray<AActor*> AllChars;
+				UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
+				for (AActor* Actor : AllChars)
+				{
+					if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+					{
+						if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+						if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
+						{
+							FIntPoint Pos = (CharMove->GetTargetGridPosition() != FIntPoint(-999, -999))
+								? CharMove->GetTargetGridPosition() : CharMove->GetGridPosition();
+							VirtualBoard.Add(Pos, Char);
+						}
+					}
+				}
+
+				// 시뮬레이션용 큐 구조체
+				struct FSimulatedPush {
+					APE_CharacterBase* Actor;
+					int32 RemainingDist;
+					FIntPoint PushDir;
+				};
+				TQueue<FSimulatedPush> SimQueue;
+
+				// 2. 1차 타격 대상들을 찾아 큐에 삽입
 				for (const FIntPoint& TargetPos : AffectedGridPositions)
 				{
-					if (APE_CharacterBase* HitChar = GridSystem->GetCharacterAtPosition(TargetPos))
+					if (APE_CharacterBase** HitCharPtr = VirtualBoard.Find(TargetPos))
 					{
-						if (HitChar->IsPushable())
+						APE_CharacterBase* HitChar = *HitCharPtr;
+						if (HitChar && HitChar->IsPushable())
 						{
 							FIntPoint PushDir(
 								FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
@@ -227,40 +257,78 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 							);
 							if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
 
-							FIntPoint ExpectedEndPos = TargetPos;
-							for (int32 step = 1; step <= PushDist; ++step)
-							{
-								FIntPoint CheckPos = ExpectedEndPos + PushDir;
-								AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
-								if (!CheckTile || CheckTile->IsObstacle() || GridSystem->IsTileOccupied(CheckPos, HitChar)) break;
-								ExpectedEndPos = CheckPos;
-							}
-
-							if (ExpectedEndPos != TargetPos)
-							{
-								FVector PushStart = HitChar->GetActorLocation();
-								FVector PushEnd = GridSystem->GetTileAtPosition(ExpectedEndPos)->GetActorLocation();
-
-								if (UCapsuleComponent* Cap = HitChar->FindComponentByClass<UCapsuleComponent>())
-									PushStart.Z = Cap->GetScaledCapsuleHalfHeight() * 0.5f;
-								PushEnd.Z = PushStart.Z;
-
-								// 타일 경계선까지 연장 연산을 여기서 미리 처리
-								FVector Dir = (PushEnd - PushStart).GetSafeNormal();
-								PushEnd += (Dir * PushArrowExtension);
-
-								// PushSpline을 도장처럼 활용: 지우기 -> 현재 대상의 궤적 세팅 -> 메쉬 생성
-								PushSpline->ClearSplinePoints();
-								PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
-								PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
-
-								GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
-							}
+							SimQueue.Enqueue({ HitChar, PushDist, PushDir });
 						}
 					}
 				}
-				// 모든 작업이 끝난 후 다시 비워줍니다.
-				PushSpline->ClearSplinePoints();
+
+				// 3. 당구 연쇄 루프 실행
+				while (!SimQueue.IsEmpty())
+				{
+					FSimulatedPush Task;
+					SimQueue.Dequeue(Task);
+
+					if (!Task.Actor || Task.RemainingDist <= 0) continue;
+
+					// 가상 보드에서 이 캐릭터의 '현재' 위치 추적
+					FIntPoint CurrentPos(-999, -999);
+					for (const auto& Pair : VirtualBoard)
+					{
+						if (Pair.Value == Task.Actor) { CurrentPos = Pair.Key; break; }
+					}
+					if (CurrentPos == FIntPoint(-999, -999)) continue;
+
+					FIntPoint ExpectedEndPos = CurrentPos;
+
+					for (int32 step = 1; step <= Task.RemainingDist; ++step)
+					{
+						FIntPoint CheckPos = ExpectedEndPos + Task.PushDir;
+						AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
+
+						// 비파괴 장애물(벽, 용암 등)이거나 맵 끝이면 즉시 멈춤
+						if (!CheckTile || CheckTile->IsObstacle()) break;
+
+						// 가상 보드 내 충돌 검사 (연쇄 충돌 발생!)
+						if (APE_CharacterBase** HitCharPtr = VirtualBoard.Find(CheckPos))
+						{
+							APE_CharacterBase* HitChar = *HitCharPtr;
+							if (HitChar && HitChar->IsPushable())
+							{
+								// 부딪힌 대상을 큐에 넣고 에너지를 전이시킵니다.
+								SimQueue.Enqueue({ HitChar, Task.RemainingDist - step, Task.PushDir });
+							}
+							break; // 때린 당사자는 여기서 정지
+						}
+
+						ExpectedEndPos = CheckPos;
+					}
+
+					// 위치가 변했다면 궤적을 그리고 가상 보드를 갱신
+					if (ExpectedEndPos != CurrentPos)
+					{
+						// 가상 보드 업데이트 (다른 연쇄 충돌을 위해)
+						VirtualBoard.Remove(CurrentPos);
+						VirtualBoard.Add(ExpectedEndPos, Task.Actor);
+
+						FVector PushStart = GridSystem->GetTileAtPosition(CurrentPos)->GetActorLocation();
+						FVector PushEnd = GridSystem->GetTileAtPosition(ExpectedEndPos)->GetActorLocation();
+
+						if (UCapsuleComponent* Cap = Task.Actor->FindComponentByClass<UCapsuleComponent>())
+							PushStart.Z += Cap->GetScaledCapsuleHalfHeight() * 0.5f;
+						PushEnd.Z = PushStart.Z;
+
+						FVector Dir = (PushEnd - PushStart).GetSafeNormal();
+						PushEnd += (Dir * PushArrowExtension); // 타일 경계선 연장
+
+						// 매번 스플라인을 초기화하며 '도장 찍기' 방식으로 메쉬 생성
+						PushSpline->ClearSplinePoints();
+						PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
+						PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
+
+						GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
+					}
+				}
+				PushSpline->ClearSplinePoints(); // 생성 완료 후 잔여 데이터 청소
 			}
 
 			// 본체의 스킬 발사 궤적(붉은 선) 메쉬 생성
@@ -295,7 +363,7 @@ void UACTargetingVisualizerComponent::GenerateMeshesAlongSpline(USplineComponent
 			FVector Dir = (P2 - P1).GetSafeNormal();
 			float Dist = FVector::Distance(P1, P2);
 			float PullbackDist = FMath::Min(HeadSize * 50.f, Dist * 0.5f); // 메쉬 기본 크기 50 보정
-			EndPos = P2 - (Dir * PullbackDist);
+			EndPos = P2 - (Dir * PullbackDist * ArrowPullbackMultiplier);
 			T2 = Dir * T2.Size(); // 곡률 탄젠트 보정
 
 			// --- 화살표 머리(Cone) 생성 ---

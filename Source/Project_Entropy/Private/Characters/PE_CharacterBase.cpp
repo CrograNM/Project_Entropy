@@ -112,6 +112,11 @@ void APE_CharacterBase::HandleDeath()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[%s] 사망 처리되었습니다."), *GetName());
 	// 충돌체 끄기, 랙돌 전환 또는 파괴 로직 등의 공통 처리를 이곳에서 진행합니다.
+
+	if (HasAuthority())
+	{
+		SetLifeSpan(0.5f); // 0.5초 후 자동 제거
+	}
 }
 
 int32 APE_CharacterBase::GetTeamID() const
