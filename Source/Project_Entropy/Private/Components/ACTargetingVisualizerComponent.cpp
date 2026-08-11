@@ -3,6 +3,7 @@
 #include "Components/ACTargetingVisualizerComponent.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/SplineComponent.h" 
+#include "Components/SplineMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "CardSystem/PE_SkillData.h"
@@ -15,7 +16,7 @@
 
 UACTargetingVisualizerComponent::UACTargetingVisualizerComponent()
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 
 	// 스플라인 컴포넌트 부착
@@ -83,6 +84,16 @@ bool UACTargetingVisualizerComponent::IsTileInRange(AACTile* TargetTile) const
 void UACTargetingVisualizerComponent::OnRep_TargetingState() { RefreshVisuals(); }
 void UACTargetingVisualizerComponent::OnRep_HoveredTile() { RefreshVisuals(); }
 
+void UACTargetingVisualizerComponent::ClearGeneratedMeshes()
+{
+	// 이전 프레임에 만들어둔 화살표 메쉬들을 청소
+	for (UMeshComponent* Mesh : GeneratedMeshes)
+	{
+		if (Mesh) Mesh->DestroyComponent();
+	}
+	GeneratedMeshes.Empty();
+}
+
 void UACTargetingVisualizerComponent::RefreshVisuals()
 {
 	AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
@@ -96,15 +107,16 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 	CurrentValidTiles.Empty();
 	TrajectorySpline->ClearSplinePoints();
 	PushSpline->ClearSplinePoints();
+	ClearGeneratedMeshes(); // 메쉬 청소
 
-	// 1. 사거리(Range) 표시
+	// 1. 사거리 표시
 	if (RepTargetingMode != ETargetingMode::None && RepRange > 0)
 	{
 		bool bIsMovement = (RepTargetingMode == ETargetingMode::Movement);
 		CurrentValidTiles = GridSystem->HighlightArea(OwnerActor, CenterPos, RepRange, bIsMovement);
 	}
 
-	// 2. 마우스 호버링 세부 표시
+	// 2. 조준 및 궤적 계산
 	if (RepHoveredTile != FIntPoint(-999, -999) && RepTargetingMode != ETargetingMode::None)
 	{
 		if (RepTargetingMode == ETargetingMode::Movement)
@@ -113,16 +125,13 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 		}
 		else if (RepTargetingMode == ETargetingMode::Skill && RepSkillData)
 		{
-			// --- [물리 시뮬레이션: 직사/곡사에 따른 실제 타격 위치 도출] ---
-			FIntPoint ActualTargetPos = RepHoveredTile; // 기본값: 마우스가 위치한 타일
+			FIntPoint ActualTargetPos = RepHoveredTile;
 
-			// 가슴 높이 출발점 계산
 			FVector StartLoc = OwnerActor->GetActorLocation();
 			if (UCapsuleComponent* Cap = OwnerActor->FindComponentByClass<UCapsuleComponent>())
 				StartLoc.Z = Cap->GetScaledCapsuleHalfHeight() * 0.7f;
 			StartLoc += OwnerActor->GetActorForwardVector() * 70.f;
 
-			// 예상 도착점 계산
 			FVector EndLoc = FVector::ZeroVector;
 			if (APE_CharacterBase* TargetChar = GridSystem->GetCharacterAtPosition(RepHoveredTile))
 			{
@@ -132,10 +141,10 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			}
 			else if (AACTile* HoveredTileActor = GridSystem->GetTileAtPosition(RepHoveredTile))
 			{
-				EndLoc = HoveredTileActor->GetActorLocation(); // 바닥(용암 등 높이가 없는 경우)
+				EndLoc = HoveredTileActor->GetActorLocation();
 			}
 
-			// [직사 판정] 장애물이 스킬을 막는지 레이캐스트 시뮬레이션
+			// 직사 차단 판정
 			if (RepSkillData->ProjectileSpeed > 0.f && RepSkillData->ProjectileGravity == 0.f)
 			{
 				FHitResult HitResult;
@@ -144,9 +153,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 				if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, EndLoc, ECC_Visibility, Params))
 				{
-					EndLoc = HitResult.Location; // 막힌 지점의 3D 좌표로 갱신!
-
-					// 막힌 대상이 캐릭터/장애물이면 타겟 타일 좌표를 그 녀석이 서 있는 곳으로 보정
+					EndLoc = HitResult.Location;
 					if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
 					{
 						if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
@@ -159,8 +166,8 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				}
 			}
 
-			// --- [궤적 스플라인 포인트 생성] ---
-			if (RepSkillData->ProjectileGravity > 0.f) // 곡사 (포물선)
+			// 스킬 궤적 포인트 생성
+			if (RepSkillData->ProjectileGravity > 0.f)
 			{
 				int32 NumPoints = 15;
 				for (int32 i = 0; i <= NumPoints; ++i)
@@ -172,14 +179,13 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				}
 				TrajectorySpline->UpdateSpline();
 			}
-			else // 직사 (직선)
+			else
 			{
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
 				TrajectorySpline->AddSplinePoint(EndLoc, ESplineCoordinateSpace::World, true);
 			}
 
-			// --- [실제 타격 타일 하이라이트] ---
-			// (마우스 위치가 아닌, 레이캐스트로 보정된 ActualTargetPos를 칠합니다!)
+			// 타격 타일 하이라이트
 			if (RepSkillData->AoEShape != EPEAoEShape::None)
 			{
 				TSet<FIntPoint> AoE = RepSkillData->GetAffectedGridPositions(ActualTargetPos);
@@ -190,24 +196,20 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				GridSystem->HighlightTarget(OwnerActor, ActualTargetPos);
 			}
 
-			// --- [밀치기(Push) 시뮬레이션 및 2차 화살표 생성] ---
-			
-			// 스킬에 장착된 모듈 배열을 뒤져서 '밀치기 모듈'이 있는지 확인
+			// 밀치기 포인트 생성
 			const UPE_SkillEffect_Push* PushModule = nullptr;
 			for (const UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
 			{
 				if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
 				{
 					PushModule = FoundPush;
-					break; // 찾았으면 루프 종료
+					break;
 				}
 			}
 
-			// 밀치기 모듈이 존재하고, 그 거리가 0보다 크다면 화살표를 그립니다.
 			if (PushModule && PushModule->GetPushDistance() > 0)
 			{
 				int32 PushDist = PushModule->GetPushDistance();
-
 				if (APE_CharacterBase* HitChar = GridSystem->GetCharacterAtPosition(ActualTargetPos))
 				{
 					if (HitChar->IsPushable())
@@ -219,31 +221,27 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 						);
 						if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
 
-						// 어디까지 밀려날지 예상 루프
 						FIntPoint ExpectedEndPos = ActualTargetPos;
-
-						// 모듈에서 빼온 거리(PushDist)를 사용
 						for (int32 step = 1; step <= PushDist; ++step)
 						{
 							FIntPoint CheckPos = ExpectedEndPos + PushDir;
 							AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
-
-							if (!CheckTile || CheckTile->IsObstacle() || GridSystem->IsTileOccupied(CheckPos, HitChar))
-								break;
-
+							if (!CheckTile || CheckTile->IsObstacle() || GridSystem->IsTileOccupied(CheckPos, HitChar)) break;
 							ExpectedEndPos = CheckPos;
 						}
 
-						// 타겟이 실제로 뒤로 밀린다면 주황색 넉백 화살표 포인트 생성
 						if (ExpectedEndPos != ActualTargetPos)
 						{
-
 							FVector PushStart = HitChar->GetActorLocation();
 							FVector PushEnd = GridSystem->GetTileAtPosition(ExpectedEndPos)->GetActorLocation();
 
 							if (UCapsuleComponent* Cap = HitChar->FindComponentByClass<UCapsuleComponent>())
 								PushStart.Z = Cap->GetScaledCapsuleHalfHeight() * 0.5f;
-							PushEnd.Z = PushStart.Z; // 수평 화살표
+							PushEnd.Z = PushStart.Z;
+
+							// 타일 경계선까지 연장 연산을 여기서 미리 처리
+							FVector Dir = (PushEnd - PushStart).GetSafeNormal();
+							PushEnd += (Dir * PushArrowExtension);
 
 							PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
 							PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
@@ -251,55 +249,79 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 					}
 				}
 			}
+
+			// --- 스플라인이 완성되었으므로, 그 길을 따라 실제 메쉬를 소환 ---
+			if (TrajectorySpline->GetNumberOfSplinePoints() > 1)
+			{
+				GenerateMeshesAlongSpline(TrajectorySpline, TrajectoryMaterial, TrajectoryThickness, TrajectoryArrowSize);
+			}
+			if (PushSpline->GetNumberOfSplinePoints() > 1)
+			{
+				GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
+			}
 		}
 	}
 }
 
-void UACTargetingVisualizerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void UACTargetingVisualizerComponent::GenerateMeshesAlongSpline(USplineComponent* Spline, UMaterialInterface* Mat, float Thickness, float HeadSize)
 {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	// 스플라인 정보를 읽어와 선(Cylinder)과 화살촉(Cone) 메쉬를 조립합니다.
+	int32 NumPoints = Spline->GetNumberOfSplinePoints();
+	if (NumPoints < 2 || !LineMesh || !ArrowHeadMesh || !Mat) return;
 
-	if (RepTargetingMode == ETargetingMode::Skill)
+	for (int32 i = 0; i < NumPoints - 1; ++i)
 	{
-		// 1. 스킬 발사 궤적 렌더링
-		int32 TrajPoints = TrajectorySpline->GetNumberOfSplinePoints();
-		if (TrajPoints > 1)
+		// 스플라인 메쉬는 Local Space 연산이 가장 안정적입니다.
+		FVector P1 = Spline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::Local);
+		FVector T1 = Spline->GetTangentAtSplinePoint(i, ESplineCoordinateSpace::Local);
+		FVector P2 = Spline->GetLocationAtSplinePoint(i + 1, ESplineCoordinateSpace::Local);
+		FVector T2 = Spline->GetTangentAtSplinePoint(i + 1, ESplineCoordinateSpace::Local);
+
+		bool bIsLastPoint = (i == NumPoints - 2);
+		FVector EndPos = P2;
+
+		// 마지막 구간이면 화살촉이 달릴 자리를 마련하기 위해 선의 끝(P2)을 살짝 뒤로 당깁니다.
+		if (bIsLastPoint)
 		{
-			for (int32 i = 0; i < TrajPoints - 1; ++i)
-			{
-				FVector P1 = TrajectorySpline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World);
-				FVector P2 = TrajectorySpline->GetLocationAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
-
-				// 마지막 선분(구간)일 경우 화살표를 그리고 뒤로 살짝 당김
-				if (i == TrajPoints - 2)
-				{
-					FVector Dir = (P2 - P1).GetSafeNormal();
-					float Dist = FVector::Distance(P1, P2);
-					// 타겟과 너무 가까우면 방향이 뒤집히지 않게 최소 거리를 보장하여 당깁니다.
-					float PullbackDist = FMath::Min(TrajectoryArrowSize * 0.6f, Dist * 0.5f);
-					FVector ShortenedP2 = P2 - (Dir * PullbackDist);
-
-					DrawDebugDirectionalArrow(GetWorld(), P1, ShortenedP2, TrajectoryArrowSize, TrajectoryColor, false, -1.f, 0, TrajectoryThickness);
-				}
-				else
-				{
-					DrawDebugLine(GetWorld(), P1, P2, TrajectoryColor, false, -1.f, 0, TrajectoryThickness);
-				}
-			}
-		}
-
-		// 2. 밀치기(넉백) 예상 궤적 렌더링
-		int32 PushPoints = PushSpline->GetNumberOfSplinePoints();
-		if (PushPoints > 1)
-		{
-			FVector P1 = PushSpline->GetLocationAtSplinePoint(0, ESplineCoordinateSpace::World);
-			FVector P2 = PushSpline->GetLocationAtSplinePoint(PushPoints - 1, ESplineCoordinateSpace::World);
-
 			FVector Dir = (P2 - P1).GetSafeNormal();
+			float Dist = FVector::Distance(P1, P2);
+			float PullbackDist = FMath::Min(HeadSize * 50.f, Dist * 0.5f); // 메쉬 기본 크기 50 보정
+			EndPos = P2 - (Dir * PullbackDist);
+			T2 = Dir * T2.Size(); // 곡률 탄젠트 보정
 
-			FVector ExtendedP2 = P2 + (Dir * PushArrowExtension);
+			// --- 화살표 머리(Cone) 생성 ---
+			UStaticMeshComponent* ArrowHead = NewObject<UStaticMeshComponent>(GetOwner());
+			ArrowHead->SetMobility(EComponentMobility::Movable);
+			ArrowHead->SetStaticMesh(ArrowHeadMesh);
+			ArrowHead->SetMaterial(0, Mat);
+			ArrowHead->SetupAttachment(Spline);
+			ArrowHead->SetRelativeLocation(EndPos);
 
-			DrawDebugDirectionalArrow(GetWorld(), P1, ExtendedP2, PushArrowSize, PushColor, false, -1.f, 0, PushThickness);
+			// Cone 메쉬는 기본적으로 Z축(위)을 향하므로, 진행 방향(Dir)을 향하도록 회전시킵니다.
+			FQuat HeadQuat = FQuat::FindBetweenNormals(FVector::UpVector, Dir);
+			ArrowHead->SetRelativeRotation(HeadQuat);
+			ArrowHead->SetRelativeScale3D(FVector(HeadSize));
+
+			ArrowHead->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ArrowHead->RegisterComponent();
+			GeneratedMeshes.Add(ArrowHead);
 		}
+
+		// --- 선(Cylinder) 생성 ---
+		USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(GetOwner());
+		SplineMesh->SetMobility(EComponentMobility::Movable);
+		SplineMesh->SetStaticMesh(LineMesh);
+		SplineMesh->SetupAttachment(Spline);
+
+		SplineMesh->SetForwardAxis(ESplineMeshAxis::Z); // Cylinder 메쉬의 축이 Z이므로 설정
+		SplineMesh->SetStartScale(FVector2D(Thickness));
+		SplineMesh->SetEndScale(FVector2D(Thickness));
+		SplineMesh->SetStartAndEnd(P1, T1, EndPos, T2);
+
+		SplineMesh->SetMaterial(0, Mat);
+
+		SplineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SplineMesh->RegisterComponent();
+		GeneratedMeshes.Add(SplineMesh);
 	}
 }

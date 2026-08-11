@@ -9,6 +9,9 @@
 class AACTile;
 class UPE_SkillData;
 class USplineComponent;
+class UStaticMesh;
+class UMaterialInterface;
+class UMeshComponent;
 
 UENUM(BlueprintType)
 enum class ETargetingMode : uint8
@@ -26,7 +29,6 @@ class PROJECT_ENTROPY_API UACTargetingVisualizerComponent : public UActorCompone
 public:
 	UACTargetingVisualizerComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override; // 화살표 렌더링용
 
 	// --- [로컬 컨트롤러 호출용 인터페이스] ---
 	void SetTargetingMode(ETargetingMode NewMode, int32 InRange, const UPE_SkillData* InSkillData = nullptr);
@@ -65,35 +67,48 @@ protected:
 	FIntPoint RepHoveredTile = FIntPoint(-999, -999);
 
 	// --- [궤적 및 밀치기 시각화용 스플라인] ---
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer|Spline")
 	TObjectPtr<USplineComponent> TrajectorySpline; // 스킬이 날아가는 선
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer|Spline")
 	TObjectPtr<USplineComponent> PushSpline; // 밀치기로 날아갈 선
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	FColor TrajectoryColor = FColor::Red;
+	// --- [추가됨: 메쉬 및 머티리얼 세팅] ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
+	TObjectPtr<UStaticMesh> LineMesh; // 몸통용 메쉬 (원기둥 권장)
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	float TrajectoryArrowSize = 50.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
+	TObjectPtr<UStaticMesh> ArrowHeadMesh; // 화살촉 메쉬 (원뿔 권장)
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	float TrajectoryThickness = 5.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
+	TObjectPtr<UMaterialInterface> TrajectoryMaterial; 
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	FColor PushColor = FColor::Orange;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
+	TObjectPtr<UMaterialInterface> PushMaterial; 
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	float PushArrowSize = 100.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	float TrajectoryThickness = 1.0f; // 궤적 선 두께
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	float PushArrowExtension = 30.f; // 밀쳐짐 화살표가 타일 중앙보다 살짝 넘어가도록 연장
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	float TrajectoryArrowSize = 1.5f; // 궤적 화살촉 크기
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
-	float PushThickness = 8.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	float PushThickness = 1.0f; // 밀치기 선 두께
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	float PushArrowSize = 1.5f; // 밀치기 화살촉 크기
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	float PushArrowExtension = 25.f;
 
 private:
 	// 현재 시각화에 사용 중인 유효 타일 목록 (내부 보관용)
 	UPROPERTY()
 	TArray<AACTile*> CurrentValidTiles;
+
+	UPROPERTY()
+	TArray<UMeshComponent*> GeneratedMeshes;
+
+	void ClearGeneratedMeshes();
+	void GenerateMeshesAlongSpline(USplineComponent* Spline, UMaterialInterface* Mat, float Thickness, float HeadSize);
 };
