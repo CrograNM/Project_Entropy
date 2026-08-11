@@ -185,14 +185,16 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				TrajectorySpline->AddSplinePoint(EndLoc, ESplineCoordinateSpace::World, true);
 			}
 
-			// 타격 타일 하이라이트
+			// --- 실제 타격 범위(AoE) 타일들 저장 및 하이라이트 ---
+			TSet<FIntPoint> AffectedGridPositions;
 			if (RepSkillData->AoEShape != EPEAoEShape::None)
 			{
-				TSet<FIntPoint> AoE = RepSkillData->GetAffectedGridPositions(ActualTargetPos);
-				GridSystem->HighlightAoE(OwnerActor, AoE);
+				AffectedGridPositions = RepSkillData->GetAffectedGridPositions(ActualTargetPos);
+				GridSystem->HighlightAoE(OwnerActor, AffectedGridPositions);
 			}
 			else
 			{
+				AffectedGridPositions.Add(ActualTargetPos);
 				GridSystem->HighlightTarget(OwnerActor, ActualTargetPos);
 			}
 
@@ -210,54 +212,61 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			if (PushModule && PushModule->GetPushDistance() > 0)
 			{
 				int32 PushDist = PushModule->GetPushDistance();
-				if (APE_CharacterBase* HitChar = GridSystem->GetCharacterAtPosition(ActualTargetPos))
+				FIntPoint InstPos = MoveComp->GetGridPosition();
+
+				// AoE 범위에 있는 '모든 타일'을 순회하며 적을 찾습니다.
+				for (const FIntPoint& TargetPos : AffectedGridPositions)
 				{
-					if (HitChar->IsPushable())
+					if (APE_CharacterBase* HitChar = GridSystem->GetCharacterAtPosition(TargetPos))
 					{
-						FIntPoint InstPos = MoveComp->GetGridPosition();
-						FIntPoint PushDir(
-							FMath::Clamp(ActualTargetPos.X - InstPos.X, -1, 1),
-							FMath::Clamp(ActualTargetPos.Y - InstPos.Y, -1, 1)
-						);
-						if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
-
-						FIntPoint ExpectedEndPos = ActualTargetPos;
-						for (int32 step = 1; step <= PushDist; ++step)
+						if (HitChar->IsPushable())
 						{
-							FIntPoint CheckPos = ExpectedEndPos + PushDir;
-							AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
-							if (!CheckTile || CheckTile->IsObstacle() || GridSystem->IsTileOccupied(CheckPos, HitChar)) break;
-							ExpectedEndPos = CheckPos;
-						}
+							FIntPoint PushDir(
+								FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
+								FMath::Clamp(TargetPos.Y - InstPos.Y, -1, 1)
+							);
+							if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
 
-						if (ExpectedEndPos != ActualTargetPos)
-						{
-							FVector PushStart = HitChar->GetActorLocation();
-							FVector PushEnd = GridSystem->GetTileAtPosition(ExpectedEndPos)->GetActorLocation();
+							FIntPoint ExpectedEndPos = TargetPos;
+							for (int32 step = 1; step <= PushDist; ++step)
+							{
+								FIntPoint CheckPos = ExpectedEndPos + PushDir;
+								AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
+								if (!CheckTile || CheckTile->IsObstacle() || GridSystem->IsTileOccupied(CheckPos, HitChar)) break;
+								ExpectedEndPos = CheckPos;
+							}
 
-							if (UCapsuleComponent* Cap = HitChar->FindComponentByClass<UCapsuleComponent>())
-								PushStart.Z = Cap->GetScaledCapsuleHalfHeight() * 0.5f;
-							PushEnd.Z = PushStart.Z;
+							if (ExpectedEndPos != TargetPos)
+							{
+								FVector PushStart = HitChar->GetActorLocation();
+								FVector PushEnd = GridSystem->GetTileAtPosition(ExpectedEndPos)->GetActorLocation();
 
-							// 타일 경계선까지 연장 연산을 여기서 미리 처리
-							FVector Dir = (PushEnd - PushStart).GetSafeNormal();
-							PushEnd += (Dir * PushArrowExtension);
+								if (UCapsuleComponent* Cap = HitChar->FindComponentByClass<UCapsuleComponent>())
+									PushStart.Z = Cap->GetScaledCapsuleHalfHeight() * 0.5f;
+								PushEnd.Z = PushStart.Z;
 
-							PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
-							PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
+								// 타일 경계선까지 연장 연산을 여기서 미리 처리
+								FVector Dir = (PushEnd - PushStart).GetSafeNormal();
+								PushEnd += (Dir * PushArrowExtension);
+
+								// PushSpline을 도장처럼 활용: 지우기 -> 현재 대상의 궤적 세팅 -> 메쉬 생성
+								PushSpline->ClearSplinePoints();
+								PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
+								PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
+
+								GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
+							}
 						}
 					}
 				}
+				// 모든 작업이 끝난 후 다시 비워줍니다.
+				PushSpline->ClearSplinePoints();
 			}
 
-			// --- 스플라인이 완성되었으므로, 그 길을 따라 실제 메쉬를 소환 ---
+			// 본체의 스킬 발사 궤적(붉은 선) 메쉬 생성
 			if (TrajectorySpline->GetNumberOfSplinePoints() > 1)
 			{
 				GenerateMeshesAlongSpline(TrajectorySpline, TrajectoryMaterial, TrajectoryThickness, TrajectoryArrowSize);
-			}
-			if (PushSpline->GetNumberOfSplinePoints() > 1)
-			{
-				GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
 			}
 		}
 	}
