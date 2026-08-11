@@ -25,6 +25,10 @@ public:
 
 	// 특정 좌표의 타일 반환
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
+	// 특정 좌표에 존재하는 캐릭터/동적 장애물 객체 반환
+	class APE_CharacterBase* GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
+	// 특정 좌표에 캐릭터/동적 장애물이 존재하는지 여부 반환
+	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 
 	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
@@ -34,8 +38,6 @@ public:
 	void ClearAllHighlightsFor(AActor* Requester);
 	void ClearPathFor(AActor* Requester);
 	void ClearRangeFor(AActor* Requester);
-
-	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 
 	// 시작점-도착점 단순 그리드 최단 경로 반환
 	TArray<AACTile*> CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos);

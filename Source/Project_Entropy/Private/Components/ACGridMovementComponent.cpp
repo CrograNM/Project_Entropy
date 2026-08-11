@@ -33,18 +33,19 @@ void UACGridMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 	DOREPLIFETIME(UACGridMovementComponent, TargetGridPosition);
 }
 
-void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath)
+void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath, bool bRotate)
 {
-	MoveAlongPath(InPath);
+	MoveAlongPath(InPath, bRotate);
 }
 
-void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath)
+void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate)
 {
 	if (InPath.Num() == 0) return;
 
 	SavedPath = InPath;
 	CurrentPathIndex = 0;
 	bIsMovingOnGrid = true;
+	bShouldRotate = bRotate;
 
 	// 이동 시작 시 서버 권한으로 최종 목적지 좌표 예약 갱신
 	if (GetOwner()->HasAuthority())
@@ -112,11 +113,14 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 		// 1. 위치 이동 보간
 		FVector NewLocation = FMath::VInterpConstantTo(CurrentLocation, AdjustTarget, DeltaTime, GridMoveSpeed);
 		OwnerActor->SetActorLocation(NewLocation);
-		
-		// 2. 메쉬 회전 수동 강제 적용 (컴포넌트 독립성 확보)
-		FRotator TargetRot = Direction.Rotation();
-		FRotator NewRot = FMath::RInterpConstantTo(OwnerActor->GetActorRotation(), TargetRot, DeltaTime, RotationSpeed);
-		OwnerActor->SetActorRotation(NewRot);
+
+		// 2. 메쉬 회전 수동 적용
+		if (bShouldRotate)
+		{
+			FRotator TargetRot = Direction.Rotation();
+			FRotator NewRot = FMath::RInterpConstantTo(OwnerActor->GetActorRotation(), TargetRot, DeltaTime, RotationSpeed);
+			OwnerActor->SetActorRotation(NewRot);
+		}
 
 		// 3. 애니메이션 연동을 위한 가짜 속도 주입
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor))

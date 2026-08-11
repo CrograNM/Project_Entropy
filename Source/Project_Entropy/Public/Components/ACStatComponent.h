@@ -68,6 +68,7 @@ public:
 
 	/** --- Getter --- */
 	FORCEINLINE bool IsDead() const { return bIsDead; }
+	FORCEINLINE float GetMaxHP() const { return MaxHP; }
 	FORCEINLINE float GetCurrentHP() const { return CurrentHP; }
 	FORCEINLINE int32 GetCurrentAP() const { return CurrentAP; }
 	FORCEINLINE int32 GetMoveRange() const { return MoveRange; }

@@ -742,7 +742,7 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 
 	if (PC->GetStatComponent()->ConsumeAP(1))
 	{
-		PC->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path);
+		PC->GetGridMovementComponent()->NetMulticast_MoveAlongPath(Path, true);
 	}
 }
 

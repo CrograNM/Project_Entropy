@@ -48,4 +48,8 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, Category = "Push")
 	int32 PushDistance = 1; // 뒤로 몇 칸 밀 것인가?
+
+	// 충돌 시 대상(또는 본인)의 최대 체력 대비 입을 피해량 (0.2 = 20%)
+	UPROPERTY(EditAnywhere, Category = "Push|Collision")
+	float CollisionDamageRatio = 0.2f;
 };

@@ -23,6 +23,32 @@ AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 	return nullptr;
 }
 
+APE_CharacterBase* AACGridSystem::GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor) const
+{
+	TArray<AActor*> AllChars;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
+	for (AActor* Actor : AllChars)
+	{
+		if (Actor == IgnoreActor) continue;
+
+		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+		{
+			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+
+			if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+			{
+				// 현재 위치 또는 이동 중인 예약 위치와 겹친다면 해당 캐릭터 반환
+				if (MoveComp->GetGridPosition() == Pos || MoveComp->GetTargetGridPosition() == Pos)
+				{
+					return Char;
+				}
+			}
+		}
+	}
+	return nullptr;
+}
+
 TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos)
 {
 	TArray<AACTile*> Path;

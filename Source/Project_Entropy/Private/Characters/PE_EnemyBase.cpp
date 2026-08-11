@@ -202,7 +202,7 @@ void APE_EnemyBase::ExecutePendingMovement()
 
 	if (PendingMovePath.Num() > 0)
 	{
-		GridMovement->NetMulticast_MoveAlongPath(PendingMovePath);
+		GridMovement->NetMulticast_MoveAlongPath(PendingMovePath, true);
 		// 걷기 시작! (완료되면 OnMovementCompleted 발동 후 다시 루프 진입)
 	}
 	else

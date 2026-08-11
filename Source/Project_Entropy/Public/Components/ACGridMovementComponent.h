@@ -33,7 +33,7 @@ public:
 
 	/** 주어진 타일 경로를 따라 순차 이동을 시작 (서버에서 호출 시 모든 클라이언트로 전송) */
 	UFUNCTION(NetMulticast, Reliable)
-	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath);
+	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true);
 
 protected:
 	virtual void BeginPlay() override;
@@ -55,11 +55,13 @@ protected:
 	float RotationSpeed;
 
 private:
-	void MoveAlongPath(const TArray<AACTile*>& InPath);
+	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true);
 	void SetNextPathStep();
 
 	UPROPERTY()
 	TArray<AACTile*> SavedPath;
+
+	bool bShouldRotate = true;
 
 	int32 CurrentPathIndex = 0;
 	bool bIsMovingOnGrid = false;
