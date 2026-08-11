@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Core/PE_GameState.h"
+#include "Components/CapsuleComponent.h" // [추가됨] 콜리전 높이 계산용
 
 UACSkillComponent::UACSkillComponent()
 {
@@ -101,14 +102,62 @@ void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* Ta
 	{
 		NetMulticast_PlayCastVisuals(SkillData);
 
-		FTransform SpawnTransform = Caster->GetActorTransform();
-		SpawnTransform.SetLocation(SpawnTransform.GetLocation() + SpawnTransform.GetRotation().Vector() * 70.0f);
+		// 1. 발사 시작 지점(Muzzle) 계산: 바닥이 아닌 캐릭터의 가슴/명치 높이에서 발사하도록 보정
+		FVector StartLoc = Caster->GetActorLocation();
+		if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
+		{
+			StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.5f; // 약간 위쪽(가슴 높이)으로 조정
+		}
 
+		FTransform SpawnTransform = Caster->GetActorTransform();
+		SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f); // 앞으로 조금 전진
+
+		// 2. 1차 목표 지점 계산
+		APE_CharacterBase* FinalTargetChar = TargetCharacter;
+		FVector FinalTargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
+
+		if (FinalTargetChar)
+		{
+			FinalTargetLoc = FinalTargetChar->GetActorLocation();
+			// 타겟도 바닥이 아닌 가슴 높이를 기본 조준
+			if (UCapsuleComponent* TargetCap = FinalTargetChar->FindComponentByClass<UCapsuleComponent>())
+			{
+				FinalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.5f;
+			}
+		}
+
+		// 3. [핵심] 직사/곡사 물리적 충돌 판정 (Raycast)
+		// 곡사(Gravity > 0)가 아닌 직사 투사체라면 물리적으로 날아가는 길을 검사합니다.
+		if (SkillData->ProjectileSpeed > 0.f && SkillData->ProjectileGravity == 0.f)
+		{
+			FHitResult HitResult;
+			FCollisionQueryParams Params;
+			Params.AddIgnoredActor(Caster); // 시전자 본인은 통과
+
+			// ECC_Visibility 채널로 레이저를 쏩니다. (가슴 높이 -> 가슴 높이)
+			if (GetWorld()->LineTraceSingleByChannel(HitResult, SpawnTransform.GetLocation(), FinalTargetLoc, ECC_Visibility, Params))
+			{
+				// 가는 길에 누군가(적, 파괴가능 장애물 등) 대신 맞았다면 타겟 가로채기!
+				if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+				{
+					FinalTargetChar = HitChar;
+				}
+				else
+				{
+					// 벽 같은 맵 지형에 막혔다면 대상 없음
+					FinalTargetChar = nullptr;
+				}
+
+				// [시각화 연동] 실제 콜리전 표면에 부딪힌 정확한 3D 좌표(높이 포함)로 도착 지점 보정!
+				FinalTargetLoc = HitResult.Location;
+			}
+		}
+
+		// 4. 최종 확정된 정보로 스킬 액터 스폰 및 발사
 		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform);
 		if (ActionActor)
 		{
-			FVector TargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
-			ActionActor->InitializeActionActor(Caster, TargetCharacter, TargetLoc, SkillData, CalculatedDamage);
+			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, CalculatedDamage);
 		}
 	}
 	else
