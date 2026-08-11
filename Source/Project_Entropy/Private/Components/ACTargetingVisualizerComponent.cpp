@@ -155,7 +155,6 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 				if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, EndLoc, ECC_Visibility, Params))
 				{
-					EndLoc = HitResult.Location;
 					if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
 					{
 						if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
@@ -187,7 +186,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				TrajectorySpline->AddSplinePoint(EndLoc, ESplineCoordinateSpace::World, true);
 			}
 
-			// --- 실제 타격 범위(AoE) 타일들 저장 및 하이라이트 ---
+			// --- 실제 타격 범위(AoE) 타일들 저장 및 하이라이트 (가로채인 위치 기준) ---
 			TSet<FIntPoint> AffectedGridPositions;
 			if (RepSkillData->AoEShape != EPEAoEShape::None)
 			{
