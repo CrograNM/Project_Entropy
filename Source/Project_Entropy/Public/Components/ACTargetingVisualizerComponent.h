@@ -71,6 +71,27 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
 	TObjectPtr<USplineComponent> PushSpline; // 밀치기로 날아갈 선
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	FColor TrajectoryColor = FColor::Red;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	float TrajectoryArrowSize = 50.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	float TrajectoryThickness = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	FColor PushColor = FColor::Orange;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	float PushArrowSize = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	float PushArrowExtension = 30.f; // 밀쳐짐 화살표가 타일 중앙보다 살짝 넘어가도록 연장
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	float PushThickness = 8.f;
+
 private:
 	// 현재 시각화에 사용 중인 유효 타일 목록 (내부 보관용)
 	UPROPERTY()

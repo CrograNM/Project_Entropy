@@ -259,25 +259,47 @@ void UACTargetingVisualizerComponent::TickComponent(float DeltaTime, ELevelTick 
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// 생성된 스플라인 포인트를 바탕으로 허공에 즉각적인 디버그 라인/화살표를 렌더링합니다.
-	if (RepTargetingMode == ETargetingMode::Skill && TrajectorySpline->GetNumberOfSplinePoints() > 1)
+	if (RepTargetingMode == ETargetingMode::Skill)
 	{
-		// 1. 스킬 발사 궤적 렌더링 (붉은 선)
-		for (int32 i = 0; i < TrajectorySpline->GetNumberOfSplinePoints() - 1; ++i)
+		// 1. 스킬 발사 궤적 렌더링
+		int32 TrajPoints = TrajectorySpline->GetNumberOfSplinePoints();
+		if (TrajPoints > 1)
 		{
-			FVector P1 = TrajectorySpline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World);
-			FVector P2 = TrajectorySpline->GetLocationAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
-			DrawDebugLine(GetWorld(), P1, P2, FColor::Red, false, -1.f, 0, 5.f);
+			for (int32 i = 0; i < TrajPoints - 1; ++i)
+			{
+				FVector P1 = TrajectorySpline->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World);
+				FVector P2 = TrajectorySpline->GetLocationAtSplinePoint(i + 1, ESplineCoordinateSpace::World);
+
+				// 마지막 선분(구간)일 경우 화살표를 그리고 뒤로 살짝 당김
+				if (i == TrajPoints - 2)
+				{
+					FVector Dir = (P2 - P1).GetSafeNormal();
+					float Dist = FVector::Distance(P1, P2);
+					// 타겟과 너무 가까우면 방향이 뒤집히지 않게 최소 거리를 보장하여 당깁니다.
+					float PullbackDist = FMath::Min(TrajectoryArrowSize * 0.6f, Dist * 0.5f);
+					FVector ShortenedP2 = P2 - (Dir * PullbackDist);
+
+					DrawDebugDirectionalArrow(GetWorld(), P1, ShortenedP2, TrajectoryArrowSize, TrajectoryColor, false, -1.f, 0, TrajectoryThickness);
+				}
+				else
+				{
+					DrawDebugLine(GetWorld(), P1, P2, TrajectoryColor, false, -1.f, 0, TrajectoryThickness);
+				}
+			}
 		}
 
-		// 2. 밀치기(넉백) 예상 궤적 렌더링 (주황색 거대 화살표)
-		if (PushSpline->GetNumberOfSplinePoints() > 1)
+		// 2. 밀치기(넉백) 예상 궤적 렌더링
+		int32 PushPoints = PushSpline->GetNumberOfSplinePoints();
+		if (PushPoints > 1)
 		{
-			FVector StartPush = PushSpline->GetLocationAtSplinePoint(0, ESplineCoordinateSpace::World);
-			FVector EndPush = PushSpline->GetLocationAtSplinePoint(1, ESplineCoordinateSpace::World);
+			FVector P1 = PushSpline->GetLocationAtSplinePoint(0, ESplineCoordinateSpace::World);
+			FVector P2 = PushSpline->GetLocationAtSplinePoint(PushPoints - 1, ESplineCoordinateSpace::World);
 
-			// 대상을 꿰뚫는 주황색 화살표를 그립니다. (ArrowSize = 100, Thickness = 8)
-			DrawDebugDirectionalArrow(GetWorld(), StartPush, EndPush, 100.f, FColor::Orange, false, -1.f, 0, 8.f);
+			FVector Dir = (P2 - P1).GetSafeNormal();
+
+			FVector ExtendedP2 = P2 + (Dir * PushArrowExtension);
+
+			DrawDebugDirectionalArrow(GetWorld(), P1, ExtendedP2, PushArrowSize, PushColor, false, -1.f, 0, PushThickness);
 		}
 	}
 }
