@@ -44,6 +44,7 @@ class PROJECT_ENTROPY_API UPE_SkillEffect_Push : public UPE_SkillEffectModule
 
 public:
 	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
+	int32 GetPushDistance() const { return PushDistance; }
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Push")

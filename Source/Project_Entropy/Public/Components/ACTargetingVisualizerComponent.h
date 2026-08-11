@@ -7,6 +7,8 @@
 #include "ACTargetingVisualizerComponent.generated.h"
 
 class AACTile;
+class UPE_SkillData;
+class USplineComponent;
 
 UENUM(BlueprintType)
 enum class ETargetingMode : uint8
@@ -24,9 +26,10 @@ class PROJECT_ENTROPY_API UACTargetingVisualizerComponent : public UActorCompone
 public:
 	UACTargetingVisualizerComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override; // 화살표 렌더링용
 
 	// --- [로컬 컨트롤러 호출용 인터페이스] ---
-	void SetTargetingMode(ETargetingMode NewMode, int32 InRange, const class UPE_SkillData* InSkillData = nullptr);
+	void SetTargetingMode(ETargetingMode NewMode, int32 InRange, const UPE_SkillData* InSkillData = nullptr);
 	void UpdateHoveredTile(FIntPoint NewPos);
 	void ClearTargeting();
 	bool IsTileInRange(AACTile* TargetTile) const;
@@ -44,7 +47,6 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_UpdateHoveredTile(FIntPoint NewPos);
 
-private:
 	// --- [네트워크 동기화 상태 변수] ---
 	UFUNCTION() void OnRep_TargetingState();
 	UFUNCTION() void OnRep_HoveredTile();
@@ -62,6 +64,14 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_HoveredTile)
 	FIntPoint RepHoveredTile = FIntPoint(-999, -999);
 
+	// --- [궤적 및 밀치기 시각화용 스플라인] ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	TObjectPtr<USplineComponent> TrajectorySpline; // 스킬이 날아가는 선
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer | Spline")
+	TObjectPtr<USplineComponent> PushSpline; // 밀치기로 날아갈 선
+
+private:
 	// 현재 시각화에 사용 중인 유효 타일 목록 (내부 보관용)
 	UPROPERTY()
 	TArray<AACTile*> CurrentValidTiles;
