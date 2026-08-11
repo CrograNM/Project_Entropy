@@ -40,14 +40,18 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 	);
 	if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
 
-	// [당구 큐 시스템] <밀려날 대상, 남은 에너지(거리)>
+	// [당구 큐 시스템 구조체] <밀릴 대상, 남은 에너지, 언제 출발할지(Delay)>
 	struct FPushTask {
 		APE_CharacterBase* ActorToPush;
 		int32 RemainingDist;
+		float StartTimeDelay;
 	};
 
 	TQueue<FPushTask> PushQueue;
-	PushQueue.Enqueue({ Target, PushDistance });
+	PushQueue.Enqueue({ Target, PushDistance, 0.f }); // 첫 타겟은 딜레이 0초로 즉시 출발
+
+	// 1칸 이동하는 데 걸리는 시간 추정 (거리 100 / 속도)
+	float TimePerTile = 100.f / TargetMove->GetGridMoveSpeed();
 
 	while (!PushQueue.IsEmpty())
 	{
@@ -56,66 +60,115 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 
 		APE_CharacterBase* CurrentTarget = Task.ActorToPush;
 		int32 RemainingDist = Task.RemainingDist;
+		float StartDelay = Task.StartTimeDelay;
 
 		if (!CurrentTarget || RemainingDist <= 0 || !CurrentTarget->IsPushable()) continue;
 
 		UACGridMovementComponent* MoveComp = CurrentTarget->GetGridMovementComponent();
 		if (!MoveComp) continue;
 
-		// 연쇄 작용을 위해 대상의 현재(또는 예약된) 출발점 추적
 		FIntPoint VirtualPos = (MoveComp->GetTargetGridPosition() != FIntPoint(-999, -999))
 			? MoveComp->GetTargetGridPosition() : MoveComp->GetGridPosition();
 
 		TArray<AACTile*> KnockbackPath;
+
+		// 충돌 발생 여부 체크용 변수
+		bool bHitSomething = false;
+		APE_CharacterBase* HitCharacter = nullptr;
 
 		for (int32 step = 1; step <= RemainingDist; ++step)
 		{
 			FIntPoint NextPos = VirtualPos + PushDir;
 			AACTile* NextTile = GridSystem->GetTileAtPosition(NextPos);
 
-			// 1. 비파괴 정적 장애물 (벽, 용암, 절벽 등)
+			// 1. 비파괴 정적 장애물 (벽, 용암 등) 또는 맵 끝
 			if (!NextTile || NextTile->IsObstacle())
 			{
-				if (UACStatComponent* Stat = CurrentTarget->GetStatComponent())
-				{
-					// 내 체력 비례 데미지
-					float Damage = Stat->GetMaxHP() * CollisionDamageRatio;
-					UGameplayStatics::ApplyDamage(CurrentTarget, Damage, Instigator->GetInstigatorController(), Instigator, UDamageType::StaticClass());
-				}
-				break; // 여기서 이동 강제 중단 (Path에 추가되지 않으므로 자연스럽게 이전 칸에 정지/롤백됨)
+				bHitSomething = true;
+				break; // 이동 중단
 			}
 
 			// 2. 동적 장애물 및 캐릭터 충돌
 			if (APE_CharacterBase* HitChar = GridSystem->GetCharacterAtPosition(NextPos, CurrentTarget))
 			{
-				if (UACStatComponent* HitStat = HitChar->GetStatComponent())
-				{
-					// 부딪힌 상대방의 체력 비례 데미지
-					float Damage = HitStat->GetMaxHP() * CollisionDamageRatio;
+				bHitSomething = true;
+				HitCharacter = HitChar;
 
-					// 양쪽 모두에게 데미지 적용
-					UGameplayStatics::ApplyDamage(CurrentTarget, Damage, Instigator->GetInstigatorController(), Instigator, UDamageType::StaticClass());
-					UGameplayStatics::ApplyDamage(HitChar, Damage, Instigator->GetInstigatorController(), Instigator, UDamageType::StaticClass());
-				}
-
-				// 상대방이 밀려나는 객체라면 남은 에너지를 전달 (당구 로직)
+				// 부딪힌 상대가 밀릴 수 있다면 당구공 큐에 예약 (내가 부딪히는 시간 = 상대방이 출발할 시간)
 				if (HitChar->IsPushable())
 				{
-					PushQueue.Enqueue({ HitChar, RemainingDist - step });
+					float TimeUntilHit = step * TimePerTile;
+					PushQueue.Enqueue({ HitChar, RemainingDist - step, StartDelay + TimeUntilHit });
 				}
-
-				break; // 현재 타겟은 타격점에서 정지
+				break; // 이동 중단
 			}
 
-			// 안전한 타일이면 경로에 추가
 			VirtualPos = NextPos;
 			KnockbackPath.Add(NextTile);
 		}
 
-		// 최종 계산된 경로가 존재하면 회전 없이(false) 강제 이동 명령 하달
+		// --- 이동 명령 전송 ---
 		if (KnockbackPath.Num() > 0)
 		{
-			MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false);
+			// 회전 금지(false), StartDelay 적용
+			MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, StartDelay);
+		}
+
+		// --- 지연 데미지 예약 (충돌했을 때만) ---
+		if (bHitSomething)
+		{
+			// 남은 에너지 비례 계수 계산 (예: 3칸 중 3칸 남기고 박으면 1.0, 1칸 남기고 박으면 0.33)
+			float ScaledRatio = (float)RemainingDist / (float)PushDistance;
+			float FinalDamageRatio = CollisionDamageRatio * ScaledRatio;
+
+			float TargetDamage = 0.f;
+			float HitDamage = 0.f;
+
+			if (HitCharacter)
+			{
+				// 유저 요청: 캐릭터->장애물(동적) 시 부딪힌 장애물의 최대 체력에 따라 데미지 결정
+				if (UACStatComponent* HitStat = HitCharacter->GetStatComponent())
+				{
+					float BaseDamage = HitStat->GetMaxHP() * FinalDamageRatio;
+					TargetDamage = BaseDamage;
+					HitDamage = BaseDamage;
+				}
+			}
+			else
+			{
+				// 유저 요청: 비파괴장애물(벽)에 부딪힌 경우 밀려진 객체 본인의 최대 체력 비례
+				if (UACStatComponent* MyStat = CurrentTarget->GetStatComponent())
+				{
+					TargetDamage = MyStat->GetMaxHP() * FinalDamageRatio;
+				}
+			}
+
+			// 부딪히는 순간의 시간 계산
+			float DamageTime = StartDelay + (KnockbackPath.Num() * TimePerTile);
+
+			// 안전한 지연 데미지 적용을 위해 WeakPtr 캡처
+			TWeakObjectPtr<APE_CharacterBase> WeakTarget = CurrentTarget;
+			TWeakObjectPtr<APE_CharacterBase> WeakHitChar = HitCharacter;
+			TWeakObjectPtr<AActor> WeakInstigator = Instigator;
+
+			FTimerDelegate DamageDel = FTimerDelegate::CreateLambda([WeakTarget, WeakHitChar, WeakInstigator, TargetDamage, HitDamage]()
+				{
+					if (WeakInstigator.IsValid())
+					{
+						if (WeakTarget.IsValid() && TargetDamage > 0.f)
+						{
+							UGameplayStatics::ApplyDamage(WeakTarget.Get(), TargetDamage, WeakInstigator->GetInstigatorController(), WeakInstigator.Get(), UDamageType::StaticClass());
+						}
+						if (WeakHitChar.IsValid() && HitDamage > 0.f)
+						{
+							UGameplayStatics::ApplyDamage(WeakHitChar.Get(), HitDamage, WeakInstigator->GetInstigatorController(), WeakInstigator.Get(), UDamageType::StaticClass());
+						}
+					}
+				});
+
+			FTimerHandle TempHandle;
+			// 0초에 부딪히더라도 타이머가 실행되도록 최소치 보장
+			Target->GetWorldTimerManager().SetTimer(TempHandle, DamageDel, FMath::Max(0.01f, DamageTime), false);
 		}
 	}
 }

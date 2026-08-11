@@ -33,18 +33,17 @@ void UACGridMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 	DOREPLIFETIME(UACGridMovementComponent, TargetGridPosition);
 }
 
-void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath, bool bRotate)
+void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath, bool bRotate, float Delay)
 {
-	MoveAlongPath(InPath, bRotate);
+	MoveAlongPath(InPath, bRotate, Delay);
 }
 
-void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate)
+void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate, float Delay)
 {
 	if (InPath.Num() == 0) return;
 
 	SavedPath = InPath;
 	CurrentPathIndex = 0;
-	bIsMovingOnGrid = true;
 	bShouldRotate = bRotate;
 
 	// 이동 시작 시 서버 권한으로 최종 목적지 좌표 예약 갱신
@@ -53,6 +52,20 @@ void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, boo
 		TargetGridPosition = SavedPath.Last()->GetGridPosition();
 	}
 
+	if (Delay > 0.f)
+	{
+		FTimerHandle DelayHandle;
+		GetWorld()->GetTimerManager().SetTimer(DelayHandle, this, &UACGridMovementComponent::StartMoving, Delay, false);
+	}
+	else
+	{
+		StartMoving();
+	}
+}
+
+void UACGridMovementComponent::StartMoving()
+{
+	bIsMovingOnGrid = true;
 	SetNextPathStep();
 }
 

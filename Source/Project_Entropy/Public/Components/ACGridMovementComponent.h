@@ -31,9 +31,12 @@ public:
 	// 멀티플레이어: 다른 액터가 이 컴포넌트의 최종 목적지를 확인할 수 있도록 Getter 추가
 	FIntPoint GetTargetGridPosition() const { return TargetGridPosition; }
 
+	// 스킬 이펙트 연산을 위해 현재 스피드를 반환하는 Getter
+	float GetGridMoveSpeed() const { return GridMoveSpeed; }
+
 	/** 주어진 타일 경로를 따라 순차 이동을 시작 (서버에서 호출 시 모든 클라이언트로 전송) */
 	UFUNCTION(NetMulticast, Reliable)
-	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true);
+	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
 
 protected:
 	virtual void BeginPlay() override;
@@ -55,8 +58,9 @@ protected:
 	float RotationSpeed;
 
 private:
-	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true);
+	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
 	void SetNextPathStep();
+	void StartMoving(); // 타이머가 끝나고 실제 이동을 개시하는 함수
 
 	UPROPERTY()
 	TArray<AACTile*> SavedPath;
