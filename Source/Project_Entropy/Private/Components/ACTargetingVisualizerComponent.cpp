@@ -210,141 +210,56 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				}
 			}
 
-			if (PushModule && PushModule->GetPushDistance() > 0)
+			if (PushModule)
 			{
-				int32 PushDist = PushModule->GetPushDistance();
-				FIntPoint InstPos = MoveComp->GetGridPosition();
+				// 모듈 내부 함수 호출하여 시뮬레이션 결과 구조체 배열 획득
+				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, MoveComp->GetGridPosition(), AffectedGridPositions);
 
-				// 1. 가상 보드(VirtualBoard) 구축: 서버의 이동 점유 시스템(StartPos, EndPos)을 완벽히 모방
-				struct FSimCharState {
-					FIntPoint StartPos;
-					FIntPoint EndPos;
-					bool bIsPushable;
-				};
-				TMap<APE_CharacterBase*, FSimCharState> VirtualBoard;
-
-				TArray<AActor*> AllChars;
-				UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-
-				for (AActor* Actor : AllChars)
+				for (const FPushSimulationResult& Result : PushResults)
 				{
-					if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-					{
-						if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
-						if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
-						{
-							FIntPoint Pos = CharMove->GetGridPosition();
-							FIntPoint TargetPos = CharMove->GetTargetGridPosition();
-							FIntPoint EPos = (TargetPos != FIntPoint(-999, -999)) ? TargetPos : Pos;
-							VirtualBoard.Add(Char, { Pos, EPos, Char->IsPushable() });
-						}
-					}
-				}
+					if (!Result.TargetActor) continue;
 
-				struct FSimulatedPush {
-					APE_CharacterBase* Actor;
-					int32 RemainingDist;
-					FIntPoint PushDir;
-				};
-				TQueue<FSimulatedPush> SimQueue;
+					AACTile* StartTile = GridSystem->GetTileAtPosition(Result.StartPos);
+					if (!StartTile) continue;
 
-				// 2. 1차 타격 대상을 가상 보드에서 찾아 큐에 삽입 (서버와 동일한 판정 기준)
-				for (const FIntPoint& TargetPos : AffectedGridPositions)
-				{
-					APE_CharacterBase* HitChar = nullptr;
-					for (const auto& Pair : VirtualBoard)
+					FVector PushStart = StartTile->GetActorLocation();
+					if (UCapsuleComponent* Cap = Result.TargetActor->FindComponentByClass<UCapsuleComponent>())
 					{
-						if (Pair.Value.StartPos == TargetPos || Pair.Value.EndPos == TargetPos)
-						{
-							HitChar = Pair.Key;
-							break;
-						}
+						PushStart.Z += Cap->GetScaledCapsuleHalfHeight() * 0.5f;
 					}
 
-					if (HitChar && VirtualBoard[HitChar].bIsPushable)
+					FVector PushEnd;
+					if (Result.StartPos != Result.EndPos)
 					{
-						FIntPoint PushDir(
-							FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
-							FMath::Clamp(TargetPos.Y - InstPos.Y, -1, 1)
-						);
-						if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
-
-						SimQueue.Enqueue({ HitChar, PushDist, PushDir });
-					}
-				}
-
-				// 3. 당구 연쇄 루프 실행
-				while (!SimQueue.IsEmpty())
-				{
-					FSimulatedPush Task;
-					SimQueue.Dequeue(Task);
-
-					if (!Task.Actor || Task.RemainingDist <= 0 || !VirtualBoard.Contains(Task.Actor)) continue;
-
-					// 연쇄 충돌 시 이 캐릭터가 위치한 '마지막 예약 지점(EndPos)'에서 출발
-					FIntPoint CurrentPos = VirtualBoard[Task.Actor].EndPos;
-					FIntPoint ExpectedEndPos = CurrentPos;
-
-					for (int32 step = 1; step <= Task.RemainingDist; ++step)
-					{
-						FIntPoint CheckPos = ExpectedEndPos + Task.PushDir;
-						AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
-
-						// 비파괴 장애물에 막힘
-						if (!CheckTile || CheckTile->IsObstacle()) break;
-
-						// 가상 보드 내 캐릭터/동적 장애물 충돌 검사
-						APE_CharacterBase* CollidedChar = nullptr;
-						for (const auto& Pair : VirtualBoard)
-						{
-							if (Pair.Key == Task.Actor) continue;
-							if (Pair.Value.StartPos == CheckPos || Pair.Value.EndPos == CheckPos)
-							{
-								CollidedChar = Pair.Key;
-								break;
-							}
-						}
-
-						if (CollidedChar)
-						{
-							// 내가 치고 지나간 대상이 또 밀릴 수 있다면 당구 큐에 예약!
-							if (VirtualBoard[CollidedChar].bIsPushable)
-							{
-								SimQueue.Enqueue({ CollidedChar, Task.RemainingDist - step, Task.PushDir });
-							}
-							break; // 나는 여기서 멈춤
-						}
-
-						ExpectedEndPos = CheckPos;
-					}
-
-					// 거리가 0이라 제자리(CurrentPos == ExpectedEndPos)라면 화살표를 절대 그리지 않음!
-					if (ExpectedEndPos != CurrentPos)
-					{
-						// 가상 보드 상에서 내 최종 도착점 갱신 (다른 연쇄 충돌 방지용)
-						VirtualBoard[Task.Actor].EndPos = ExpectedEndPos;
-
-						FVector PushStart = GridSystem->GetTileAtPosition(CurrentPos)->GetActorLocation();
-						FVector PushEnd = GridSystem->GetTileAtPosition(ExpectedEndPos)->GetActorLocation();
-
-						if (UCapsuleComponent* Cap = Task.Actor->FindComponentByClass<UCapsuleComponent>())
-							PushStart.Z += Cap->GetScaledCapsuleHalfHeight() * 0.5f;
+						// 정상적으로 밀려난 경우
+						AACTile* EndTile = GridSystem->GetTileAtPosition(Result.EndPos);
+						PushEnd = EndTile ? EndTile->GetActorLocation() : PushStart;
 						PushEnd.Z = PushStart.Z;
 
 						FVector Dir = (PushEnd - PushStart).GetSafeNormal();
-						PushEnd += (Dir * PushArrowExtension);
-
-						PushSpline->ClearSplinePoints();
-						PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
-						PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
-
-						GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
+						PushEnd += (Dir * PushArrowExtension); // 화살촉 연장 보정
 					}
+					else
+					{
+						// 부딪혀서 이동하지 못한 경우 (매우 짧은 화살표)
+						// PushDir(그리드 방향)을 월드 방향(Vector)으로 변환
+						FVector WorldPushDir = FVector(Result.PushDir.X, Result.PushDir.Y, 0).GetSafeNormal();
+						// 40.f 등 고정값으로 짧은 길이 지정 (타일 크기보다 훨씬 짧게)
+						PushEnd = PushStart + (WorldPushDir * 40.f);
+						PushEnd.Z = PushStart.Z;
+					}
+
+					// 개별 화살표 렌더링
+					PushSpline->ClearSplinePoints();
+					PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
+					PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
+
+					GenerateMeshesAlongSpline(PushSpline, PushMaterial, PushThickness, PushArrowSize);
 				}
 				PushSpline->ClearSplinePoints();
 			}
 
-			// 본체의 스킬 발사 궤적(붉은 선) 메쉬 생성
+			// 본체의 스킬 발사 궤적 메쉬 생성
 			if (TrajectorySpline->GetNumberOfSplinePoints() > 1)
 			{
 				GenerateMeshesAlongSpline(TrajectorySpline, TrajectoryMaterial, TrajectoryThickness, TrajectoryArrowSize);

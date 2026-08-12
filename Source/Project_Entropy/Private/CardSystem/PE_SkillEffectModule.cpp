@@ -172,3 +172,129 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 		}
 	}
 }
+
+// --- [시각화를 위한 당구 연쇄 로직 모듈화] ---
+TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, const TSet<FIntPoint>& AffectedGridPositions) const
+{
+	TArray<FPushSimulationResult> Results;
+	if (!GridSystem || PushDistance <= 0) return Results;
+
+	TMap<APE_CharacterBase*, FIntPoint> InitialPosMap;
+	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
+	TMap<APE_CharacterBase*, FIntPoint> PushDirMap; // 밀리는 방향 기록
+
+	TArray<AActor*> AllChars;
+	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
+	for (AActor* Actor : AllChars)
+	{
+		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+		{
+			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+			if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
+			{
+				FIntPoint Pos = (CharMove->GetTargetGridPosition() != FIntPoint(-999, -999))
+					? CharMove->GetTargetGridPosition() : CharMove->GetGridPosition();
+
+				InitialPosMap.Add(Char, Pos);
+				CurrentPosMap.Add(Char, Pos);
+			}
+		}
+	}
+
+	struct FSimulatedPush {
+		APE_CharacterBase* Actor;
+		int32 RemainingDist;
+		FIntPoint PushDir;
+	};
+	TQueue<FSimulatedPush> SimQueue;
+
+	for (const FIntPoint& TargetPos : AffectedGridPositions)
+	{
+		APE_CharacterBase* HitChar = nullptr;
+		for (const auto& Pair : CurrentPosMap)
+		{
+			if (Pair.Value == TargetPos)
+			{
+				HitChar = Pair.Key;
+				break;
+			}
+		}
+
+		if (HitChar && HitChar->IsPushable())
+		{
+			FIntPoint PushDir(
+				FMath::Clamp(TargetPos.X - InstigatorPos.X, -1, 1),
+				FMath::Clamp(TargetPos.Y - InstigatorPos.Y, -1, 1)
+			);
+			if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
+
+			if (PushDir.X != 0 || PushDir.Y != 0)
+			{
+				SimQueue.Enqueue({ HitChar, PushDistance, PushDir });
+				PushDirMap.Add(HitChar, PushDir);
+			}
+		}
+	}
+
+	while (!SimQueue.IsEmpty())
+	{
+		FSimulatedPush Task;
+		SimQueue.Dequeue(Task);
+
+		if (!Task.Actor || Task.RemainingDist <= 0 || !CurrentPosMap.Contains(Task.Actor)) continue;
+
+		FIntPoint CurrentPos = CurrentPosMap[Task.Actor];
+		FIntPoint ExpectedEndPos = CurrentPos;
+
+		for (int32 step = 1; step <= Task.RemainingDist; ++step)
+		{
+			FIntPoint CheckPos = ExpectedEndPos + Task.PushDir;
+			AACTile* CheckTile = GridSystem->GetTileAtPosition(CheckPos);
+
+			if (!CheckTile || CheckTile->IsObstacle()) break;
+
+			APE_CharacterBase* CollidedChar = nullptr;
+			for (const auto& Pair : CurrentPosMap)
+			{
+				if (Pair.Key != Task.Actor && Pair.Value == CheckPos)
+				{
+					CollidedChar = Pair.Key;
+					break;
+				}
+			}
+
+			if (CollidedChar)
+			{
+				if (CollidedChar->IsPushable())
+				{
+					SimQueue.Enqueue({ CollidedChar, Task.RemainingDist - step, Task.PushDir });
+					// 연쇄 대상의 방향 기록 갱신 (이미 맵에 있어도 덮어쓰거나 추가)
+					PushDirMap.Add(CollidedChar, Task.PushDir);
+				}
+				break;
+			}
+
+			ExpectedEndPos = CheckPos;
+		}
+
+		if (ExpectedEndPos != CurrentPos)
+		{
+			CurrentPosMap[Task.Actor] = ExpectedEndPos;
+		}
+	}
+
+	// 에너지를 받은 모든 대상(이동 유무 상관없이) 반환 구조체 구성
+	for (const auto& Pair : PushDirMap)
+	{
+		APE_CharacterBase* Char = Pair.Key;
+		FPushSimulationResult Result;
+		Result.TargetActor = Char;
+		Result.StartPos = InitialPosMap[Char];
+		Result.EndPos = CurrentPosMap[Char];
+		Result.PushDir = Pair.Value;
+		Results.Add(Result);
+	}
+
+	return Results;
+}

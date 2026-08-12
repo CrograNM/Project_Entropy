@@ -8,6 +8,7 @@
 
 class UPE_SkillData;
 class APE_CharacterBase;
+class AACGridSystem;
 
 /**
  * 스킬 조립을 위한 기본 효과 모듈 뼈대 (GAS의 GameplayEffect 역할)
@@ -34,6 +35,25 @@ public:
 	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
 };
 
+// --- [밀치기 시뮬레이션 결과를 담을 구조체] ---
+USTRUCT(BlueprintType)
+struct FPushSimulationResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	APE_CharacterBase* TargetActor = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	FIntPoint StartPos = FIntPoint(-999, -999);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	FIntPoint EndPos = FIntPoint(-999, -999);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	FIntPoint PushDir = FIntPoint::ZeroValue;
+};
+
 /**
  * [모듈 2] 넉백(밀치기) 적용 모듈
  */
@@ -45,6 +65,9 @@ class PROJECT_ENTROPY_API UPE_SkillEffect_Push : public UPE_SkillEffectModule
 public:
 	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
 	int32 GetPushDistance() const { return PushDistance; }
+	
+	// --- [시각화 컴포넌트 등에서 호출할 밀치기 예상 결과 반환 함수] ---
+	TArray<FPushSimulationResult> SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, const TSet<FIntPoint>& AffectedGridPositions) const;
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Push")
