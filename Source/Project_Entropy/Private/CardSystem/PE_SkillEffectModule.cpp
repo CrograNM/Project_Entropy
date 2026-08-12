@@ -33,14 +33,12 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 	FIntPoint InstPos = InstMove->GetGridPosition();
 	FIntPoint TargetPos = TargetMove->GetGridPosition();
 
-	// 시전자 -> 타겟 방향 도출 (-1, 0, 1) (당구처럼 이 방향 에너지가 끝까지 유지됨)
 	FIntPoint PushDir(
 		FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
 		FMath::Clamp(TargetPos.Y - InstPos.Y, -1, 1)
 	);
 	if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
 
-	// [당구 큐 시스템 구조체] <밀릴 대상, 남은 에너지, 언제 출발할지(Delay)>
 	struct FPushTask {
 		APE_CharacterBase* ActorToPush;
 		int32 RemainingDist;
@@ -48,9 +46,8 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 	};
 
 	TQueue<FPushTask> PushQueue;
-	PushQueue.Enqueue({ Target, PushDistance, 0.f }); // 첫 타겟은 딜레이 0초로 즉시 출발
+	PushQueue.Enqueue({ Target, PushDistance, 0.f });
 
-	// 1칸 이동하는 데 걸리는 시간 추정 (거리 100 / 속도)
 	float TimePerTile = 100.f / TargetMove->GetGridMoveSpeed();
 
 	while (!PushQueue.IsEmpty())
@@ -71,8 +68,6 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 			? MoveComp->GetTargetGridPosition() : MoveComp->GetGridPosition();
 
 		TArray<AACTile*> KnockbackPath;
-
-		// 충돌 발생 여부 체크용 변수
 		bool bHitSomething = false;
 		APE_CharacterBase* HitCharacter = nullptr;
 
@@ -81,52 +76,43 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 			FIntPoint NextPos = VirtualPos + PushDir;
 			AACTile* NextTile = GridSystem->GetTileAtPosition(NextPos);
 
-			// 1. 비파괴 정적 장애물 (벽, 용암 등) 또는 맵 끝
 			if (!NextTile || NextTile->IsObstacle())
 			{
 				bHitSomething = true;
-				break; // 이동 중단
+				break;
 			}
 
-			// 2. 동적 장애물 및 캐릭터 충돌
 			if (APE_CharacterBase* HitChar = GridSystem->GetCharacterAtPosition(NextPos, CurrentTarget))
 			{
 				bHitSomething = true;
 				HitCharacter = HitChar;
 
-				// 부딪힌 상대가 밀릴 수 있다면 당구공 큐에 예약 (내가 부딪히는 시간 = 상대방이 출발할 시간)
 				if (HitChar->IsPushable())
 				{
 					float TimeUntilHit = step * TimePerTile;
 					PushQueue.Enqueue({ HitChar, RemainingDist - step, StartDelay + TimeUntilHit });
 				}
-				break; // 이동 중단
+				break;
 			}
 
 			VirtualPos = NextPos;
 			KnockbackPath.Add(NextTile);
 		}
 
-		// --- 이동 명령 전송 ---
 		if (KnockbackPath.Num() > 0)
 		{
-			// 회전 금지(false), StartDelay 적용
 			MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, StartDelay);
 		}
 
-		// --- 지연 데미지 예약 (충돌했을 때만) ---
 		if (bHitSomething)
 		{
-			// 남은 에너지 비례 계수 계산 (예: 3칸 중 3칸 남기고 박으면 1.0, 1칸 남기고 박으면 0.33)
 			float ScaledRatio = (float)RemainingDist / (float)PushDistance;
 			float FinalDamageRatio = CollisionDamageRatio * ScaledRatio;
-
 			float TargetDamage = 0.f;
 			float HitDamage = 0.f;
 
 			if (HitCharacter)
 			{
-				// 유저 요청: 캐릭터->장애물(동적) 시 부딪힌 장애물의 최대 체력에 따라 데미지 결정
 				if (UACStatComponent* HitStat = HitCharacter->GetStatComponent())
 				{
 					float BaseDamage = HitStat->GetMaxHP() * FinalDamageRatio;
@@ -136,17 +122,14 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 			}
 			else
 			{
-				// 유저 요청: 비파괴장애물(벽)에 부딪힌 경우 밀려진 객체 본인의 최대 체력 비례
 				if (UACStatComponent* MyStat = CurrentTarget->GetStatComponent())
 				{
 					TargetDamage = MyStat->GetMaxHP() * FinalDamageRatio;
 				}
 			}
 
-			// 부딪히는 순간의 시간 계산
 			float DamageTime = StartDelay + (KnockbackPath.Num() * TimePerTile);
 
-			// 안전한 지연 데미지 적용을 위해 WeakPtr 캡처
 			TWeakObjectPtr<APE_CharacterBase> WeakTarget = CurrentTarget;
 			TWeakObjectPtr<APE_CharacterBase> WeakHitChar = HitCharacter;
 			TWeakObjectPtr<AActor> WeakInstigator = Instigator;
@@ -167,13 +150,12 @@ void UPE_SkillEffect_Push::ApplyEffect(AActor* Instigator, APE_CharacterBase* Ta
 				});
 
 			FTimerHandle TempHandle;
-			// 0초에 부딪히더라도 타이머가 실행되도록 최소치 보장
-			Target->GetWorldTimerManager().SetTimer(TempHandle, DamageDel, FMath::Max(0.01f, DamageTime), false);
+			WeakTarget->GetWorldTimerManager().SetTimer(TempHandle, DamageDel, FMath::Max(0.01f, DamageTime), false);
 		}
 	}
 }
 
-// --- [시각화를 위한 당구 연쇄 로직 모듈화] ---
+// --- [모듈 2: 넉백 시뮬레이션부] ---
 TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, const TSet<FIntPoint>& AffectedGridPositions) const
 {
 	TArray<FPushSimulationResult> Results;
@@ -181,7 +163,7 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 
 	TMap<APE_CharacterBase*, FIntPoint> InitialPosMap;
 	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
-	TMap<APE_CharacterBase*, FIntPoint> PushDirMap; // 밀리는 방향 기록
+	TMap<APE_CharacterBase*, FIntPoint> PushDirMap;
 
 	TArray<AActor*> AllChars;
 	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
@@ -207,7 +189,9 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 		int32 RemainingDist;
 		FIntPoint PushDir;
 	};
+
 	TQueue<FSimulatedPush> SimQueue;
+	TArray<FSimulatedPush> InitialPushes;
 
 	for (const FIntPoint& TargetPos : AffectedGridPositions)
 	{
@@ -231,10 +215,24 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 
 			if (PushDir.X != 0 || PushDir.Y != 0)
 			{
-				SimQueue.Enqueue({ HitChar, PushDistance, PushDir });
+				InitialPushes.Add({ HitChar, PushDistance, PushDir });
 				PushDirMap.Add(HitChar, PushDir);
 			}
 		}
+	}
+
+	// 핵심 수정: 밀리는 방향(PushDir)을 기준으로 가장 앞에 있는 객체부터 내림차순 정렬
+	InitialPushes.Sort([&CurrentPosMap](const FSimulatedPush& A, const FSimulatedPush& B) {
+		FIntPoint PosA = CurrentPosMap[A.Actor];
+		FIntPoint PosB = CurrentPosMap[B.Actor];
+		int32 DotA = PosA.X * A.PushDir.X + PosA.Y * A.PushDir.Y;
+		int32 DotB = PosB.X * B.PushDir.X + PosB.Y * B.PushDir.Y;
+		return DotA > DotB;
+		});
+
+	for (const FSimulatedPush& Task : InitialPushes)
+	{
+		SimQueue.Enqueue(Task);
 	}
 
 	while (!SimQueue.IsEmpty())
@@ -269,7 +267,6 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 				if (CollidedChar->IsPushable())
 				{
 					SimQueue.Enqueue({ CollidedChar, Task.RemainingDist - step, Task.PushDir });
-					// 연쇄 대상의 방향 기록 갱신 (이미 맵에 있어도 덮어쓰거나 추가)
 					PushDirMap.Add(CollidedChar, Task.PushDir);
 				}
 				break;
@@ -284,7 +281,6 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 		}
 	}
 
-	// 에너지를 받은 모든 대상(이동 유무 상관없이) 반환 구조체 구성
 	for (const auto& Pair : PushDirMap)
 	{
 		APE_CharacterBase* Char = Pair.Key;
