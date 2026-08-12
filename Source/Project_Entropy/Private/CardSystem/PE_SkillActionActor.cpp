@@ -191,15 +191,12 @@ void APE_SkillActionActor::Explode()
 			}
 		}
 
-		// 2. [Execution]: 수집된 모든 타겟에게 스킬에 장착된 모듈(데미지, 넉백 등) 순차 적용
-		for (APE_CharacterBase* TargetChar : AffectedTargets)
+		// 2. 모듈에 그룹 타겟 전체(AffectedTargets)를 전달
+		for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
 		{
-			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
+			if (Module)
 			{
-				if (Module)
-				{
-					Module->ApplyEffect(Caster, TargetChar, RepTargetLocation, RepSkillData, DamageToApply);
-				}
+				Module->ApplyEffects(Caster, AffectedTargets, RepTargetLocation, RepSkillData, DamageToApply);
 			}
 		}
 

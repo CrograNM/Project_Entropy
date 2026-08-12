@@ -19,8 +19,8 @@ class PROJECT_ENTROPY_API UPE_SkillEffectModule : public UObject
 	GENERATED_BODY()
 
 public:
-	// 타겟에게 효과를 적용하는 가상 함수
-	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) PURE_VIRTUAL(UPE_SkillEffectModule::ApplyEffect, );
+	// 다중 타겟(Targets) 그룹 전체를 받도록 구조 변경
+	virtual void ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) PURE_VIRTUAL(UPE_SkillEffectModule::ApplyEffects, );
 };
 
 /**
@@ -32,7 +32,7 @@ class PROJECT_ENTROPY_API UPE_SkillEffect_Damage : public UPE_SkillEffectModule
 	GENERATED_BODY()
 
 public:
-	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
+	virtual void ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
 };
 
 // --- [밀치기 시뮬레이션 결과를 담을 구조체] ---
@@ -63,9 +63,9 @@ class PROJECT_ENTROPY_API UPE_SkillEffect_Push : public UPE_SkillEffectModule
 	GENERATED_BODY()
 
 public:
-	virtual void ApplyEffect(AActor* Instigator, APE_CharacterBase* Target, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
+	virtual void ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage) override;
 	int32 GetPushDistance() const { return PushDistance; }
-	
+
 	// --- [시각화 컴포넌트 등에서 호출할 밀치기 예상 결과 반환 함수] ---
 	TArray<FPushSimulationResult> SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, const TSet<FIntPoint>& AffectedGridPositions) const;
 
