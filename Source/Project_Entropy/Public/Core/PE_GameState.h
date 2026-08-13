@@ -53,6 +53,7 @@ private:
 	// 현재 누군가 스킬을 쏘고 진행 중인지 여부
 	bool bIsProcessingAction = false;
 
+	UPROPERTY(VisibleAnywhere, Category = "Action Queue")
 	int32 PendingActionCount = 0;
 
 	// 큐에서 다음 행동을 꺼내어 실행
