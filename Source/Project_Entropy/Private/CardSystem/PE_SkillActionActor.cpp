@@ -212,7 +212,7 @@ void APE_SkillActionActor::Explode()
 		// 4. 액션 종료 통보
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
-			GS->CompleteCurrentAction();
+			GS->ReportActionEnded(); // 스킬 본체(1 카운트) 소멸 보고
 		}
 	}
 

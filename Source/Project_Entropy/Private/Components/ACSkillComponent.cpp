@@ -165,7 +165,7 @@ void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* Ta
 		// 투사체가 아예 없는 순수 버프 등의 경우 액터 스폰 없이 큐를 즉시 비웁니다.
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
-			GS->CompleteCurrentAction();
+			GS->ReportActionEnded();
 		}
 	}
 }

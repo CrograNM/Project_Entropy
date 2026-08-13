@@ -9,6 +9,7 @@
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 #include "Containers/Queue.h"
+#include "Core/PE_GameState.h" 
 
 // --- [모듈 1: 데미지 구현부] ---
 void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
@@ -138,68 +139,53 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			KnockbackPath.Add(NextTile);
 		}
 
-		// 반복문 내에서 즉시 이동 명령 송신 (이동 컴포넌트가 알아서 큐잉 처리)
-		if (UACGridMovementComponent* MoveComp = Task.Actor->GetGridMovementComponent())
-		{
-			if (KnockbackPath.Num() > 0)
-			{
-				MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, Task.Delay);
-				CurrentPosMap[Task.Actor] = CurrentPos;
-			}
-		}
+		FGridKnockbackPayload Payload;
+		Payload.bIsActive = true;
+		Payload.Instigator = Instigator;
+		Payload.SkillData = InSkillData;
 
 		if (bHitSomething)
 		{
 			float ScaledRatio = (float)Task.RemainingDist / (float)PushDistance;
 			float FinalDamageRatio = CollisionDamageRatio * ScaledRatio;
-			float TargetDamage = 0.f;
-			float OtherDamage = 0.f;
 
 			if (HitCharacter)
 			{
 				if (UACStatComponent* HitStat = HitCharacter->GetStatComponent())
 				{
-					TargetDamage = HitStat->GetMaxHP() * FinalDamageRatio;
-					OtherDamage = TargetDamage;
+					Payload.TargetDamage = HitStat->GetMaxHP() * FinalDamageRatio;
+					Payload.OtherDamage = Payload.TargetDamage;
+					Payload.HitCharacter = HitCharacter;
 				}
 			}
 			else
 			{
 				if (UACStatComponent* MyStat = Task.Actor->GetStatComponent())
 				{
-					TargetDamage = MyStat->GetMaxHP() * FinalDamageRatio;
+					Payload.TargetDamage = MyStat->GetMaxHP() * FinalDamageRatio;
 				}
 			}
+		}
 
-			float DamageTime = Task.Delay + (KnockbackPath.Num() * TimePerTile);
+		// [UObject의 단독 GetWorld() 대신 Instigator->GetWorld() 사용으로 크래시 해결]
+		if (APE_GameState* GS = Instigator->GetWorld()->GetGameState<APE_GameState>())
+		{
+			GS->ReportActionStarted();
+		}
 
-			TWeakObjectPtr<APE_CharacterBase> WeakTarget = Task.Actor;
-			TWeakObjectPtr<APE_CharacterBase> WeakHitChar = HitCharacter;
-			TWeakObjectPtr<AActor> WeakInstigator = Instigator;
+		if (UACGridMovementComponent* MoveComp = Task.Actor->GetGridMovementComponent())
+		{
+			MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, Task.Delay, Payload);
 
-			FTimerDelegate DamageDel = FTimerDelegate::CreateLambda([WeakTarget, WeakHitChar, WeakInstigator, TargetDamage, OtherDamage]()
-				{
-					if (WeakInstigator.IsValid())
-					{
-						if (WeakTarget.IsValid() && TargetDamage > 0.f)
-						{
-							UGameplayStatics::ApplyDamage(WeakTarget.Get(), TargetDamage, WeakInstigator->GetInstigatorController(), WeakInstigator.Get(), UDamageType::StaticClass());
-						}
-						if (WeakHitChar.IsValid() && OtherDamage > 0.f)
-						{
-							UGameplayStatics::ApplyDamage(WeakHitChar.Get(), OtherDamage, WeakInstigator->GetInstigatorController(), WeakInstigator.Get(), UDamageType::StaticClass());
-						}
-					}
-				});
-
-			FTimerHandle TempHandle;
-			Task.Actor->GetWorldTimerManager().SetTimer(TempHandle, DamageDel, FMath::Max(0.01f, DamageTime), false);
+			if (KnockbackPath.Num() > 0)
+			{
+				CurrentPosMap[Task.Actor] = CurrentPos;
+			}
 		}
 	}
 }
 
 // --- [모듈 2: 시각화를 위한 넉백 시뮬레이션부] ---
-// 실제 로직과 완벽하게 동일한 알고리즘을 사용하되 이동/데미지 명령 대신 결과 구조체만 도출합니다.
 TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, const TSet<FIntPoint>& AffectedGridPositions) const
 {
 	TArray<FPushSimulationResult> Results;

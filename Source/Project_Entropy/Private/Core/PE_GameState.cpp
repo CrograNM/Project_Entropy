@@ -4,8 +4,8 @@
 #include "Core/PE_TurnManagerComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Components/ACSkillComponent.h"
-#include "Net/UnrealNetwork.h" // [추가됨]
-#include "Core/PE_PlayerController.h" // [추가됨]
+#include "Net/UnrealNetwork.h"
+#include "Core/PE_PlayerController.h"
 
 APE_GameState::APE_GameState()
 {
@@ -62,6 +62,28 @@ void APE_GameState::EnqueueSkillAction(const FPESkillActionPayload& Payload)
 	}
 }
 
+void APE_GameState::ReportActionStarted()
+{
+	if (HasAuthority())
+	{
+		PendingActionCount++;
+	}
+}
+
+void APE_GameState::ReportActionEnded()
+{
+	if (!HasAuthority()) return;
+
+	PendingActionCount--;
+
+	// [핵심] 꼬리를 무는 넉백을 포함해 파생된 모든 연산이 0이 될 때만 다음 큐로 넘어감
+	if (PendingActionCount <= 0)
+	{
+		PendingActionCount = 0;
+		GetWorld()->GetTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_GameState::ProcessNextAction, ActionInterval, false);
+	}
+}
+
 void APE_GameState::ProcessNextAction()
 {
 	if (ActionQueue.IsEmpty())
@@ -78,6 +100,9 @@ void APE_GameState::ProcessNextAction()
 
 	bIsProcessingAction = true;
 
+	// 1차 스킬 본체의 액션 카운트 부여
+	ReportActionStarted();
+
 	FPESkillActionPayload Payload;
 	ActionQueue.Dequeue(Payload);
 
@@ -89,15 +114,7 @@ void APE_GameState::ProcessNextAction()
 		{
 			SkillComp->ExecuteQueuedSkill(Payload.SkillData, Payload.TargetTile, Payload.TargetCharacter, Payload.CalculatedDamage);
 		}
-		else CompleteCurrentAction(); // 에러 발생 시 큐가 막히지 않도록 강제 패스
+		else ReportActionEnded();
 	}
-	else CompleteCurrentAction();
-}
-
-void APE_GameState::CompleteCurrentAction()
-{
-	if (!HasAuthority()) return;
-
-	// 즉시 쏘지 않고, 기획된 0.2초의 간격을 두고 다음 스킬을 발사합니다.
-	GetWorld()->GetTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_GameState::ProcessNextAction, ActionInterval, false);
+	else ReportActionEnded();
 }
