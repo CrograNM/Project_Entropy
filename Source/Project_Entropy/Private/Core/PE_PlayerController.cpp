@@ -495,7 +495,7 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 				// 로컬에서 직접 쏘는 대신, 서버로 RPC를 보내 안전하게 결제/시전
 				Server_RequestSkillCast(SkillData, TargetTile, TargetCharacter);
 
-				CardInteractionComp->OnInstantCastFinished();
+				CardInteractionComp->OnInstantCastFinished(CastingCard);
 				if (PC->GetTargetingVisualizer())
 				{
 					PC->GetTargetingVisualizer()->ClearTargeting();

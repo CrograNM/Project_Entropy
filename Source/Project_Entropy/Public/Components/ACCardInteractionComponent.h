@@ -46,11 +46,11 @@ public:
 
 	/** BP에서 시전 대기 애니메이션이 끝났을 때 C++로 알려주는 콜백 */
 	UFUNCTION(BlueprintCallable, Category = "Interaction|State")
-	void OnCastingReadyFinished();
+	void OnCastingReadyFinished(APE_CardActor* CallerCard);
 
 	/** BP에서 즉발 카드의 산화 애니메이션이 완전히 끝났을 때 C++로 알려주는 콜백 */
 	UFUNCTION(BlueprintCallable, Category = "Interaction|State")
-	void OnInstantCastFinished();
+	void OnInstantCastFinished(APE_CardActor* CallerCard);
 
 	// --- Getter ---
 	EPEInteractionState GetCurrentState() const { return CurrentState; }

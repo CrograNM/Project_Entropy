@@ -298,22 +298,25 @@ void UACCardInteractionComponent::ReleaseCard()
 	HoveredCardDuringDrag = nullptr;
 }
 
-void UACCardInteractionComponent::OnCastingReadyFinished()
+void UACCardInteractionComponent::OnCastingReadyFinished(APE_CardActor* CallerCard)
 {
 	// BP에서 애니메이션이 끝났다고 알려주면, 타겟팅 시작 상태로 전환
-	if (CurrentState == EPEInteractionState::Waiting && CastingCard)
+	if (CurrentState == EPEInteractionState::Waiting && CastingCard && CastingCard == CallerCard)
 	{
 		CurrentState = EPEInteractionState::Casting;
 		UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 시전 대기 완료, 타겟팅 시작!"));
 	}
 }
 
-void UACCardInteractionComponent::OnInstantCastFinished()
+void UACCardInteractionComponent::OnInstantCastFinished(APE_CardActor* CallerCard)
 {
-	if (CastingCard)
+	if (CastingCard && CastingCard == CallerCard)
 	{
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
+			// 카드 애니메이션이 시작되기 전, 물리적 충돌을 강제로 꺼서 마우스에 다시 잡히는 것을 원천 차단합니다.
+			CastingCard->SetActorEnableCollision(false);
+
 			CastingCard->PlayDiscardAnimation();
 			DeckManager->DiscardCard(CastingCard);
 		}
