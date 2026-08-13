@@ -11,12 +11,12 @@
 UACGridMovementComponent::UACGridMovementComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	SetIsReplicatedByDefault(true); // 멀티플레이어 동기화 활성화
+	SetIsReplicatedByDefault(true);
 
 	GridPosition = FIntPoint(-999, -999);
 	TargetGridPosition = FIntPoint(-999, -999);
-	GridMoveSpeed = 600.f;
-	AcceptanceRadius = 10.f;
+	GridMoveSpeed = 1000.f;
+	OvershootFactor = 3.0f;
 	RotationSpeed = 2000.f;
 
 	bIsMovingOnGrid = false;
@@ -44,14 +44,13 @@ void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const T
 void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate, float Delay)
 {
 	if (InPath.Num() == 0) return;
-	// 기존 경로를 덮어쓰지 않고 큐에 명령을 적재
+
 	FGridMoveCommand NewCmd;
 	NewCmd.Path = InPath;
 	NewCmd.bRotate = bRotate;
 	NewCmd.AbsoluteStartTime = GetWorld()->GetTimeSeconds() + Delay;
 	MoveCommandQueue.Add(NewCmd);
 
-	// 대기 중인 작업이 없다면 즉시 처리 시작
 	if (!bIsMovingOnGrid && !bIsWaitingDelay)
 	{
 		ProcessNextCommand();
@@ -76,7 +75,6 @@ void UACGridMovementComponent::ProcessNextCommand()
 
 		float CurrentTime = GetWorld()->GetTimeSeconds();
 
-		// 남은 대기 시간이 있다면 타이머 작동, 아니면 즉시 출발
 		if (Cmd.AbsoluteStartTime > CurrentTime)
 		{
 			bIsWaitingDelay = true;
@@ -90,7 +88,6 @@ void UACGridMovementComponent::ProcessNextCommand()
 	}
 	else
 	{
-		// 모든 큐가 비워졌을 때 완전히 정지
 		bIsMovingOnGrid = false;
 		bIsWaitingDelay = false;
 
@@ -120,15 +117,15 @@ void UACGridMovementComponent::SetNextPathStep()
 	if (CurrentPathIndex < SavedPath.Num())
 	{
 		TargetWorldLocation = SavedPath[CurrentPathIndex]->GetCenterWorldLocation();
+
+		StepStartLocation = GetOwner()->GetActorLocation();
+
+		float Distance = FVector::Distance(StepStartLocation, TargetWorldLocation);
+		StepDuration = FMath::Max(0.01f, Distance / GridMoveSpeed);
+		StepElapsedTime = 0.f;
 	}
 	else
 	{
-		// 최종 목적지 타일에 완벽히 도달함
-		if (SavedPath.Num() > 0)
-		{
-			SavedPath.Last()->SetHighlightState(ETileHighlightType::None);
-		}
-		
 		if (SavedPath.Num() > 0)
 		{
 			SavedPath.Last()->SetHighlightState(ETileHighlightType::None);
@@ -137,7 +134,6 @@ void UACGridMovementComponent::SetNextPathStep()
 		SavedPath.Empty();
 		CurrentPathIndex = 0;
 
-		// 하나의 이동 덩어리가 끝났으므로 큐에 남은 다음 명령이 있는지 검사
 		ProcessNextCommand();
 	}
 }
@@ -146,7 +142,6 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// 지연 대기열 틱 처리
 	if (bIsWaitingDelay)
 	{
 		DelayTimer -= DeltaTime;
@@ -163,33 +158,50 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor) return;
 
-	FVector CurrentLocation = OwnerActor->GetActorLocation();
-	FVector AdjustTarget = TargetWorldLocation;
-	AdjustTarget.Z = CurrentLocation.Z;
+	StepElapsedTime += DeltaTime;
+	float t = FMath::Clamp(StepElapsedTime / StepDuration, 0.f, 1.f);
 
-	FVector Direction = AdjustTarget - CurrentLocation;
-	float DistanceToTarget2D = Direction.Size2D();
+	// [수정됨: 현재 진행 중인 스텝이 경로의 마지막 칸인지 판별]
+	bool bIsLastStep = (CurrentPathIndex == SavedPath.Num() - 1);
+	float Alpha = t;
 
-	if (DistanceToTarget2D > AcceptanceRadius)
+	if (!bShouldRotate)
 	{
-		Direction.Normalize();
+		// 넉백 시, 마지막 칸(최종 도착점)에만 Overshoot(Recoil) 공식 적용
+		if (bIsLastStep)
+		{
+			float c1 = OvershootFactor;
+			float c3 = c1 + 1.0f;
+			float t_sub_1 = t - 1.0f;
+			Alpha = 1.0f + c3 * (t_sub_1 * t_sub_1 * t_sub_1) + c1 * (t_sub_1 * t_sub_1);
+		}
+		// 마지막 칸이 아닌 중간 이동 구간은 Alpha = t (등속 이동) 유지
+	}
 
-		FVector NewLocation = FMath::VInterpConstantTo(CurrentLocation, AdjustTarget, DeltaTime, GridMoveSpeed);
-		OwnerActor->SetActorLocation(NewLocation);
+	FVector AdjustTarget = TargetWorldLocation;
+	AdjustTarget.Z = StepStartLocation.Z;
 
-		if (bShouldRotate)
+	FVector NewLocation = FMath::Lerp(StepStartLocation, AdjustTarget, Alpha);
+	OwnerActor->SetActorLocation(NewLocation);
+
+	// 방향 회전 처리
+	if (bShouldRotate)
+	{
+		FVector Direction = (AdjustTarget - StepStartLocation).GetSafeNormal();
+		if (!Direction.IsNearlyZero())
 		{
 			FRotator TargetRot = Direction.Rotation();
 			FRotator NewRot = FMath::RInterpConstantTo(OwnerActor->GetActorRotation(), TargetRot, DeltaTime, RotationSpeed);
 			OwnerActor->SetActorRotation(NewRot);
 		}
-
-		if (ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor))
-		{
-			OwnerCharacter->GetCharacterMovement()->Velocity = Direction * GridMoveSpeed;
-		}
 	}
-	else
+
+	if (ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor))
+	{
+		OwnerCharacter->GetCharacterMovement()->Velocity = (AdjustTarget - StepStartLocation).GetSafeNormal() * GridMoveSpeed;
+	}
+
+	if (t >= 1.0f)
 	{
 		GridPosition = SavedPath[CurrentPathIndex]->GetGridPosition();
 		OwnerActor->SetActorLocation(AdjustTarget);

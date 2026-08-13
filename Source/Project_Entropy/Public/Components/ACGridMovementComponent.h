@@ -25,7 +25,7 @@ struct FGridMoveCommand
 	float AbsoluteStartTime = 0.f;
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMovementFinishedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGridMovementFinished);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class PROJECT_ENTROPY_API UACGridMovementComponent : public UActorComponent
@@ -34,46 +34,39 @@ class PROJECT_ENTROPY_API UACGridMovementComponent : public UActorComponent
 
 public:
 	UACGridMovementComponent();
-
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	UPROPERTY(BlueprintAssignable, Category = "Grid Movement")
-	FOnMovementFinishedSignature OnMovementFinished;
-
-	/** 주어진 타일 경로를 따라 순차 이동을 시작 (서버에서 호출 시 모든 클라이언트로 전송) */
 	UFUNCTION(NetMulticast, Reliable)
-	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
+	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f);
 
-	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
+	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f);
 
-	/** --- 그리드 데이터 Getter / Setter --- */
 	FIntPoint GetGridPosition() const { return GridPosition; }
 	void SetGridPosition(FIntPoint NewPos) { GridPosition = NewPos; }
-
-	// 멀티플레이어: 다른 액터가 이 컴포넌트의 최종 목적지를 확인할 수 있도록 Getter 추가
 	FIntPoint GetTargetGridPosition() const { return TargetGridPosition; }
-
-	// 스킬 이펙트 연산을 위해 현재 스피드를 반환하는 Getter
 	float GetGridMoveSpeed() const { return GridMoveSpeed; }
+
+	UPROPERTY(BlueprintAssignable)
+	FOnGridMovementFinished OnMovementFinished;
 
 protected:
 	virtual void BeginPlay() override;
 
-	UPROPERTY(VisibleAnywhere, Replicated, Category = "Grid")
+	UPROPERTY(Replicated)
 	FIntPoint GridPosition;
 
-	// 멀티플레이어: 선점 처리를 위해 현재 이동하려는 최종 타일의 좌표 보관
-	UPROPERTY(VisibleAnywhere, Replicated, Category = "Grid")
-	FIntPoint TargetGridPosition = FIntPoint(-999, -999);
+	UPROPERTY(Replicated)
+	FIntPoint TargetGridPosition;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Movement")
+	UPROPERTY(EditAnywhere, Category = "Movement")
 	float GridMoveSpeed;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Movement")
-	float AcceptanceRadius;
+	// [수정됨: 튕겨나가는 탄성 강도 조절용 변수 추가]
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float OvershootFactor = 1.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Movement")
+	UPROPERTY(EditAnywhere, Category = "Movement")
 	float RotationSpeed;
 
 private:
@@ -81,18 +74,21 @@ private:
 	void StartMoving();
 	void SetNextPathStep();
 
-	// 이동 명령 대기열
 	UPROPERTY()
 	TArray<FGridMoveCommand> MoveCommandQueue;
 
 	bool bIsWaitingDelay = false;
 	float DelayTimer = 0.f;
 
-	bool bIsMovingOnGrid = false;
-	bool bShouldRotate = true;
-
-	int32 CurrentPathIndex = 0;
+	bool bIsMovingOnGrid;
+	bool bShouldRotate;
+	int32 CurrentPathIndex;
 	FVector TargetWorldLocation;
+
+	// 시간 기반 보간을 위한 변수들
+	FVector StepStartLocation;
+	float StepDuration;
+	float StepElapsedTime;
 
 	UPROPERTY()
 	TArray<AACTile*> SavedPath;

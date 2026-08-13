@@ -62,6 +62,8 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 	for (APE_CharacterBase* Target : Targets)
 	{
 		if (!Target->IsPushable()) continue;
+		if (!CurrentPosMap.Contains(Target)) continue;
+
 		FIntPoint TargetPos = CurrentPosMap[Target];
 
 		FIntPoint PushDir(
