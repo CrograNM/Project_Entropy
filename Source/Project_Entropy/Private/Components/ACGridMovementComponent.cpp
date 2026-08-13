@@ -14,10 +14,13 @@ UACGridMovementComponent::UACGridMovementComponent()
 	SetIsReplicatedByDefault(true); // 멀티플레이어 동기화 활성화
 
 	GridPosition = FIntPoint(-999, -999);
-	GridMoveSpeed = 600.f;       
-	AcceptanceRadius = 10.f;      
+	TargetGridPosition = FIntPoint(-999, -999);
+	GridMoveSpeed = 600.f;
+	AcceptanceRadius = 10.f;
 	RotationSpeed = 2000.f;
+
 	bIsMovingOnGrid = false;
+	bIsWaitingDelay = false;
 }
 
 void UACGridMovementComponent::BeginPlay()
@@ -41,25 +44,68 @@ void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const T
 void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate, float Delay)
 {
 	if (InPath.Num() == 0) return;
+	// 기존 경로를 덮어쓰지 않고 큐에 명령을 적재
+	FGridMoveCommand NewCmd;
+	NewCmd.Path = InPath;
+	NewCmd.bRotate = bRotate;
+	NewCmd.AbsoluteStartTime = GetWorld()->GetTimeSeconds() + Delay;
+	MoveCommandQueue.Add(NewCmd);
 
-	SavedPath = InPath;
-	CurrentPathIndex = 0;
-	bShouldRotate = bRotate;
-
-	// 이동 시작 시 서버 권한으로 최종 목적지 좌표 예약 갱신
-	if (GetOwner()->HasAuthority())
+	// 대기 중인 작업이 없다면 즉시 처리 시작
+	if (!bIsMovingOnGrid && !bIsWaitingDelay)
 	{
-		TargetGridPosition = SavedPath.Last()->GetGridPosition();
+		ProcessNextCommand();
 	}
+}
 
-	if (Delay > 0.f)
+void UACGridMovementComponent::ProcessNextCommand()
+{
+	if (MoveCommandQueue.Num() > 0)
 	{
-		FTimerHandle DelayHandle;
-		GetWorld()->GetTimerManager().SetTimer(DelayHandle, this, &UACGridMovementComponent::StartMoving, Delay, false);
+		FGridMoveCommand Cmd = MoveCommandQueue[0];
+		MoveCommandQueue.RemoveAt(0);
+
+		SavedPath = Cmd.Path;
+		bShouldRotate = Cmd.bRotate;
+		CurrentPathIndex = 0;
+
+		if (GetOwner()->HasAuthority() && SavedPath.Num() > 0)
+		{
+			TargetGridPosition = SavedPath.Last()->GetGridPosition();
+		}
+
+		float CurrentTime = GetWorld()->GetTimeSeconds();
+
+		// 남은 대기 시간이 있다면 타이머 작동, 아니면 즉시 출발
+		if (Cmd.AbsoluteStartTime > CurrentTime)
+		{
+			bIsWaitingDelay = true;
+			DelayTimer = Cmd.AbsoluteStartTime - CurrentTime;
+		}
+		else
+		{
+			bIsWaitingDelay = false;
+			StartMoving();
+		}
 	}
 	else
 	{
-		StartMoving();
+		// 모든 큐가 비워졌을 때 완전히 정지
+		bIsMovingOnGrid = false;
+		bIsWaitingDelay = false;
+
+		if (GetOwner()->HasAuthority())
+		{
+			TargetGridPosition = FIntPoint(-999, -999);
+		}
+
+		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
+		{
+			OwnerCharacter->GetCharacterMovement()->Velocity = FVector::ZeroVector;
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("[ACGridMovementComponent] 큐 대기열 처리 및 액터 이동 완료."));
+		OnMovementFinished.Broadcast();
 	}
 }
 
@@ -83,29 +129,34 @@ void UACGridMovementComponent::SetNextPathStep()
 			SavedPath.Last()->SetHighlightState(ETileHighlightType::None);
 		}
 		
-		bIsMovingOnGrid = false;
+		if (SavedPath.Num() > 0)
+		{
+			SavedPath.Last()->SetHighlightState(ETileHighlightType::None);
+		}
+
 		SavedPath.Empty();
 		CurrentPathIndex = 0;
 
-		if (GetOwner()->HasAuthority())
-		{
-			TargetGridPosition = FIntPoint(-999, -999); // 이동 종료 시 예약 해제
-		}
-
-		// 애니메이션 정지를 위해 속도 리셋
-		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
-		{
-			OwnerCharacter->GetCharacterMovement()->Velocity = FVector::ZeroVector;
-		}
-		
-		UE_LOG(LogTemp, Warning, TEXT("[ACGridMovementComponent] 액터 이동 완료."));
-		OnMovementFinished.Broadcast();
+		// 하나의 이동 덩어리가 끝났으므로 큐에 남은 다음 명령이 있는지 검사
+		ProcessNextCommand();
 	}
 }
 
 void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// 지연 대기열 틱 처리
+	if (bIsWaitingDelay)
+	{
+		DelayTimer -= DeltaTime;
+		if (DelayTimer <= 0.f)
+		{
+			bIsWaitingDelay = false;
+			StartMoving();
+		}
+		return;
+	}
 
 	if (!bIsMovingOnGrid) return;
 
@@ -114,7 +165,7 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 
 	FVector CurrentLocation = OwnerActor->GetActorLocation();
 	FVector AdjustTarget = TargetWorldLocation;
-	AdjustTarget.Z = CurrentLocation.Z; // Z축 고정으로 오차 방지
+	AdjustTarget.Z = CurrentLocation.Z;
 
 	FVector Direction = AdjustTarget - CurrentLocation;
 	float DistanceToTarget2D = Direction.Size2D();
@@ -123,11 +174,9 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	{
 		Direction.Normalize();
 
-		// 1. 위치 이동 보간
 		FVector NewLocation = FMath::VInterpConstantTo(CurrentLocation, AdjustTarget, DeltaTime, GridMoveSpeed);
 		OwnerActor->SetActorLocation(NewLocation);
 
-		// 2. 메쉬 회전 수동 적용
 		if (bShouldRotate)
 		{
 			FRotator TargetRot = Direction.Rotation();
@@ -135,7 +184,6 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 			OwnerActor->SetActorRotation(NewRot);
 		}
 
-		// 3. 애니메이션 연동을 위한 가짜 속도 주입
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerActor))
 		{
 			OwnerCharacter->GetCharacterMovement()->Velocity = Direction * GridMoveSpeed;
@@ -143,10 +191,9 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	}
 	else
 	{
-		// 목표 칸에 근접하면, 미세 오차를 무시하고 타일 정중앙으로 완전히 스냅시킵니다.
 		GridPosition = SavedPath[CurrentPathIndex]->GetGridPosition();
-		OwnerActor->SetActorLocation(AdjustTarget); 
-		
+		OwnerActor->SetActorLocation(AdjustTarget);
+
 		CurrentPathIndex++;
 		SetNextPathStep();
 	}

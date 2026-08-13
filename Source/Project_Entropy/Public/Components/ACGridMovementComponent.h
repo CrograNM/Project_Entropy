@@ -8,6 +8,23 @@
 
 class AACTile;
 
+// 큐에 담아둘 단일 이동 명령 구조체
+USTRUCT()
+struct FGridMoveCommand
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<AACTile*> Path;
+
+	UPROPERTY()
+	bool bRotate = false;
+
+	// 명령이 수신된 시간 + Delay를 합산한 절대 실행 시간
+	UPROPERTY()
+	float AbsoluteStartTime = 0.f;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMovementFinishedSignature);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -24,6 +41,12 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grid Movement")
 	FOnMovementFinishedSignature OnMovementFinished;
 
+	/** 주어진 타일 경로를 따라 순차 이동을 시작 (서버에서 호출 시 모든 클라이언트로 전송) */
+	UFUNCTION(NetMulticast, Reliable)
+	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
+
+	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
+
 	/** --- 그리드 데이터 Getter / Setter --- */
 	FIntPoint GetGridPosition() const { return GridPosition; }
 	void SetGridPosition(FIntPoint NewPos) { GridPosition = NewPos; }
@@ -33,10 +56,6 @@ public:
 
 	// 스킬 이펙트 연산을 위해 현재 스피드를 반환하는 Getter
 	float GetGridMoveSpeed() const { return GridMoveSpeed; }
-
-	/** 주어진 타일 경로를 따라 순차 이동을 시작 (서버에서 호출 시 모든 클라이언트로 전송) */
-	UFUNCTION(NetMulticast, Reliable)
-	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
 
 protected:
 	virtual void BeginPlay() override;
@@ -58,16 +77,23 @@ protected:
 	float RotationSpeed;
 
 private:
-	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = true, float Delay = 0.f);
+	void ProcessNextCommand();
+	void StartMoving();
 	void SetNextPathStep();
-	void StartMoving(); // 타이머가 끝나고 실제 이동을 개시하는 함수
 
+	// 이동 명령 대기열
 	UPROPERTY()
-	TArray<AACTile*> SavedPath;
+	TArray<FGridMoveCommand> MoveCommandQueue;
 
+	bool bIsWaitingDelay = false;
+	float DelayTimer = 0.f;
+
+	bool bIsMovingOnGrid = false;
 	bool bShouldRotate = true;
 
 	int32 CurrentPathIndex = 0;
-	bool bIsMovingOnGrid = false;
 	FVector TargetWorldLocation;
+
+	UPROPERTY()
+	TArray<AACTile*> SavedPath;
 };

@@ -76,10 +76,6 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		}
 	}
 
-	// [수정됨: 캐릭터별로 최종 경로와 시작 딜레이를 묶어둘 맵]
-	TMap<APE_CharacterBase*, TArray<AACTile*>> FinalPaths;
-	TMap<APE_CharacterBase*, float> StartDelays;
-
 	while (PendingPushes.Num() > 0)
 	{
 		PendingPushes.Sort([&CurrentPosMap](const FSimulatedPush& A, const FSimulatedPush& B) {
@@ -140,18 +136,16 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			KnockbackPath.Add(NextTile);
 		}
 
-		// [수정됨: 이동 컴포넌트를 즉시 호출하지 않고 경로를 영수증(FinalPaths)에 이어 붙입니다]
-		if (KnockbackPath.Num() > 0)
+		// 반복문 내에서 즉시 이동 명령 송신 (이동 컴포넌트가 알아서 큐잉 처리)
+		if (UACGridMovementComponent* MoveComp = Task.Actor->GetGridMovementComponent())
 		{
-			if (!StartDelays.Contains(Task.Actor))
+			if (KnockbackPath.Num() > 0)
 			{
-				StartDelays.Add(Task.Actor, Task.Delay);
+				MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, Task.Delay);
+				CurrentPosMap[Task.Actor] = CurrentPos;
 			}
-			FinalPaths.FindOrAdd(Task.Actor).Append(KnockbackPath);
-			CurrentPosMap[Task.Actor] = CurrentPos;
 		}
 
-		// 데미지 예약은 기존 타이밍 그대로 유지
 		if (bHitSomething)
 		{
 			float ScaledRatio = (float)Task.RemainingDist / (float)PushDistance;
@@ -198,17 +192,6 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 
 			FTimerHandle TempHandle;
 			Task.Actor->GetWorldTimerManager().SetTimer(TempHandle, DamageDel, FMath::Max(0.01f, DamageTime), false);
-		}
-	}
-
-	// [수정됨: 모든 당구 연산이 끝난 뒤, 모인 경로를 캐릭터별로 딱 1번만 이동 명령을 내립니다]
-	for (const auto& Pair : FinalPaths)
-	{
-		APE_CharacterBase* Char = Pair.Key;
-		if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
-		{
-			float Delay = StartDelays.Contains(Char) ? StartDelays[Char] : 0.f;
-			MoveComp->NetMulticast_MoveAlongPath(Pair.Value, false, Delay);
 		}
 	}
 }
