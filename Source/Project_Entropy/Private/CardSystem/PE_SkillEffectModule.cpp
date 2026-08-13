@@ -33,7 +33,6 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 
 	FIntPoint InstPos = InstMove->GetGridPosition();
 
-	// 1. 현재 전장의 모든 유닛의 위치 상태를 캐싱 (시뮬레이션 전용 보드)
 	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
 	TArray<AActor*> AllChars;
 	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
@@ -60,7 +59,6 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 	};
 	TArray<FSimulatedPush> PendingPushes;
 
-	// 2. 초기 피격 대상들을 예약 목록에 등록
 	for (APE_CharacterBase* Target : Targets)
 	{
 		if (!Target->IsPushable()) continue;
@@ -78,10 +76,12 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		}
 	}
 
-	// 3. 당구 연쇄 루프 실행 (매 연산마다 가장 뒤에 있는 객체부터 처리)
+	// [수정됨: 캐릭터별로 최종 경로와 시작 딜레이를 묶어둘 맵]
+	TMap<APE_CharacterBase*, TArray<AACTile*>> FinalPaths;
+	TMap<APE_CharacterBase*, float> StartDelays;
+
 	while (PendingPushes.Num() > 0)
 	{
-		// 핵심 정렬: 미는 방향(PushDir)을 기준으로 더 멀리 있는(가장 뒤에 있는) 객체부터 내림차순 정렬
 		PendingPushes.Sort([&CurrentPosMap](const FSimulatedPush& A, const FSimulatedPush& B) {
 			FIntPoint PosA = CurrentPosMap[A.Actor];
 			FIntPoint PosB = CurrentPosMap[B.Actor];
@@ -91,7 +91,7 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			});
 
 		FSimulatedPush Task = PendingPushes[0];
-		PendingPushes.RemoveAt(0); // 큐의 Dequeue 역할
+		PendingPushes.RemoveAt(0);
 
 		if (!CurrentPosMap.Contains(Task.Actor)) continue;
 
@@ -100,10 +100,8 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 
 		bool bHitSomething = false;
 		APE_CharacterBase* HitCharacter = nullptr;
-
 		float TimePerTile = 100.f / Task.Actor->GetGridMovementComponent()->GetGridMoveSpeed();
 
-		// 한 칸씩 궤적 추적
 		for (int32 step = 1; step <= Task.RemainingDist; ++step)
 		{
 			FIntPoint NextPos = CurrentPos + Task.PushDir;
@@ -115,7 +113,6 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 				break;
 			}
 
-			// 가상 보드(CurrentPosMap) 기준으로 충돌 판정
 			APE_CharacterBase* CollidedChar = nullptr;
 			for (const auto& Pair : CurrentPosMap)
 			{
@@ -134,7 +131,6 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 				if (CollidedChar->IsPushable())
 				{
 					float HitDelay = Task.Delay + (step * TimePerTile);
-					// 충돌한 대상에게 내 남은 에너지를 전달하여 큐에 삽입
 					PendingPushes.Add({ CollidedChar, Task.RemainingDist - step, Task.PushDir, HitDelay });
 				}
 				break;
@@ -144,17 +140,18 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			KnockbackPath.Add(NextTile);
 		}
 
-		// 4. [실제 반영] 이동 명령 전송 및 가상 보드 상태 갱신
-		if (UACGridMovementComponent* MoveComp = Task.Actor->GetGridMovementComponent())
+		// [수정됨: 이동 컴포넌트를 즉시 호출하지 않고 경로를 영수증(FinalPaths)에 이어 붙입니다]
+		if (KnockbackPath.Num() > 0)
 		{
-			if (KnockbackPath.Num() > 0)
+			if (!StartDelays.Contains(Task.Actor))
 			{
-				MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, Task.Delay);
-				CurrentPosMap[Task.Actor] = CurrentPos;
+				StartDelays.Add(Task.Actor, Task.Delay);
 			}
+			FinalPaths.FindOrAdd(Task.Actor).Append(KnockbackPath);
+			CurrentPosMap[Task.Actor] = CurrentPos;
 		}
 
-		// 5. [실제 반영] 충돌 데미지 예약
+		// 데미지 예약은 기존 타이밍 그대로 유지
 		if (bHitSomething)
 		{
 			float ScaledRatio = (float)Task.RemainingDist / (float)PushDistance;
@@ -201,6 +198,17 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 
 			FTimerHandle TempHandle;
 			Task.Actor->GetWorldTimerManager().SetTimer(TempHandle, DamageDel, FMath::Max(0.01f, DamageTime), false);
+		}
+	}
+
+	// [수정됨: 모든 당구 연산이 끝난 뒤, 모인 경로를 캐릭터별로 딱 1번만 이동 명령을 내립니다]
+	for (const auto& Pair : FinalPaths)
+	{
+		APE_CharacterBase* Char = Pair.Key;
+		if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+		{
+			float Delay = StartDelays.Contains(Char) ? StartDelays[Char] : 0.f;
+			MoveComp->NetMulticast_MoveAlongPath(Pair.Value, false, Delay);
 		}
 	}
 }
