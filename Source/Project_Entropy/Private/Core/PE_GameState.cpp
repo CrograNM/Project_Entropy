@@ -17,6 +17,7 @@ void APE_GameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APE_GameState, CurrentState);
+	DOREPLIFETIME(APE_GameState, ActionLogQueue);
 }
 
 void APE_GameState::BeginPlay()
@@ -70,13 +71,16 @@ void APE_GameState::ReportActionStarted()
 	}
 }
 
-void APE_GameState::ReportActionEnded()
+void APE_GameState::ReportActionEnded(int32 ActionLogID)
 {
 	if (!HasAuthority()) return;
 
 	PendingActionCount--;
 
-	// [핵심] 꼬리를 무는 넉백을 포함해 파생된 모든 연산이 0이 될 때만 다음 큐로 넘어감
+	// UI 큐 항목 삭제 처리
+	RemoveActionLog(ActionLogID);
+
+	// 꼬리를 무는 넉백을 포함해 파생된 모든 연산이 0이 될 때만 다음 큐로 넘어감
 	if (PendingActionCount <= 0)
 	{
 		PendingActionCount = 0;
@@ -117,4 +121,31 @@ void APE_GameState::ProcessNextAction()
 		else ReportActionEnded();
 	}
 	else ReportActionEnded();
+}
+
+// --- [UI 액션 큐 제어부] ---
+int32 APE_GameState::AddActionLog(int32 TeamID, const FString& Text)
+{
+	if (!HasAuthority()) return -1;
+
+	static int32 GlobalLogID = 0;
+	FPEActionLogData NewLog;
+	NewLog.ActionID = ++GlobalLogID;
+	NewLog.TeamID = TeamID;
+	NewLog.ActionText = Text;
+
+	ActionLogQueue.Add(NewLog);
+	OnRep_ActionLogQueue(); // 로컬 갱신 강제 호출
+	return NewLog.ActionID;
+}
+void APE_GameState::RemoveActionLog(int32 ActionID)
+{
+	if (!HasAuthority() || ActionID == -1) return;
+
+	ActionLogQueue.RemoveAll([ActionID](const FPEActionLogData& Data) { return Data.ActionID == ActionID; });
+	OnRep_ActionLogQueue();
+}
+void APE_GameState::OnRep_ActionLogQueue()
+{
+	OnActionQueueUpdated.Broadcast(ActionLogQueue); // 클라이언트 BP 송출
 }

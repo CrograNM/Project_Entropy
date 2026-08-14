@@ -167,9 +167,11 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			}
 		}
 
-		// [UObject의 단독 GetWorld() 대신 Instigator->GetWorld() 사용으로 크래시 해결]
+		// 개별 밀치기가 계산될 때마다 UI에 등록
 		if (APE_GameState* GS = Instigator->GetWorld()->GetGameState<APE_GameState>())
 		{
+			FString LogText = FString::Printf(TEXT("%s - %d칸 밀림"), *Task.Actor->GetName(), Task.RemainingDist);
+			Payload.ActionLogID = GS->AddActionLog(Task.Actor->GetTeamID(), LogText);
 			GS->ReportActionStarted();
 		}
 

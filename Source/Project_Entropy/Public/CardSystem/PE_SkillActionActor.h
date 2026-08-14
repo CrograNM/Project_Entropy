@@ -23,7 +23,7 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 public:
 	APE_SkillActionActor(); 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
-	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage);
+	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID = -1);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
@@ -57,6 +57,7 @@ private:
 	TObjectPtr<AActor> Caster;
 
 	float DamageToApply;
+	int32 ActionLogID = -1;
 
 	// --- [수학적 궤적(포물선) 연산용 변수] ---
 	FVector StartLocation;

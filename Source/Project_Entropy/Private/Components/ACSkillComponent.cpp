@@ -82,6 +82,10 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
+			// 결제가 성공하여 큐에 진입할 때 UI 로그를 생성하고 ID 보관
+			FString LogText = FString::Printf(TEXT("%s - %s 시전"), *Caster->GetName(), *SkillData->SkillID.ToString());
+			Payload.ActionLogID = GS->AddActionLog(Caster->GetTeamID(), LogText);
+
 			GS->EnqueueSkillAction(Payload);
 		}
 
@@ -209,12 +213,12 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform);
 		if (ActionActor)
 		{
-			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage);
+			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID);
 		}
 	}
 	else
 	{
-		if (GS) GS->ReportActionEnded();
+		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
 	}
 }
 

@@ -156,7 +156,7 @@ void UACGridMovementComponent::ExecuteKnockbackPayload()
 
 			if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 			{
-				GS->ReportActionEnded();
+				GS->ReportActionEnded(CurrentPayload.ActionLogID);
 			}
 		}
 

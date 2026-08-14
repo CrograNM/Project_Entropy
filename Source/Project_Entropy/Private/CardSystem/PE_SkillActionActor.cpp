@@ -43,10 +43,11 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
-void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage)
+void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID)
 {
 	Caster = InInstigator;
 	DamageToApply = InDamage;
+	ActionLogID = InActionLogID;
 
 	RepTargetActor = InTarget;
 	RepSkillData = InData;
@@ -212,7 +213,7 @@ void APE_SkillActionActor::Explode()
 		// 4. 액션 종료 통보
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
-			GS->ReportActionEnded(); // 스킬 본체(1 카운트) 소멸 보고
+			GS->ReportActionEnded(ActionLogID); // 스킬 본체(1 카운트) 소멸 보고
 		}
 	}
 

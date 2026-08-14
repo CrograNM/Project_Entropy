@@ -26,6 +26,22 @@ enum class EPECardRarity : uint8
 	Legendary   UMETA(DisplayName = "전설 (Legendary)")
 };
 
+// UI에 표시될 액션 로그 단일 데이터
+USTRUCT(BlueprintType)
+struct FPEActionLogData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 ActionID = -1;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 TeamID = -1; // 피아 식별용 (색상 구분)
+
+	UPROPERTY(BlueprintReadOnly)
+	FString ActionText = TEXT("");
+};
+
 USTRUCT(BlueprintType)
 struct FPESkillActionPayload
 {
@@ -41,6 +57,9 @@ struct FPESkillActionPayload
 
 	// 로컬 클라이언트의 카드 식별용 고유 요청 번호
 	UPROPERTY() int32 ClientRequestID = -1;
+
+	// [추가됨: 발급받은 UI 큐 로그 고유 ID]
+	UPROPERTY() int32 ActionLogID = -1;
 };
 
 // 광역 스킬(AoE)의 형태 정의

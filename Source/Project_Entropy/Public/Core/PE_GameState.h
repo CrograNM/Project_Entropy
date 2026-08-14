@@ -11,6 +11,9 @@
 
 class UPE_TurnManagerComponent;
 
+// UI 갱신 방송용 델리게이트
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionQueueUpdatedSignature, const TArray<FPEActionLogData>&, CurrentQueue);
+
 UCLASS()
 class PROJECT_ENTROPY_API APE_GameState : public AGameStateBase
 {
@@ -22,18 +25,24 @@ public:
 	virtual void BeginPlay() override; 
 
 	FORCEINLINE UPE_TurnManagerComponent* GetTurnManager() const { return TurnManager; }
+	FORCEINLINE EPEGameState GetCurrentState() const { return CurrentState; }
 
 	// --- [Action Queue 시스템] ---
 	void EnqueueSkillAction(const FPESkillActionPayload& Payload); // 스킬 발동을 대기열에 추가
 
 	// 레퍼런스 카운팅 방식의 액션 시작/종료 보고
 	void ReportActionStarted();
-	void ReportActionEnded();
+	void ReportActionEnded(int32 ActionLogID = -1);
 
 	// 현재 큐에 남은 행동이 있거나, 누군가 스킬을 실행 중인지 확인
-	bool IsActionQueueActive() const { return bIsProcessingAction || !ActionQueue.IsEmpty(); }
+	bool IsActionQueueActive() const { return bIsProcessingAction || !ActionQueue.IsEmpty() || PendingActionCount > 0; }
 
-	FORCEINLINE EPEGameState GetCurrentState() const { return CurrentState; }
+	// --- [Action UI Queue 시스템] ---
+	UPROPERTY(BlueprintAssignable, Category = "Action Queue")
+	FOnActionQueueUpdatedSignature OnActionQueueUpdated;
+
+	// 텍스트 로그 등록 및 ID 반환
+	int32 AddActionLog(int32 TeamID, const FString& Text);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
@@ -45,6 +54,13 @@ protected:
 
 	UFUNCTION()
 	void OnRep_CurrentState();
+
+	// 복제되는 실시간 UI 큐
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_ActionLogQueue, Category = "Action Queue")
+	TArray<FPEActionLogData> ActionLogQueue;
+
+	UFUNCTION()
+	void OnRep_ActionLogQueue();
 
 private:
 	// 스킬 발동 대기열
@@ -58,6 +74,7 @@ private:
 
 	// 큐에서 다음 행동을 꺼내어 실행
 	void ProcessNextAction();
+	void RemoveActionLog(int32 ActionID);
 
 	FTimerHandle ActionDelayTimerHandle;
 

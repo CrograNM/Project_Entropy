@@ -21,6 +21,8 @@ struct FGridKnockbackPayload
 	UPROPERTY() float TargetDamage = 0.f;
 	UPROPERTY() float OtherDamage = 0.f;
 	UPROPERTY() TObjectPtr<const UPE_SkillData> SkillData = nullptr;
+
+	UPROPERTY() int32 ActionLogID = -1;
 };
 
 // 큐에 담아둘 단일 이동 명령 구조체
