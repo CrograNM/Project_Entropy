@@ -80,10 +80,13 @@ public:
 	void OnCastingHoverStateChanged(bool IsHovered);
 
 	/** --- Getter/Setter --- */
-	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
+	UFUNCTION(BlueprintCallable, Category = "Card|Data")
 	UPE_CardInstance* GetCardInstance() const { return CardInstance; }
 
-	UFUNCTION(BlueprintCallable, Category = "Card|Logic")
+	UFUNCTION(BlueprintCallable, Category = "Card|Data")
+	FString GetCardName() const { return CardInstance ? CardInstance->GetBaseCardData()->CardName.ToString() : TEXT("Unknown Card"); }
+
+	UFUNCTION(BlueprintCallable, Category = "Card|Data")
 	UPE_SkillData* GetSkillData() const { return CardInstance ? CardInstance->GetBaseCardData()->SkillDataToCast : nullptr; }
 
 	UFUNCTION(BlueprintCallable, Category = "Card|Logic")

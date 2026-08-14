@@ -444,6 +444,7 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 		{
 			// 타일도 캐릭터도 아닌 경우 (예: 배경 클릭) -> 시전 취소
 			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시전 취소: 타일/캐릭터 선택 X"));
+			ShowToastMessage(FText::FromString(TEXT("시전 취소: 선택 없음")));
 			CancelCurrentAction();
 			return;
 		}
@@ -487,15 +488,16 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 				}
 			}
 			else {
-				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시전 취소: 타겟 타일이 유효 범위 밖"));
+				ShowToastMessage(FText::FromString(TEXT("시전 취소: 타겟 타일이 유효 범위 밖")));
 				CancelCurrentAction();
+				return;
 			}
 			if (bIsValidTarget)
 			{
-				// 로컬에서 직접 쏘는 대신, 서버로 RPC를 보내 안전하게 결제/시전
-				Server_RequestSkillCast(SkillData, TargetTile, TargetCharacter);
-
 				CardInteractionComp->OnInstantCastFinished(CastingCard);
+
+				SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, CastingCard);
+
 				if (PC->GetTargetingVisualizer())
 				{
 					PC->GetTargetingVisualizer()->ClearTargeting();
@@ -503,11 +505,14 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 			}
 			else {
 				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 유효하지 않은 타겟"));
+				ShowToastMessage(FText::FromString(TEXT("시전 실패: 유효하지 않은 타겟")));
 				CancelCurrentAction();
+				return;
 			}
 		}
 		else {
 			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: CastingCard 또는 SkillData 또는 TargetTile이 null"));
+			ShowToastMessage(FText::FromString(TEXT("시전 실패: 유효하지 않은 타겟")));
 			CancelCurrentAction();
 		}
 	}
@@ -694,25 +699,6 @@ void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
 	}
 }
 
-// 스킬 시전 서버 검증 및 실행 RPC
-bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter)
-{
-	return SkillData != nullptr;
-}
-void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter)
-{
-	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
-	if (!PC) return;
-
-	UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>();
-	if (SkillComp)
-	{
-		float FinalDamage = SkillData->BaseDamage;
-		// 서버에서 AP 차감 및 로직 실행
-		SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, FinalDamage);
-	}
-}
-
 bool APE_PlayerController::Server_RequestGridMove_Validate(AACTile* TargetTile)
 {
 	return TargetTile != nullptr;
@@ -779,4 +765,57 @@ void APE_PlayerController::Server_SetTurnReadyState_Implementation(bool bReady)
 void APE_PlayerController::Client_ResetReadyState_Implementation()
 {
 	bIsReadyForTurnEnd = false;
+}
+
+void APE_PlayerController::SendSkillCastRequest(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, APE_CardActor* SourceCard)
+{
+	// 고유 번호 발급 및 카드 매핑 저장
+	int32 ReqID = ++CurrentSkillRequestID;
+	if (SourceCard)
+	{
+		PendingSkillRequests.Add(ReqID, SourceCard);
+	}
+
+	// 네트워크를 넘을 수 있는 ID만 서버로 전송
+	Server_RequestSkillCast(SkillData, TargetTile, TargetCharacter, ReqID);
+}
+
+bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID)
+{
+	return SkillData != nullptr;
+}
+void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID)
+{
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+	if (!PC) return;
+
+	if (UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>())
+	{
+		SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage, ClientRequestID);
+	}
+}
+
+void APE_PlayerController::Client_ConfirmSkillExecution_Implementation(int32 ClientRequestID)
+{
+	// 전달받은 번호를 대조하여 로컬에 보관해둔 카드 포인터를 찾아냅니다.
+	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
+	{
+		if (DeckManagerComp)
+		{
+			DeckManagerComp->ConfirmQueuedCard(*FoundCard);
+		}
+		// 처리 완료 후 메모리 정리
+		PendingSkillRequests.Remove(ClientRequestID);
+	}
+}
+
+void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 ClientRequestID)
+{
+	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
+	{
+		if (DeckManagerComp) DeckManagerComp->RevertQueuedCard(*FoundCard);
+		ShowToastMessage(FText::FromString(TEXT("시전 취소: 대상이 사거리에서 벗어났거나 유효하지 않습니다.")));
+
+		PendingSkillRequests.Remove(ClientRequestID);
+	}
 }

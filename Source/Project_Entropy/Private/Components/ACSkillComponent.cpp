@@ -1,9 +1,11 @@
 // Copyright CrograNM
 
 #include "Components/ACSkillComponent.h"
+#include "Core/PE_PlayerController.h"
 #include "CardSystem/PE_SkillData.h"
 #include "CardSystem/PE_SkillActionActor.h"
 #include "Components/ACStatComponent.h"
+#include "Components/ACGridMovementComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -48,10 +50,9 @@ bool UACSkillComponent::TryExecuteSkill(int32 SkillIndex, AACTile* TargetTile, A
 	return TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage);
 }
 
-bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage)
+bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage, int32 ClientRequestID)
 {
-	if (!GetOwner()->HasAuthority()) return false;
-	if (!SkillData || !OwnerStatComponent) return false;
+	if (!GetOwner()->HasAuthority() || !SkillData || !OwnerStatComponent) return false;
 
 	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
 
@@ -77,6 +78,7 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 		Payload.TargetCharacter = TargetCharacter;
 		Payload.SkillData = SkillData;
 		Payload.CalculatedDamage = CalculatedDamage;
+		Payload.ClientRequestID = ClientRequestID;
 
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
@@ -94,79 +96,125 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 }
 
 // 큐에서 대기하다가 자기 차례가 오면 GameState가 이 함수를 부릅니다.
-void UACSkillComponent::ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage)
+void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 {
-	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
+	UPE_SkillData* SkillData = Payload.SkillData;
+	APE_CharacterBase* Caster = Payload.Instigator;
+	APE_GameState* GS = nullptr;
 
-	if (SkillData && SkillData->SkillActorClass)
+	if (!SkillData || !Caster)
 	{
-		NetMulticast_PlayCastVisuals(SkillData);
+		GS = Caster->GetWorld()->GetGameState<APE_GameState>();
+		if (GS) GS->ReportActionEnded();
+		return;
+	}
 
-		// 1. 발사 시작 지점(Muzzle) 계산: 바닥이 아닌 캐릭터의 가슴/명치 높이에서 발사하도록 보정
-		FVector StartLoc = Caster->GetActorLocation();
-		if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
+	// --- [1. 타일 지정 vs 캐릭터 대상 분리 및 타겟 위치 확정] ---
+	APE_CharacterBase* FinalTargetChar = nullptr;
+	FVector FinalTargetLoc = FVector::ZeroVector;
+	FIntPoint TargetGridPos = FIntPoint(-999, -999);
+
+	if (SkillData->TargetType == EPESkillTargetType::Tile)
+	{
+		// 타일 지정일 경우, 캐릭터 추적(TargetCharacter)을 완전히 무시하고 타일 좌표로 고정
+		if (Payload.TargetTile)
 		{
-			StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f; // 약간 위쪽(가슴 높이)으로 조정
-		}
-
-		FTransform SpawnTransform = Caster->GetActorTransform();
-		SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f); // 앞으로 조금 전진
-
-		// 2. 1차 목표 지점 계산
-		APE_CharacterBase* FinalTargetChar = TargetCharacter;
-		FVector FinalTargetLoc = TargetTile ? TargetTile->GetActorLocation() : FVector::ZeroVector;
-
-		if (FinalTargetChar)
-		{
-			FinalTargetLoc = FinalTargetChar->GetActorLocation();
-			// 타겟 높이는 머리 부분으로 맞추기. (캡슐 기준 80% 정도 높이)
-			if (UCapsuleComponent* TargetCap = FinalTargetChar->FindComponentByClass<UCapsuleComponent>())
-			{
-				FinalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
-			}
-		}
-
-		// 3. [핵심] 직사/곡사 물리적 충돌 판정 (Raycast)
-		// 곡사(Gravity > 0)가 아닌 직사 투사체라면 물리적으로 날아가는 길을 검사합니다.
-		if (SkillData->ProjectileSpeed > 0.f && SkillData->ProjectileGravity == 0.f)
-		{
-			FHitResult HitResult;
-			FCollisionQueryParams Params;
-			Params.AddIgnoredActor(Caster); // 시전자 본인은 통과
-
-			// ECC_Visibility 채널로 레이저를 쏩니다. (가슴 높이 -> 가슴 높이)
-			if (GetWorld()->LineTraceSingleByChannel(HitResult, SpawnTransform.GetLocation(), FinalTargetLoc, ECC_Visibility, Params))
-			{
-				// 가는 길에 누군가(적, 파괴가능 장애물 등) 대신 맞았다면 타겟 가로채기!
-				if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
-				{
-					FinalTargetChar = HitChar;
-				}
-				else
-				{
-					// 벽 같은 맵 지형에 막혔다면 대상 없음
-					FinalTargetChar = nullptr;
-				}
-
-				// [시각화 연동] 실제 콜리전 표면에 부딪힌 정확한 3D 좌표(높이 포함)로 도착 지점 보정!
-				FinalTargetLoc = HitResult.Location;
-			}
-		}
-
-		// 4. 최종 확정된 정보로 스킬 액터 스폰 및 발사
-		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform);
-		if (ActionActor)
-		{
-			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, CalculatedDamage);
+			FinalTargetLoc = Payload.TargetTile->GetActorLocation();
+			TargetGridPos = Payload.TargetTile->GetGridPosition();
 		}
 	}
 	else
 	{
-		// 투사체가 아예 없는 순수 버프 등의 경우 액터 스폰 없이 큐를 즉시 비웁니다.
-		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+		FinalTargetChar = Payload.TargetCharacter;
+		if (FinalTargetChar && !FinalTargetChar->GetStatComponent()->IsDead())
 		{
-			GS->ReportActionEnded();
+			FinalTargetLoc = FinalTargetChar->GetActorLocation();
+			if (UCapsuleComponent* TargetCap = FinalTargetChar->FindComponentByClass<UCapsuleComponent>())
+				FinalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
+
+			if (UACGridMovementComponent* MoveComp = FinalTargetChar->GetGridMovementComponent())
+				TargetGridPos = MoveComp->GetGridPosition();
 		}
+	}
+
+	// --- [2. 사거리 및 타겟 유효성 재검증 (실행 시점 최신 기준)] ---
+	bool bIsValidTarget = true;
+
+	if (TargetGridPos == FIntPoint(-999, -999))
+	{
+		bIsValidTarget = false; // 타겟이 죽었거나 유효하지 않음
+	}
+	else if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
+	{
+		// 발동 시점의 맨해튼 거리 재계산
+		FIntPoint CasterPos = Caster->GetGridMovementComponent()->GetGridPosition();
+		int32 CurrentDistance = FMath::Abs(CasterPos.X - TargetGridPos.X) + FMath::Abs(CasterPos.Y - TargetGridPos.Y);
+
+		if (CurrentDistance > SkillData->BaseRange)
+		{
+			bIsValidTarget = false; // 사거리 밖으로 도망침
+		}
+	}
+
+	// 검증 실패 시: 환불 및 카드 반환 (ID 전송)
+	if (!bIsValidTarget)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ACSkillComponent] 실행 시점 재검증 실패. 스킬을 취소합니다."));
+
+		OwnerStatComponent->SetAP(OwnerStatComponent->GetCurrentAP() + SkillData->BaseAPCost);
+
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
+		{
+			PC->Client_CancelSkillExecution(Payload.ClientRequestID);
+		}
+		if (GS) GS->ReportActionEnded();
+		return;
+	}
+
+	// 검증 성공: 실제 스킬 발동 시작 및 카드 영구 소멸 확정 (ID 전송)
+	if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
+	{
+		PC->Client_ConfirmSkillExecution(Payload.ClientRequestID);
+	}
+
+	if (SkillData->SkillActorClass)
+	{
+		NetMulticast_PlayCastVisuals(SkillData);
+
+		FVector StartLoc = Caster->GetActorLocation();
+		if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
+			StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
+
+		FTransform SpawnTransform = Caster->GetActorTransform();
+		SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
+
+		// 직사 판정
+		if (SkillData->ProjectileSpeed > 0.f && SkillData->ProjectileGravity == 0.f)
+		{
+			FHitResult HitResult;
+			FCollisionQueryParams Params;
+			Params.AddIgnoredActor(Caster);
+
+			if (GetWorld()->LineTraceSingleByChannel(HitResult, SpawnTransform.GetLocation(), FinalTargetLoc, ECC_Visibility, Params))
+			{
+				if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+					FinalTargetChar = HitChar;
+				else
+					FinalTargetChar = nullptr;
+
+				FinalTargetLoc = HitResult.Location;
+			}
+		}
+
+		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform);
+		if (ActionActor)
+		{
+			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage);
+		}
+	}
+	else
+	{
+		if (GS) GS->ReportActionEnded();
 	}
 }
 

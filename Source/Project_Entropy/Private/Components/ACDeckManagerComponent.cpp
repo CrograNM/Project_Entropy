@@ -277,3 +277,40 @@ void UACDeckManagerComponent::ReorderHandCards(APE_CardActor* InDraggedCard, APE
 		UpdateHandLayout();
 	}
 }
+
+void UACDeckManagerComponent::QueueCard(APE_CardActor* Card)
+{
+	if (!Card || !HandCards.Contains(Card)) return;
+
+	HandCards.Remove(Card);
+	QueuedCards.Add(Card);
+
+	Card->SetActorEnableCollision(false); // 마우스 무시
+
+	UpdateHandLayout(); // 손패 재정렬 (빈자리 채움)
+}
+
+void UACDeckManagerComponent::ConfirmQueuedCard(APE_CardActor* Card)
+{
+	if (!Card || !QueuedCards.Contains(Card)) return;
+	UE_LOG(LogTemp, Warning, TEXT("[UACDeckManagerComponent] 스킬 실행 확정: '%s' 버린카드더미로 이동"), Card ? *Card->GetCardName() : TEXT("null"));
+
+	QueuedCards.Remove(Card);
+	DiscardPile.Add(Card->GetCardInstance());
+	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
+
+	Card->PlayDiscardAnimation(); // 산화 연출 실행
+}
+
+void UACDeckManagerComponent::RevertQueuedCard(APE_CardActor* Card)
+{
+	if (!Card || !QueuedCards.Contains(Card)) return;
+
+	QueuedCards.Remove(Card);
+	HandCards.Add(Card); // 다시 손패로 복귀
+
+	Card->SetActorEnableCollision(true);
+
+	UpdateHandLayout(); // 자기 자리를 찾아가도록 상대 좌표 계산
+	Card->PlayCancelCastingAnimation(Card->GetActorTransform()); // 손패로 돌아가는 연출
+}

@@ -112,7 +112,7 @@ void APE_GameState::ProcessNextAction()
 		UACSkillComponent* SkillComp = Payload.Instigator->FindComponentByClass<UACSkillComponent>();
 		if (SkillComp)
 		{
-			SkillComp->ExecuteQueuedSkill(Payload.SkillData, Payload.TargetTile, Payload.TargetCharacter, Payload.CalculatedDamage);
+			SkillComp->ExecuteQueuedSkill(Payload);
 		}
 		else ReportActionEnded();
 	}

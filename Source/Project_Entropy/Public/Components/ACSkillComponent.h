@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "CardSystem/PE_DataTypes.h"
 #include "ACSkillComponent.generated.h"
 
 class UPE_SkillData;
@@ -26,10 +27,10 @@ public:
 
 	/** [카드 시스템용] 카드 인스턴스가 연산된 최종 데미지와 함께 스킬 데이터를 직접 주입하여 발동 */
 	UFUNCTION(BlueprintCallable, Category = "Skill System")
-	bool TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage);
+	bool TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage, int32 ClientRequestID = -1);
 
-	// GameState의 큐가 자신의 차례일 때 스킬을 물리적으로 발동시키는 함수
-	void ExecuteQueuedSkill(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage);
+	// GameState의 큐가 자신의 차례일 때 스킬을 물리적으로 발동시키는 함수 (개별 인자 대신 Payload를 직접 받도록 변경)
+	void ExecuteQueuedSkill(const FPESkillActionPayload& Payload);
 
 	/** 현재 장착된 스킬 목록 반환 */
 	UFUNCTION(BlueprintCallable, Category = "Skill System")

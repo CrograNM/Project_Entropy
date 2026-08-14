@@ -54,9 +54,20 @@ public:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_RequestGridMove(AACTile* TargetTile); // 클라이언트에서 타일 클릭 시 서버로 이동 요청 (충돌 처리 포함)
 
+	// 클라이언트 내부에서 ID를 매핑하고 서버로 전송하는 래퍼 함수
+	UFUNCTION(BlueprintCallable, Category = "Battle Input")
+	void SendSkillCastRequest(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, class APE_CardActor* SourceCard);
+	
 	// 스킬 시전 서버 요청
 	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_RequestSkillCast(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter);
+	void Server_RequestSkillCast(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, int32 ClientRequestID);
+
+	// 서버가 큐 실행 결과를 클라이언트에 통보
+	UFUNCTION(Client, Reliable)
+	void Client_ConfirmSkillExecution(int32 ClientRequestID);
+
+	UFUNCTION(Client, Reliable)
+	void Client_CancelSkillExecution(int32 ClientRequestID);
 
 	// 서버 측에서 강제로 클라이언트의 이동/캐스팅 액션을 취소 (턴 종료 시 사용)
 	UFUNCTION(Client, Reliable)
@@ -170,6 +181,11 @@ private:
 	bool bIsGridMoveActivated = false;	// 이동 모드 활성화 여부
 
 	bool IsMyTurn() const; // 현재 턴이 내 팀의 턴인지 확인
+
+	// 카드 정보 전송용 클라이언트 로컬 매핑 데이터 (시전 요청 ID -> 카드 액터)
+	int32 CurrentSkillRequestID = 0;
+	UPROPERTY()
+	TMap<int32, class APE_CardActor*> PendingSkillRequests;
 
 	// ----- [Temporary Variables] -----
 	float StoredMouseX = 0.f;

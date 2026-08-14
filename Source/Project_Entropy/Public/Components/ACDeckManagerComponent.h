@@ -132,4 +132,14 @@ private:
 	// 시전 대기(중앙으로 띄워진) 중인 카드
 	UPROPERTY()
 	TObjectPtr<APE_CardActor> CastingCard;
+
+public:
+	/** 서버 검증을 기다리며 숨겨진 카드들 */
+	void QueueCard(APE_CardActor* Card);
+	void ConfirmQueuedCard(APE_CardActor* Card);
+	void RevertQueuedCard(APE_CardActor* Card);
+
+private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck|State", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<APE_CardActor>> QueuedCards;
 };

@@ -264,7 +264,14 @@ void UACCardInteractionComponent::ReleaseCard()
 						DeckManager->SetDraggedCard(nullptr);
 						DeckManager->SetInCastingZone(false);
 
-						// 카드 액터에 즉발 사용 애니메이션(중앙 이동) 재생 지시
+						// 즉발 스킬도 서버 전송 전에 큐에 먼저 등록
+						DeckManager->QueueCard(CastingCard);
+
+						// 즉발 스킬의 경우 OnSelect를 타지 않으므로 여기서 바로 서버 전송
+						if (PE_PC)
+						{
+							PE_PC->SendSkillCastRequest(SkillData, nullptr, nullptr, CastingCard);
+						}
 						CastingCard->PlayInstantCastingAnimation();
 					}
 					else
@@ -314,11 +321,9 @@ void UACCardInteractionComponent::OnInstantCastFinished(APE_CardActor* CallerCar
 	{
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
-			// 카드 애니메이션이 시작되기 전, 물리적 충돌을 강제로 꺼서 마우스에 다시 잡히는 것을 원천 차단합니다.
-			CastingCard->SetActorEnableCollision(false);
-
-			CastingCard->PlayDiscardAnimation();
-			DeckManager->DiscardCard(CastingCard);
+			// 소멸시키지 않고 큐(대기열)로 보냅니다.
+			DeckManager->QueueCard(CastingCard);
+			DeckManager->SetCastingCard(nullptr);
 		}
 		CastingCard = nullptr;
 	}

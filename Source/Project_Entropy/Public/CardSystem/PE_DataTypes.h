@@ -30,21 +30,17 @@ USTRUCT(BlueprintType)
 struct FPESkillActionPayload
 {
 	GENERATED_BODY()
+	
+	UPROPERTY() class APE_CharacterBase* Instigator = nullptr;
+	UPROPERTY() class AACTile* TargetTile = nullptr;
+	UPROPERTY() class APE_CharacterBase* TargetCharacter = nullptr;
+	UPROPERTY() class UPE_SkillData* SkillData = nullptr;
+	UPROPERTY() float CalculatedDamage = 0.f;
 
-	UPROPERTY()
-	class APE_CharacterBase* Instigator = nullptr;
+	UPROPERTY() class APE_CardActor* SourceCard = nullptr; // 원본 카드 (큐에서 시전 시 성공/실패 처리를 위해 참조)
 
-	UPROPERTY()
-	class AACTile* TargetTile = nullptr;
-
-	UPROPERTY()
-	class APE_CharacterBase* TargetCharacter = nullptr;
-
-	UPROPERTY()
-	class UPE_SkillData* SkillData = nullptr;
-
-	UPROPERTY()
-	float CalculatedDamage = 0.f;
+	// 로컬 클라이언트의 카드 식별용 고유 요청 번호
+	UPROPERTY() int32 ClientRequestID = -1;
 };
 
 // 광역 스킬(AoE)의 형태 정의
