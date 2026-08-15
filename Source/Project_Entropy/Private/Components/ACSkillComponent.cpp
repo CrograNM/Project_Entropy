@@ -181,6 +181,16 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		PC->Client_ConfirmSkillExecution(Payload.ClientRequestID);
 	}
 
+	// 물리 연산 및 발사 전, 대상을 향해 정확히 회전시켜 방향 벡터 오차를 100% 억제
+	if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
+	{
+		FVector Dir = (FinalTargetLoc - Caster->GetActorLocation()).GetSafeNormal2D();
+		if (!Dir.IsNearlyZero())
+		{
+			Caster->SetActorRotation(Dir.Rotation());
+		}
+	}
+
 	if (SkillData->SkillActorClass)
 	{
 		NetMulticast_PlayCastVisuals(SkillData);

@@ -37,6 +37,10 @@ protected:
 	void OnTeamTurnStarted(int32 InTeamID);
 	
 protected:
+	/** --- Caching --- */
+	UPROPERTY()
+	class AACGridSystem* CachedGridSystem;
+
 	/** --- Camera --- */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> CameraBase;

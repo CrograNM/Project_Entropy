@@ -57,6 +57,37 @@ void APE_PlayerCharacter::BeginPlay()
 			TurnManager->OnTeamTurnStarted.AddDynamic(this, &APE_PlayerCharacter::OnTeamTurnStarted);
 		}
 	}
+
+	// --- 틱 연산을 위해 캐싱 ---
+	CachedGridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
+}
+
+void APE_PlayerCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// 모든 클라이언트와 서버에서 실행되는 보간 회전 로직
+	// 타겟팅 모드 중이고, 유효한 타일이 조준되어 있다면 그곳을 바라봅니다.
+	if (TargetingVisualizer && TargetingVisualizer->GetTargetingMode() != ETargetingMode::None)
+	{
+		FIntPoint HoveredTilePos = TargetingVisualizer->GetHoveredTile();
+		if (HoveredTilePos != FIntPoint(-999, -999) && CachedGridSystem)
+		{
+			if (AACTile* TargetTile = CachedGridSystem->GetTileAtPosition(HoveredTilePos))
+			{
+				FVector StartLoc = GetActorLocation();
+				FVector TargetLoc = TargetTile->GetActorLocation();
+				FVector Dir = (TargetLoc - StartLoc).GetSafeNormal2D(); // Z축을 무시한 평면 방향
+
+				if (!Dir.IsNearlyZero())
+				{
+					FRotator TargetRot = Dir.Rotation();
+					FRotator NewRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, 15.f);
+					SetActorRotation(NewRot);
+				}
+			}
+		}
+	}
 }
 
 void APE_PlayerCharacter::OnTeamTurnStarted(int32 InTeamID)
@@ -70,11 +101,6 @@ void APE_PlayerCharacter::OnTeamTurnStarted(int32 InTeamID)
 			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerCharacter] 내 턴 시작! AP가 %d로 모두 회복되었습니다."), StatComponent->GetCurrentAP());
 		}
 	}
-}
-
-void APE_PlayerCharacter::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
 }
 
 void APE_PlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

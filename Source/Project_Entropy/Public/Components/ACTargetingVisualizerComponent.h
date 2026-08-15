@@ -39,6 +39,9 @@ public:
 	// 로컬 예측(Local Prediction) 및 동기화를 위한 핵심 렌더링 함수
 	void RefreshVisuals();
 
+	ETargetingMode GetTargetingMode() const { return RepTargetingMode; }
+	FIntPoint GetHoveredTile() const { return RepHoveredTile; }
+
 protected:
 	virtual void BeginPlay() override;
 
