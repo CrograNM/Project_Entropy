@@ -68,9 +68,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
 	float DragDepth = 150.f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
-	float DragInterpSpeed = 15.f;
-
 	UPROPERTY()
-	APE_PlayerController* PC; // Tick에서 매번 GetOwner()->Cast<APlayerController>()를 호출하지 않도록 캐싱
+	APE_PlayerController* PC; // Tick에서 매번 Cast<APE_PlayerController>()를 호출하지 않도록 캐싱
 };

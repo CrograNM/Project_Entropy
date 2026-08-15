@@ -311,6 +311,12 @@ void UACDeckManagerComponent::RevertQueuedCard(APE_CardActor* Card)
 
 	Card->SetActorEnableCollision(true);
 
+	// 상태 플래그 전부 초기화
+	DraggedCard = nullptr;
+	CastingCard = nullptr;
+	bInCastingZone = false;
+
+	FTransform RelativeTransform = Card->GetRootComponent()->GetRelativeTransform();
+	Card->PlayCancelCastingAnimation(RelativeTransform);
 	UpdateHandLayout(); // 자기 자리를 찾아가도록 상대 좌표 계산
-	Card->PlayCancelCastingAnimation(Card->GetActorTransform()); // 손패로 돌아가는 연출
 }

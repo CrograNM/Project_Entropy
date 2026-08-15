@@ -109,7 +109,7 @@ bool APE_PlayerController::IsMyTurn() const
 	return (TM->GetCurrentPhase() == EPEBattlePhase::TeamTurn && TM->GetCurrentTeamTurn() == PC->GetTeamID());
 }
 
-// 지연 초기화 헬퍼 함수 구현 (접근 시 비어있다면 동적으로 채워넣음)
+// ----- [Get Cached References] -----
 APE_PlayerCharacter* APE_PlayerController::GetCachedPlayerCharacter()
 {
 	if (!PlayerCharacter)
@@ -130,6 +130,7 @@ UPE_TurnManagerComponent* APE_PlayerController::GetCachedTurnManager()
 	return TurnManager;
 }
 
+// ----- [Input Setup] -----
 void APE_PlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -184,6 +185,61 @@ void APE_PlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(IA_CameraHeight, ETriggerEvent::Triggered, this, &APE_PlayerController::OnCameraHeight);
 		}
+	}
+}
+void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
+{
+	CurrentInputMode = NewState;
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	if (!LocalPlayer) return;
+
+	// 이 시점에서는 LocalPlayer와 Pawn이 모두 존재하므로 완벽하게 세팅
+	ApplyCameraMode();
+	CancelCurrentAction();
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+	if (!Subsystem) return;
+
+	// 안전하게 기존 컨텍스트를 모두 비우기
+	Subsystem->ClearAllMappings();
+
+	// 상태에 따라 필요한 IMC만 활성화하고, 마우스 입력 모드 제어
+	switch (NewState)
+	{
+	case EPEGameState::Base:
+	{
+		if (IMC_DirectMove)
+		{
+			Subsystem->AddMappingContext(IMC_DirectMove, 0);
+		}
+		// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
+		FInputModeGameOnly InputModeDataGame;
+		SetInputMode(InputModeDataGame);
+
+		SetBattleUIVisibility(false);
+
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 기지 모드로 전환"));
+		break;
+	}
+
+	case EPEGameState::Battle:
+	{
+		if (IMC_Battle)
+		{
+			Subsystem->AddMappingContext(IMC_Battle, 0);
+		}
+		// 배틀 모드: GameAndUI, 마우스 커서가 기본적으로 보이도록 설정
+		FInputModeGameAndUI InputModeDataUI;
+		InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputModeDataUI.SetHideCursorDuringCapture(false);
+		SetInputMode(InputModeDataUI);
+
+		SetBattleUIVisibility(true);
+
+		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
+		break;
+	}
 	}
 }
 
@@ -310,13 +366,10 @@ void APE_PlayerController::ToggleGridMovementActivation()
 		CancelCurrentAction();
 	}
 }
-
-// 클라이언트 강제 조작 취소 RPC 구현부 추가
 void APE_PlayerController::Client_CancelCurrentAction_Implementation()
 {
 	CancelCurrentAction(); // 기존 로컬 함수 호출
 }
-
 void APE_PlayerController::CancelCurrentAction()
 {
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
@@ -527,61 +580,6 @@ void APE_PlayerController::OnTestDrawCard(int32 Count)
 		DeckManagerComp->DrawCards(Count);
 	}
 }
-void APE_PlayerController::SwitchInputMode(EPEGameState NewState)
-{
-	CurrentInputMode = NewState;
-
-	ULocalPlayer* LocalPlayer = GetLocalPlayer();
-	if (!LocalPlayer) return;
-
-	// 이 시점에서는 LocalPlayer와 Pawn이 모두 존재하므로 완벽하게 세팅
-	ApplyCameraMode();
-	CancelCurrentAction();
-
-	UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-	if (!Subsystem) return;
-
-	// 안전하게 기존 컨텍스트를 모두 비우기
-	Subsystem->ClearAllMappings();
-
-	// 상태에 따라 필요한 IMC만 활성화하고, 마우스 입력 모드 제어
-	switch (NewState)
-	{
-	case EPEGameState::Base:
-	{
-		if (IMC_DirectMove)
-		{
-			Subsystem->AddMappingContext(IMC_DirectMove, 0);
-		} 
-		// 기지 모드: 마우스로 화면 회전을 하거나 조작해야 한다면 GameAndUI 모드로 설정
-		FInputModeGameOnly InputModeDataGame;
-		SetInputMode(InputModeDataGame);
-
-		SetBattleUIVisibility(false);
-
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 기지 모드로 전환"));
-		break;
-	}
-
-	case EPEGameState::Battle:
-	{
-		if (IMC_Battle)
-		{
-			Subsystem->AddMappingContext(IMC_Battle, 0);
-		}
-		// 배틀 모드: GameAndUI, 마우스 커서가 기본적으로 보이도록 설정
-		FInputModeGameAndUI InputModeDataUI;
-		InputModeDataUI.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputModeDataUI.SetHideCursorDuringCapture(false);
-		SetInputMode(InputModeDataUI);
-
-		SetBattleUIVisibility(true);
-
-		UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController::SwitchInputMode] 배틀 모드로 전환"));
-		break;
-	}
-	}
-}
 
 bool APE_PlayerController::Server_RequestGridMove_Validate(AACTile* TargetTile)
 {
@@ -675,7 +673,11 @@ void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData*
 
 	if (UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>())
 	{
-		SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage, ClientRequestID);
+		if (!SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage, ClientRequestID)) 
+		{
+			// 실패 시 클라이언트에게 취소 메시지 전송
+			Client_CancelSkillExecution(ClientRequestID);
+		}
 	}
 }
 
@@ -697,7 +699,11 @@ void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 Clie
 {
 	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
 	{
-		if (DeckManagerComp) DeckManagerComp->RevertQueuedCard(*FoundCard);
+		if (DeckManagerComp) 
+		{
+			DeckManagerComp->RevertQueuedCard(*FoundCard);
+			DeckManagerComp->UpdateHandLayout();
+		}
 		ShowToastMessage(FText::FromString(TEXT("시전 취소: 대상이 사거리에서 벗어났거나 유효하지 않습니다.")));
 
 		PendingSkillRequests.Remove(ClientRequestID);
@@ -718,25 +724,27 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		return;
 	}
 
+	// AP 부족 체크
+	if (PC->GetStatComponent()->GetCurrentAP() < SkillData->BaseAPCost)
+	{
+		ShowToastMessage(FText::FromString(TEXT("AP가 부족합니다.")));
+		CardInteractionComp->CancelCasting();
+		return;
+	}
+
 	// 1. 즉발 카드 처리 (타겟팅 무시)
 	if (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self)
 	{
-		if (PC->GetStatComponent()->GetCurrentAP() >= SkillData->BaseAPCost)
-		{
-			if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
-			SendSkillCastRequest(SkillData, nullptr, nullptr, DroppedCard);
+		if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
 
-			DroppedCard->PlayInstantCastingAnimation();
-			PC->GetTargetingVisualizer()->ClearTargeting();
+		SendSkillCastRequest(SkillData, nullptr, nullptr, DroppedCard);
 
-			// 상태 초기화
-			CardInteractionComp->SetInteractionEnabled(true);
-		}
-		else
-		{
-			ShowToastMessage(FText::FromString(TEXT("AP가 부족합니다.")));
-			CardInteractionComp->CancelCasting();
-		}
+		DroppedCard->PlayInstantCastingAnimation();
+		PC->GetTargetingVisualizer()->ClearTargeting();
+
+		// 상태 초기화
+		CardInteractionComp->SetInteractionEnabled(true);
+		
 		return;
 	}
 
@@ -755,13 +763,6 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 	if (!TargetTile)
 	{
 		ShowToastMessage(FText::FromString(TEXT("시전 취소: 타겟을 지정하지 않았습니다.")));
-		CardInteractionComp->CancelCasting();
-		return;
-	}
-
-	if (PC->GetStatComponent()->GetCurrentAP() < SkillData->BaseAPCost)
-	{
-		ShowToastMessage(FText::FromString(TEXT("AP가 부족합니다.")));
 		CardInteractionComp->CancelCasting();
 		return;
 	}

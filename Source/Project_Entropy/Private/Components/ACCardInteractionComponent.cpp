@@ -112,7 +112,7 @@ void UACCardInteractionComponent::ProcessDragging()
 				}
 			}
 
-			// 카드가 화면 중앙에 척 붙는 연출 실행
+			// 카드 시전 연출 재생 (중앙으로 띄우는 모션 -> 이후 옆쪽으로 날아가 대기)
 			GrabbedCard->PlayCastingReadyAnimation();
 		}
 
@@ -120,7 +120,7 @@ void UACCardInteractionComponent::ProcessDragging()
 	}
 	else
 	{
-		// [캐스팅 구역에서 다시 손패 영역으로 내려왔을 때 타겟팅 취소]
+		// 캐스팅 구역에서 다시 손패 영역으로 내려왔을 때 타겟팅 취소
 		if (bIsPreparingToCast)
 		{
 			bIsPreparingToCast = false;
@@ -135,7 +135,7 @@ void UACCardInteractionComponent::ProcessDragging()
 				}
 			}
 
-			// 취소 연출(손패로 돌아가는 모션 준비)
+			// 취소 연출 (손패로 돌아가는 모션 준비 - 기존 애니메이션을 멈춤)
 			GrabbedCard->PlayCancelCastingAnimation(GrabbedCard->GetActorTransform());
 		}
 
