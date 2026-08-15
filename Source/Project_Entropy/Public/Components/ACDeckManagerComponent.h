@@ -23,6 +23,8 @@ class PROJECT_ENTROPY_API UACDeckManagerComponent : public UActorComponent
 public:
 	UACDeckManagerComponent();
 
+	TArray<TObjectPtr<APE_CardActor>> GetHandCards() const { return HandCards; }
+
 	/** 초기 덱 데이터 주입 */
 	UFUNCTION(BlueprintCallable, Category = "Deck")
 	void InitializeDeck(const TArray<UPE_CardData*>& InitialDeckData);

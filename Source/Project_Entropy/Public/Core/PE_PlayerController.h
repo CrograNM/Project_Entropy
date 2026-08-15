@@ -86,12 +86,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Turn System")
 	bool bIsReadyForTurnEnd = false;
 
-protected:
-	virtual void BeginPlay() override;
-	virtual void SetupInputComponent() override;
-
-	virtual void SetPawn(APawn* InPawn) override;
-	void ApplyCameraMode();
+	// 마우스를 뗐을 때 카드의 유효성을 검사하고 서버로 보내는 로직
+	UFUNCTION(BlueprintCallable, Category = "Battle Input")
+	void TryExecuteCardDrop(class APE_CardActor* DroppedCard);
 
 	// --- [안전한 멀티플레이어 참조 헬퍼 함수] ---
 	UFUNCTION(BlueprintCallable, Category = "References")
@@ -99,6 +96,13 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "References")
 	UPE_TurnManagerComponent* GetCachedTurnManager();
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void SetupInputComponent() override;
+
+	virtual void SetPawn(APawn* InPawn) override;
+	void ApplyCameraMode();
 
 	// ----- [Input Mapping Contexts & Actions] -----
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Context", meta = (AllowPrivateAccess = "true"))

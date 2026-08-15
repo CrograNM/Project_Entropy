@@ -215,9 +215,9 @@ void APE_PlayerController::UpdateGridHovering()
 	}
 
 	// 2. [캐스팅 모드]
-	else if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
+	else if (CardInteractionComp && CardInteractionComp->IsPreparingToCast())
 	{
-		APE_CardActor* CastingCard = CardInteractionComp->GetCastingCard();
+		APE_CardActor* CastingCard = CardInteractionComp->GetGrabbedCard();
 		if (!CastingCard || !CastingCard->GetSkillData()) return;
 
 		if (bHit)
@@ -234,7 +234,6 @@ void APE_PlayerController::UpdateGridHovering()
 
 			if (HoveredTile)
 			{
-				// 유효성 검사 후 Visualizer에게 마우스 위치 전달
 				bool bIsValidTarget = false;
 				if (PC->GetTargetingVisualizer()->IsTileInRange(HoveredTile))
 				{
@@ -244,13 +243,11 @@ void APE_PlayerController::UpdateGridHovering()
 					}
 					else if (CastingCard->GetSkillData()->TargetType == EPESkillTargetType::Snap_Enemy)
 					{
-						// TeamID를 기반으로 피아 식별 진행 (PVP 및 PVE 완벽 대응)
 						TArray<AActor*> AllChars;
 						UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
 						for (AActor* Actor : AllChars)
 						{
 							APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
-							// 살아있고, 자신과 팀이 다른 캐릭터만 타겟으로 인정합니다.
 							if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
 							{
 								if (TargetChar->GetGridMovementComponent()->GetGridPosition() == HoveredTile->GetGridPosition())
@@ -263,14 +260,8 @@ void APE_PlayerController::UpdateGridHovering()
 					}
 				}
 
-				if (bIsValidTarget)
-				{
-					PC->GetTargetingVisualizer()->UpdateHoveredTile(HoveredTile->GetGridPosition());
-				}
-				else
-				{
-					PC->GetTargetingVisualizer()->UpdateHoveredTile(FIntPoint(-999, -999));
-				}
+				if (bIsValidTarget) PC->GetTargetingVisualizer()->UpdateHoveredTile(HoveredTile->GetGridPosition());
+				else PC->GetTargetingVisualizer()->UpdateHoveredTile(FIntPoint(-999, -999));
 			}
 		}
 	}
@@ -349,7 +340,7 @@ void APE_PlayerController::CancelCurrentAction()
 	}
 
 	// [카드 상호작용 취소]
-	if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
+	if (CardInteractionComp)
 	{
 		CardInteractionComp->CancelCasting();
 
@@ -417,105 +408,6 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 			}
 		}
 	}
-
-	// [스킬 시전 모드 클릭]
-	else if (CardInteractionComp && CardInteractionComp->GetCurrentState() == EPEInteractionState::Casting)
-	{
-		FHitResult HitResult;
-		GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
-		// 캐스팅 중인 카드를 직접 클릭한 경우
-		APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
-		if (HitCard && HitCard == CardInteractionComp->GetCastingCard())
-		{
-			CancelCurrentAction();
-			return;
-		}
-
-		AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
-		APE_CharacterBase* TargetCharacter = Cast<APE_CharacterBase>(HitResult.GetActor());
-		APE_CardActor* CastingCard = CardInteractionComp->GetCastingCard();
-
-		if (!TargetTile && TargetCharacter && TargetCharacter->GetGridMovementComponent())
-		{
-			TargetTile = GridSystem->GetTileAtPosition(TargetCharacter->GetGridMovementComponent()->GetGridPosition());
-		}
-		else if (!TargetTile && !TargetCharacter)
-		{
-			// 타일도 캐릭터도 아닌 경우 (예: 배경 클릭) -> 시전 취소
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시전 취소: 타일/캐릭터 선택 X"));
-			ShowToastMessage(FText::FromString(TEXT("시전 취소: 선택 없음")));
-			CancelCurrentAction();
-			return;
-		}
-		else {
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도: 타일 %s, 캐릭터 %s, 스킬: %s"),
-				TargetTile ? *TargetTile->GetName() : TEXT("null"),
-				TargetCharacter ? *TargetCharacter->GetName() : TEXT("null"),
-				CastingCard && CastingCard->GetSkillData() ? *CastingCard->GetSkillData()->GetName() : TEXT("null"));
-		}
-
-		if (CastingCard && CastingCard->GetSkillData() && TargetTile)
-		{
-			UPE_SkillData* SkillData = CastingCard->GetSkillData();
-
-			// 유효성 검사 (타겟 스냅 룰 적용), 사거리 유효성 검사를 TargetingVisualizer로부터 인계받음
-			bool bIsValidTarget = false;
-			if (PC->GetTargetingVisualizer()->IsTileInRange(TargetTile)) 
-			{
-				if (SkillData->TargetType == EPESkillTargetType::Tile)
-				{
-					bIsValidTarget = true;
-				}
-				else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
-				{
-					// [수정됨] TeamID 기반 적 스냅 판별
-					TArray<AActor*> AllChars;
-					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-					for (AActor* Actor : AllChars)
-					{
-						APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
-						if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
-						{
-							if (TargetChar->GetGridMovementComponent()->GetGridPosition() == TargetTile->GetGridPosition())
-							{
-								TargetCharacter = TargetChar; // 스냅된 적 캐릭터 캐싱
-								bIsValidTarget = true;
-								break;
-							}
-						}
-					}
-				}
-			}
-			else {
-				ShowToastMessage(FText::FromString(TEXT("시전 취소: 타겟 타일이 유효 범위 밖")));
-				CancelCurrentAction();
-				return;
-			}
-			if (bIsValidTarget)
-			{
-				CardInteractionComp->OnInstantCastFinished(CastingCard);
-
-				SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, CastingCard);
-
-				if (PC->GetTargetingVisualizer())
-				{
-					PC->GetTargetingVisualizer()->ClearTargeting();
-				}
-			}
-			else {
-				UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: 유효하지 않은 타겟"));
-				ShowToastMessage(FText::FromString(TEXT("시전 실패: 유효하지 않은 타겟")));
-				CancelCurrentAction();
-				return;
-			}
-		}
-		else {
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] 스킬 시도 실패: CastingCard 또는 SkillData 또는 TargetTile이 null"));
-			ShowToastMessage(FText::FromString(TEXT("시전 실패: 유효하지 않은 타겟")));
-			CancelCurrentAction();
-		}
-	}
 }
 void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
 {
@@ -536,14 +428,6 @@ void APE_PlayerController::OnCardRelease(const FInputActionValue& Value)
 	if (CardInteractionComp)
 	{
 		CardInteractionComp->ReleaseCard();
-
-		// 카드를 놓아 캐스팅 모드로 진입했을 때 사거리 표시 확정
-		APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
-		APE_CardActor* CastingCard = CardInteractionComp->GetCastingCard();
-		if (PC && PC->GetTargetingVisualizer() && CastingCard && CastingCard->GetSkillData())
-		{
-			PC->GetTargetingVisualizer()->SetTargetingMode(ETargetingMode::Skill, CastingCard->GetSkillData()->BaseRange, CastingCard->GetSkillData());
-		}
 	}
 }
 
@@ -817,5 +701,110 @@ void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 Clie
 		ShowToastMessage(FText::FromString(TEXT("시전 취소: 대상이 사거리에서 벗어났거나 유효하지 않습니다.")));
 
 		PendingSkillRequests.Remove(ClientRequestID);
+	}
+}
+
+void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
+{
+	// 드래그를 놓았을 때 결제 및 큐 등록 로직
+	if (!DroppedCard || !DroppedCard->GetSkillData() || !CardInteractionComp) return;
+
+	UPE_SkillData* SkillData = DroppedCard->GetSkillData();
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+
+	if (!PC || !PC->GetTargetingVisualizer() || !PC->GetStatComponent())
+	{
+		CardInteractionComp->CancelCasting();
+		return;
+	}
+
+	// 1. 즉발 카드 처리 (타겟팅 무시)
+	if (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self)
+	{
+		if (PC->GetStatComponent()->GetCurrentAP() >= SkillData->BaseAPCost)
+		{
+			if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
+			SendSkillCastRequest(SkillData, nullptr, nullptr, DroppedCard);
+
+			DroppedCard->PlayInstantCastingAnimation();
+			PC->GetTargetingVisualizer()->ClearTargeting();
+
+			// 상태 초기화
+			CardInteractionComp->SetInteractionEnabled(true);
+		}
+		else
+		{
+			ShowToastMessage(FText::FromString(TEXT("AP가 부족합니다.")));
+			CardInteractionComp->CancelCasting();
+		}
+		return;
+	}
+
+	// 2. 타겟팅 스킬 처리 (마우스를 놓은 위치 검사)
+	FHitResult HitResult;
+	GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+	AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
+	APE_CharacterBase* TargetCharacter = Cast<APE_CharacterBase>(HitResult.GetActor());
+
+	if (!TargetTile && TargetCharacter && TargetCharacter->GetGridMovementComponent())
+	{
+		TargetTile = GridSystem->GetTileAtPosition(TargetCharacter->GetGridMovementComponent()->GetGridPosition());
+	}
+
+	if (!TargetTile)
+	{
+		ShowToastMessage(FText::FromString(TEXT("시전 취소: 타겟을 지정하지 않았습니다.")));
+		CardInteractionComp->CancelCasting();
+		return;
+	}
+
+	if (PC->GetStatComponent()->GetCurrentAP() < SkillData->BaseAPCost)
+	{
+		ShowToastMessage(FText::FromString(TEXT("AP가 부족합니다.")));
+		CardInteractionComp->CancelCasting();
+		return;
+	}
+
+	bool bIsValidTarget = false;
+	if (PC->GetTargetingVisualizer()->IsTileInRange(TargetTile))
+	{
+		if (SkillData->TargetType == EPESkillTargetType::Tile)
+		{
+			bIsValidTarget = true;
+		}
+		else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
+		{
+			TArray<AActor*> AllChars;
+			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+			for (AActor* Actor : AllChars)
+			{
+				APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
+				if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
+				{
+					if (TargetChar->GetGridMovementComponent()->GetGridPosition() == TargetTile->GetGridPosition())
+					{
+						TargetCharacter = TargetChar;
+						bIsValidTarget = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	if (bIsValidTarget)
+	{
+		if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
+		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, DroppedCard);
+		PC->GetTargetingVisualizer()->ClearTargeting();
+
+		// 인터랙션 완전 초기화
+		CardInteractionComp->SetInteractionEnabled(true);
+	}
+	else
+	{
+		ShowToastMessage(FText::FromString(TEXT("시전 취소: 유효하지 않은 타겟입니다.")));
+		CardInteractionComp->CancelCasting();
 	}
 }

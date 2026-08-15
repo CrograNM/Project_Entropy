@@ -7,7 +7,7 @@
 #include "ACCardInteractionComponent.generated.h"
 
 class APE_CardActor;
-class APlayerController;
+class APE_PlayerController;
 
 /** 상호작용 상태 정의 */
 UENUM(BlueprintType)
@@ -15,8 +15,6 @@ enum class EPEInteractionState : uint8
 {
 	Hovering	UMETA(DisplayName = "Hovering"),
 	Selecting	UMETA(DisplayName = "Selecting (Dragging)"),
-	Waiting		UMETA(DisplayName = "Waiting (Animation/Input Lock)"),
-	Casting		UMETA(DisplayName = "Casting (Targeting)"),
 	Disabled	UMETA(DisplayName = "Disabled (Moving Mode)")
 };
 
@@ -44,17 +42,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
 	void CancelCasting();
 
-	/** BP에서 시전 대기 애니메이션이 끝났을 때 C++로 알려주는 콜백 */
-	UFUNCTION(BlueprintCallable, Category = "Interaction|State")
-	void OnCastingReadyFinished(APE_CardActor* CallerCard);
-
-	/** BP에서 즉발 카드의 산화 애니메이션이 완전히 끝났을 때 C++로 알려주는 콜백 */
-	UFUNCTION(BlueprintCallable, Category = "Interaction|State")
-	void OnInstantCastFinished(APE_CardActor* CallerCard);
-
 	// --- Getter ---
 	EPEInteractionState GetCurrentState() const { return CurrentState; }
-	APE_CardActor* GetCastingCard() const { return CastingCard; }
+	APE_CardActor* GetGrabbedCard() const { return GrabbedCard; }
+	bool IsPreparingToCast() const { return bIsPreparingToCast; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -65,22 +56,14 @@ private:
 	EPEInteractionState CurrentState = EPEInteractionState::Hovering;
 
 	bool bIsSuspended = false;
+	bool bIsPreparingToCast = false;
 
 	void ProcessHovering();
 	void ProcessDragging();
-	void ProcessCasting();
 
-	UPROPERTY()
-	TObjectPtr<APE_CardActor> HoveredCard;
-
-	UPROPERTY()
-	TObjectPtr<APE_CardActor> GrabbedCard;
-
-	UPROPERTY()
-	TObjectPtr<APE_CardActor> CastingCard;
-
-	UPROPERTY()
-	TObjectPtr<APE_CardActor> HoveredCardDuringDrag;
+	UPROPERTY() TObjectPtr<APE_CardActor> HoveredCard;
+	UPROPERTY() TObjectPtr<APE_CardActor> GrabbedCard;
+	UPROPERTY() TObjectPtr<APE_CardActor> HoveredCardDuringDrag;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Interaction|Settings")
 	float DragDepth = 150.f;
@@ -89,5 +72,5 @@ private:
 	float DragInterpSpeed = 15.f;
 
 	UPROPERTY()
-	APlayerController* PC; // Tick에서 매번 GetOwner()->Cast<APlayerController>()를 호출하지 않도록 캐싱
+	APE_PlayerController* PC; // Tick에서 매번 GetOwner()->Cast<APlayerController>()를 호출하지 않도록 캐싱
 };

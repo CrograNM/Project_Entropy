@@ -2,6 +2,7 @@
 
 #include "Components/ACCardInteractionComponent.h"
 #include "Components/ACDeckManagerComponent.h"
+#include "Components/ACTargetingVisualizerComponent.h"
 #include "CardSystem/PE_CardActor.h"
 #include "CardSystem/PE_CardInstance.h"
 #include "CardSystem/PE_CardData.h"
@@ -23,7 +24,7 @@ void UACCardInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	PC = Cast<APlayerController>(GetOwner());
+	PC = Cast<APE_PlayerController>(GetOwner());
 }
 
 void UACCardInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -40,10 +41,6 @@ void UACCardInteractionComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		case EPEInteractionState::Selecting:
 			ProcessDragging();
 			break;
-		case EPEInteractionState::Casting:
-			ProcessCasting();
-			break;
-		case EPEInteractionState::Waiting:
 		case EPEInteractionState::Disabled:
 			// 해당 상태에서는 마우스 트레이싱/드래그 연산을 멈춤 (최적화)
 			break;
@@ -91,86 +88,83 @@ void UACCardInteractionComponent::ProcessDragging()
 	bool bIsOverCastingZone = MouseY < (ViewportSizeY * 0.66f);
 
 	UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>();
-	if (DeckManager)
-	{
-		DeckManager->SetInCastingZone(bIsOverCastingZone);
-	}
+	if (DeckManager) DeckManager->SetInCastingZone(bIsOverCastingZone);
 
-	// [스왑(정렬) 로직] - 카드가 손패 영역에 있을 때만
-	if (!bIsOverCastingZone)
+	if (bIsOverCastingZone)
 	{
+		if (!bIsPreparingToCast)
+		{
+			bIsPreparingToCast = true;
+			if (DeckManager) DeckManager->SetCastingCard(GrabbedCard);
+
+			// 마우스를 따라가지 않도록 고정
+			GrabbedCard->CancelMoveToTarget();
+
+			// 타겟팅 비주얼 활성화
+			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
+			UPE_SkillData* SkillData = CardInst ? CardInst->GetBaseCardData()->SkillDataToCast : nullptr;
+			if (SkillData && PC)
+			{
+				if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+				{
+					if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+						Visualizer->SetTargetingMode(ETargetingMode::Skill, SkillData->BaseRange, SkillData);
+				}
+			}
+
+			// 카드가 화면 중앙에 척 붙는 연출 실행
+			GrabbedCard->PlayCastingReadyAnimation();
+		}
+
+		HoveredCardDuringDrag = nullptr; // 스왑 초기화
+	}
+	else
+	{
+		// [캐스팅 구역에서 다시 손패 영역으로 내려왔을 때 타겟팅 취소]
+		if (bIsPreparingToCast)
+		{
+			bIsPreparingToCast = false;
+			if (DeckManager) DeckManager->SetCastingCard(nullptr);
+
+			if (PC)
+			{
+				if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+				{
+					if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+						Visualizer->ClearTargeting();
+				}
+			}
+
+			// 취소 연출(손패로 돌아가는 모션 준비)
+			GrabbedCard->PlayCancelCastingAnimation(GrabbedCard->GetActorTransform());
+		}
+
+		// [일반 드래그 모드 (마우스 추적 및 스왑 로직)]
 		FHitResult HitResult;
 		PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
 		APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
+
+		if (HitCard && DeckManager && !DeckManager->GetHandCards().Contains(HitCard)) HitCard = nullptr;
+
 		if (HitCard != HoveredCardDuringDrag)
 		{
 			HoveredCardDuringDrag = HitCard;
 			if (HoveredCardDuringDrag != nullptr && HoveredCardDuringDrag != GrabbedCard)
 			{
-				if (DeckManager)
-				{
-					DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
-				}
+				if (DeckManager) DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
 			}
 		}
-	}
-	else
-	{
-		// 시전 구역으로 올라갔을 때는 카드 간 스왑 타겟팅을 초기화합니다.
-		HoveredCardDuringDrag = nullptr;
-	}
 
-	// [드래그 이동 로직]
-	FVector WorldLocation, WorldDirection;
-	if (PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection))
-	{
-		FVector TargetWorldLoc = WorldLocation + (WorldDirection * DragDepth);
-		FRotator TargetWorldRot = PC->PlayerCameraManager->GetCameraRotation();
-
-		FTransform TargetWorldTransform(TargetWorldRot, TargetWorldLoc);
-		FTransform CameraTransform = PC->PlayerCameraManager->GetTransform();
-		FTransform RelativeTargetTransform = TargetWorldTransform.GetRelativeTransform(CameraTransform);
-
-		GrabbedCard->MoveToTargetTransform(RelativeTargetTransform);
-	}
-}
-
-void UACCardInteractionComponent::ProcessCasting()
-{
-	if (!PC || !CastingCard) return;
-
-	FHitResult HitResult;
-	PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-	APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
-
-	// 마우스가 캐스팅 중인 카드 위에 올라갔을 때만
-	if (HitCard == CastingCard)
-	{
-		if (HoveredCard != HitCard)
+		FVector WorldLocation, WorldDirection;
+		if (PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection))
 		{
-			if (HoveredCard)
-			{
-				HoveredCard->SetHighlightState(false);
-				HoveredCard->OnCastingHoverStateChanged(false);
-			}
+			FVector TargetWorldLoc = WorldLocation + (WorldDirection * DragDepth);
+			FRotator TargetWorldRot = PC->PlayerCameraManager->GetCameraRotation();
+			FTransform TargetWorldTransform(TargetWorldRot, TargetWorldLoc);
+			FTransform CameraTransform = PC->PlayerCameraManager->GetTransform();
+			FTransform RelativeTargetTransform = TargetWorldTransform.GetRelativeTransform(CameraTransform);
 
-			// 외곽선 빛 켜기 + BP 연출(오프셋) 시작 알림
-			HitCard->SetHighlightState(true, FLinearColor::Yellow);
-			HitCard->OnCastingHoverStateChanged(true);
-
-			HoveredCard = HitCard;
-		}
-	}
-	else
-	{
-		// 캐스팅 카드 밖으로 마우스가 나가면 빛 끄기 + 오프셋 복구 알림
-		if (HoveredCard)
-		{
-			HoveredCard->SetHighlightState(false);
-			HoveredCard->OnCastingHoverStateChanged(false); 
-
-			HoveredCard = nullptr;
+			GrabbedCard->MoveToTargetTransform(RelativeTargetTransform);
 		}
 	}
 }
@@ -190,6 +184,7 @@ void UACCardInteractionComponent::GrabCard()
 		GrabbedCard->SetHoverOffsetEnabled(false);
 
 		// 상태 전환
+		bIsPreparingToCast = false;
 		CurrentState = EPEInteractionState::Selecting; 
 
 		// 드래그 중인 카드 등록 (강제 정렬 무효화)
@@ -204,151 +199,48 @@ void UACCardInteractionComponent::ReleaseCard()
 {
 	if (CurrentState != EPEInteractionState::Selecting || !GrabbedCard) return;
 
-	GrabbedCard->SetActorEnableCollision(true);
-
-	UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>();
-
-	if (PC && DeckManager)
+	// 마우스를 놓는 순간 캐스팅 구역이었다면 스킬 발사
+	if (bIsPreparingToCast)
 	{
-		int32 ViewportSizeX, ViewportSizeY;
-		PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
-
-		float MouseX, MouseY;
-		PC->GetMousePosition(MouseX, MouseY);
-
-		// 마우스를 놓은 시점에 1/3 상단 지점에 있었는지 검사
-		bool bWasInCastingZone = MouseY < (ViewportSizeY * 0.66f);
-
-		if (bWasInCastingZone && !bIsSuspended)
-		{
-			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
-			UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
-			UPE_SkillData* SkillData = BaseData ? BaseData->SkillDataToCast : nullptr;
-
-			if (SkillData)
-			{
-				// AP 사전 검사
-				APE_PlayerController* PE_PC = Cast<APE_PlayerController>(PC);
-				APE_PlayerCharacter* PlayerChar = PE_PC ? Cast<APE_PlayerCharacter>(PE_PC->GetPawn()) : nullptr;
-				UACStatComponent* StatComp = PlayerChar ? PlayerChar->GetStatComponent() : nullptr;
-
-				// AP가 부족하다면 취소 처리
-				if (StatComp && StatComp->GetCurrentAP() < SkillData->BaseAPCost)
-				{
-					if (PE_PC)
-					{
-						PE_PC->ShowToastMessage(FText::FromString(TEXT("사용에 필요한 AP가 부족합니다!")));
-					}
-
-					CurrentState = EPEInteractionState::Hovering;
-					DeckManager->SetDraggedCard(nullptr);
-					DeckManager->SetInCastingZone(false);
-					DeckManager->UpdateHandLayout(); // 원래 자기 자리로 부드럽게 돌아감
-				}
-				else
-				{
-					// AP가 충분하면 정상적으로 시전 연출 진행
-					if (SkillData->TargetType == EPESkillTargetType::All_Enemies ||
-						SkillData->TargetType == EPESkillTargetType::Self)
-					{
-						UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 즉발 카드 사용"));
-
-						CastingCard = GrabbedCard;
-						CastingCard->CancelMoveToTarget();
-
-						// 애니메이션이 진행되는 동안 다른 상호작용을 막기 위해 Waiting 상태로 전환
-						CurrentState = EPEInteractionState::Waiting;
-
-						// 드래그 상태 해제 및 손패 빈자리 갱신 (다른 카드들이 당겨짐)
-						DeckManager->SetCastingCard(CastingCard); // 시전 카드 등록 -> 자동 정렬에서 제외 (타임라인 애니메이션을 위해)
-						DeckManager->SetDraggedCard(nullptr);
-						DeckManager->SetInCastingZone(false);
-
-						// 즉발 스킬도 서버 전송 전에 큐에 먼저 등록
-						DeckManager->QueueCard(CastingCard);
-
-						// 즉발 스킬의 경우 OnSelect를 타지 않으므로 여기서 바로 서버 전송
-						if (PE_PC)
-						{
-							PE_PC->SendSkillCastRequest(SkillData, nullptr, nullptr, CastingCard);
-						}
-						CastingCard->PlayInstantCastingAnimation();
-					}
-					else
-					{
-						UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 캐스팅 시작"));
-
-						CastingCard = GrabbedCard;
-						CastingCard->CancelMoveToTarget();
-						CurrentState = EPEInteractionState::Waiting;
-
-						DeckManager->SetCastingCard(CastingCard);
-						DeckManager->SetDraggedCard(nullptr);
-						DeckManager->SetInCastingZone(false);
-
-						CastingCard->PlayCastingReadyAnimation();
-					}
-				}
-			}
-		}
-		else
-		{
-			// 기준선 아래에서 놓았다면 사용 취소
-			CurrentState = EPEInteractionState::Hovering;
-			DeckManager->SetDraggedCard(nullptr);
-			DeckManager->SetInCastingZone(false);
-			DeckManager->UpdateHandLayout(); // 원래 자기 자리 이빨로 다시 쏙 들어감
-		}
-	}
-
-	GrabbedCard = nullptr;
-	HoveredCardDuringDrag = nullptr;
-}
-
-void UACCardInteractionComponent::OnCastingReadyFinished(APE_CardActor* CallerCard)
-{
-	// BP에서 애니메이션이 끝났다고 알려주면, 타겟팅 시작 상태로 전환
-	if (CurrentState == EPEInteractionState::Waiting && CastingCard && CastingCard == CallerCard)
+		// 검증 및 실행을 PC에게 완전히 위임합니다.
+		if (PC) PC->TryExecuteCardDrop(GrabbedCard);
+	} 
+	else
 	{
-		CurrentState = EPEInteractionState::Casting;
-		UE_LOG(LogTemp, Warning, TEXT("[CardInteraction] 시전 대기 완료, 타겟팅 시작!"));
+		// 손패 구역에서 놓았다면 조용히 원래 위치로 복귀
+		CancelCasting();
 	}
-}
-
-void UACCardInteractionComponent::OnInstantCastFinished(APE_CardActor* CallerCard)
-{
-	if (CastingCard && CastingCard == CallerCard)
-	{
-		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
-		{
-			// 소멸시키지 않고 큐(대기열)로 보냅니다.
-			DeckManager->QueueCard(CastingCard);
-			DeckManager->SetCastingCard(nullptr);
-		}
-		CastingCard = nullptr;
-	}
-	CurrentState = EPEInteractionState::Hovering;
 }
 
 void UACCardInteractionComponent::CancelCasting()
 {
-	// 시전 중일 때만 취소 가능 (우클릭 등)
-	if (CurrentState == EPEInteractionState::Casting && CastingCard)
+	if (GrabbedCard)
 	{
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
 			DeckManager->SetCastingCard(nullptr);
+			DeckManager->SetDraggedCard(nullptr);
+			DeckManager->SetInCastingZone(false);
 			DeckManager->UpdateHandLayout();
 		}
 
-		// BP 연출 이벤트 호출 (스윽 하고 원래 손패 자리로 돌아감)
-		// 도착지는 위 UpdateHandLayout에서 자동으로 카드 액터의 TargetRelativeTransform에 세팅되었음
-		CastingCard->PlayCancelCastingAnimation(CastingCard->GetActorTransform()); // 더미값 전달, 내부 C++ 틱 보간 사용 지시 등 응용 가능
+		if (PC)
+		{
+			if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+			{
+				if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+					Visualizer->ClearTargeting();
+			}
+		}
 
-		CastingCard = nullptr;
-		CurrentState = EPEInteractionState::Hovering; // 상태 복구
-		UE_LOG(LogTemp, Log, TEXT("[CardInteraction] 시전 취소됨. 빈 자리로 돌아갑니다."));
+		GrabbedCard->PlayCancelCastingAnimation(GrabbedCard->GetActorTransform());
+		GrabbedCard->SetActorEnableCollision(true);
 	}
+
+	bIsPreparingToCast = false;
+	GrabbedCard = nullptr;
+	HoveredCardDuringDrag = nullptr;
+	CurrentState = EPEInteractionState::Hovering;
 }
 
 void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
@@ -361,10 +253,7 @@ void UACCardInteractionComponent::SetInteractionEnabled(bool bEnabled)
 	}
 	else
 	{
-		// if (HoveredCard) -->SetInteractionSuspended 에서 처리됨
-		if (GrabbedCard) { ReleaseCard(); }
-		if (CastingCard) { CancelCasting(); }
-
+		if (GrabbedCard) { CancelCasting(); }
 		CurrentState = EPEInteractionState::Disabled;
 	}
 }
@@ -381,10 +270,6 @@ void UACCardInteractionComponent::SetInteractionSuspended(bool bSuspend)
 		if (CurrentState == EPEInteractionState::Hovering)
 		{
 			HoveredCard->SetHoverOffsetEnabled(false);
-		}
-		else if (CurrentState == EPEInteractionState::Casting)
-		{
-			HoveredCard->OnCastingHoverStateChanged(false);
 		}
 
 		HoveredCard = nullptr;
