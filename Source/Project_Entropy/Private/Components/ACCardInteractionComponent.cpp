@@ -171,15 +171,14 @@ void UACCardInteractionComponent::ProcessDragging()
 
 void UACCardInteractionComponent::GrabCard()
 {
-	// [Casting] - 캐스팅 취소 -> 플레이어 컨트롤러에서 처리
-
 	if (CurrentState != EPEInteractionState::Hovering) return;
 
 	if (HoveredCard)
 	{
 		GrabbedCard = HoveredCard;
+		HoveredCard = nullptr;
+
 		GrabbedCard->SetActorEnableCollision(false); // 드래그 시 충돌 비활성화 (레이캐스트 방해 방지)
-		
 		GrabbedCard->SetHighlightState(false);
 		GrabbedCard->SetHoverOffsetEnabled(false);
 
@@ -212,6 +211,32 @@ void UACCardInteractionComponent::ReleaseCard()
 	}
 }
 
+void UACCardInteractionComponent::CompleteCasting()
+{
+	if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
+	{
+		DeckManager->SetCastingCard(nullptr);
+		DeckManager->SetDraggedCard(nullptr);
+		DeckManager->SetInCastingZone(false);
+		DeckManager->UpdateHandLayout();
+	}
+
+	if (PC)
+	{
+		if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+		{
+			if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+				Visualizer->ClearTargeting();
+		}
+	}
+
+	bIsPreparingToCast = false;
+	GrabbedCard = nullptr;
+	HoveredCard = nullptr; // 안전망
+	HoveredCardDuringDrag = nullptr;
+	CurrentState = EPEInteractionState::Hovering;
+}
+
 void UACCardInteractionComponent::CancelCasting()
 {
 	if (GrabbedCard)
@@ -239,6 +264,7 @@ void UACCardInteractionComponent::CancelCasting()
 
 	bIsPreparingToCast = false;
 	GrabbedCard = nullptr;
+	HoveredCard = nullptr;
 	HoveredCardDuringDrag = nullptr;
 	CurrentState = EPEInteractionState::Hovering;
 }

@@ -702,9 +702,8 @@ void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 Clie
 		if (DeckManagerComp) 
 		{
 			DeckManagerComp->RevertQueuedCard(*FoundCard);
-			DeckManagerComp->UpdateHandLayout();
 		}
-		ShowToastMessage(FText::FromString(TEXT("시전 취소: 대상이 사거리에서 벗어났거나 유효하지 않습니다.")));
+		ShowToastMessage(FText::FromString(TEXT("시전 취소: 검증 실패")));
 
 		PendingSkillRequests.Remove(ClientRequestID);
 	}
@@ -742,9 +741,7 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		DroppedCard->PlayInstantCastingAnimation();
 		PC->GetTargetingVisualizer()->ClearTargeting();
 
-		// 상태 초기화
-		CardInteractionComp->SetInteractionEnabled(true);
-		
+		CardInteractionComp->CompleteCasting();
 		return;
 	}
 
@@ -801,7 +798,7 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		PC->GetTargetingVisualizer()->ClearTargeting();
 
 		// 인터랙션 완전 초기화
-		CardInteractionComp->SetInteractionEnabled(true);
+		CardInteractionComp->CompleteCasting();
 	}
 	else
 	{

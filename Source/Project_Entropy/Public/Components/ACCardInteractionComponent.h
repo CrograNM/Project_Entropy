@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
 	void ReleaseCard();
 
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
+	void CompleteCasting();
+
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void SetInteractionEnabled(bool bEnabled);
 

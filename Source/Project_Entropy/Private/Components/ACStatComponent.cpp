@@ -93,8 +93,9 @@ void UACStatComponent::Heal(float Amount)
 
 bool UACStatComponent::ConsumeAP(int32 Amount)
 {
-	if (!GetOwner()->HasAuthority() || bIsDead || Amount <= 0) return false;
+	if (!GetOwner()->HasAuthority() || bIsDead) return false;
 
+	Amount = FMath::Max(Amount, 0); // 음수 방지
 	if (CurrentAP >= Amount)
 	{
 		int32 OldAP = CurrentAP;
