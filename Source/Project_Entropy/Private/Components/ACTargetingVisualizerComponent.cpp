@@ -157,8 +157,9 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 				FCollisionQueryParams Params;
 				Params.AddIgnoredActor(OwnerActor);
-				// 투사체 충돌 크기 반경 설정 (대략 15cm)
-				FCollisionShape SweepShape = FCollisionShape::MakeSphere(15.f);
+
+				// 투사체 충돌 크기 반경 설정 
+				FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
 
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
 

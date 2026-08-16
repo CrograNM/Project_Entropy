@@ -210,7 +210,7 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 
 			FCollisionQueryParams Params;
 			Params.AddIgnoredActor(Caster);
-			FCollisionShape SweepShape = FCollisionShape::MakeSphere(15.f);
+			FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
 
 			for (int32 i = 1; i <= NumSegments; ++i)
 			{
