@@ -56,11 +56,11 @@ public:
 
 	// 클라이언트 내부에서 ID를 매핑하고 서버로 전송하는 래퍼 함수
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void SendSkillCastRequest(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, class APE_CardActor* SourceCard);
+	void SendSkillCastRequest(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, class APE_CardActor* SourceCard, bool bIsFreeCast = false);
 	
 	// 스킬 시전 서버 요청
 	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_RequestSkillCast(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, int32 ClientRequestID);
+	void Server_RequestSkillCast(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, int32 ClientRequestID, bool bIsFreeCast);
 
 	// 서버가 큐 실행 결과를 클라이언트에 통보
 	UFUNCTION(Client, Reliable)
@@ -82,6 +82,14 @@ public:
 
 	UFUNCTION(Client, Reliable)
 	void Client_ResetReadyState(); // 서버가 턴 시작 시 강제로 로컬 레디를 풀어줌
+
+	// GameState가 나를 지목했을 때 카드들을 쏘기 시작하는 함수
+	UFUNCTION(Client, Reliable)
+	void Client_TriggerTurnEndCards();
+
+	// 내 카드를 큐에 다 넣었다고 서버에 보고하는 함수
+	UFUNCTION(Server, Reliable)
+	void Server_TurnEndCardsFinished();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Turn System")
 	bool bIsReadyForTurnEnd = false;

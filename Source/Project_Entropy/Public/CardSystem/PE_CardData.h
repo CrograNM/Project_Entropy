@@ -28,11 +28,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Info", meta=(MultiLine="true"))
 	FText CardDescription; 
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Visual")
-	TObjectPtr<UTexture2D> CardArt; // 카드 일러스트
-
+	// 카드 등급
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card|Info")
 	EPECardRarity Rarity = EPECardRarity::Common;
+
+	// 카드 발동 트리거 타입 (None이면 일반 사용, OnTurnEnd이면 턴 종료 시 자동 발동)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card|Trigger")
+	EPECardTriggerType TriggerType = EPECardTriggerType::None;
+
+	// 카드 일러스트
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Visual")
+	TObjectPtr<UTexture2D> CardArt; 
 
 	// 스킬 데이터 참조
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card|Skill")

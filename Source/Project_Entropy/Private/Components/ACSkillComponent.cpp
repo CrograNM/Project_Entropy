@@ -50,7 +50,7 @@ bool UACSkillComponent::TryExecuteSkill(int32 SkillIndex, AACTile* TargetTile, A
 	return TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage);
 }
 
-bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage, int32 ClientRequestID)
+bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage, int32 ClientRequestID, bool bIsFreeCast)
 {
 	if (!GetOwner()->HasAuthority() || !SkillData || !OwnerStatComponent) return false;
 
@@ -68,8 +68,14 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 		return false;
 	}
 
+	bool bCanCast = true;
+	if (!bIsFreeCast)
+	{
+		bCanCast = OwnerStatComponent->ConsumeAP(SkillData->BaseAPCost);
+	}
+
 	// AP 결제 시도 (AP가 부족하면 실패 처리)
-	if (OwnerStatComponent->ConsumeAP(SkillData->BaseAPCost))
+	if (bCanCast)
 	{
 		// 2. 결제가 성공하면 스킬 로직을 즉시 실행하지 않고, 명세서를 만들어 큐에 집어넣습니다!
 		FPESkillActionPayload Payload;
@@ -79,6 +85,7 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 		Payload.SkillData = SkillData;
 		Payload.CalculatedDamage = CalculatedDamage;
 		Payload.ClientRequestID = ClientRequestID;
+		Payload.bIsFreeCast = bIsFreeCast;
 
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
@@ -173,7 +180,13 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 	// 검증 실패 시: 환불 및 카드 반환 (ID 전송)
 	if (!bIsValidTarget)
 	{
-		OwnerStatComponent->SetAP(OwnerStatComponent->GetCurrentAP() + SkillData->BaseAPCost);
+		UE_LOG(LogTemp, Warning, TEXT("[ACSkillComponent] 실행 시점 재검증 실패. 스킬을 취소합니다."));
+
+		// 공짜 스킬이 아니었을 때만 환불
+		if (!Payload.bIsFreeCast)
+		{
+			OwnerStatComponent->SetAP(OwnerStatComponent->GetCurrentAP() + SkillData->BaseAPCost);
+		}
 
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
 		{

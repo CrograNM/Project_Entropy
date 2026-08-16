@@ -242,7 +242,7 @@ void UPE_TurnManagerComponent::EvaluateTurnEnd()
 		APE_GameState* GS = Cast<APE_GameState>(GetOwner());
 		if (GS && !GS->IsActionQueueActive())
 		{
-			ExecuteTurnEnd();
+			// ExecuteTurnEnd();
 		}
 	}
 	else

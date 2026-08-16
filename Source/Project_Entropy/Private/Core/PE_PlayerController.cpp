@@ -635,12 +635,57 @@ void APE_PlayerController::ToggleTurnReadyState()
 	}
 }
 
+void APE_PlayerController::Client_TriggerTurnEndCards_Implementation()
+{
+	if (DeckManagerComp)
+	{
+		TArray<APE_CardActor*> HandCardsCopy = DeckManagerComp->GetHandCards();
+		for (APE_CardActor* Card : HandCardsCopy)
+		{
+			if (Card && Card->GetCardInstance() && Card->GetCardInstance()->GetBaseCardData())
+			{
+				if (Card->GetCardInstance()->GetBaseCardData()->TriggerType == EPECardTriggerType::OnTurnEnd)
+				{
+					ForceTriggerCardLocally(Card);
+				}
+			}
+		}
+	}
+
+	// 카드 큐 등록이 끝났음을 서버에 보고
+	Server_TurnEndCardsFinished();
+}
+
+void APE_PlayerController::Server_TurnEndCardsFinished_Implementation()
+{
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+	{
+		// 등록한 카드가 하나도 없다면 큐가 비어있으므로 바로 다음 사람을 부름.
+		// 만약 카드가 있었다면 현재 ActionQueue가 돌아가는 중이므로 자연스럽게 끝난 뒤 부르게 됨.
+		if (!GS->IsActionQueueActive())
+		{
+			GS->AdvanceTurnEndPhase();
+		}
+	}
+}
+
 void APE_PlayerController::Server_SetTurnReadyState_Implementation(bool bReady)
 {
 	bIsReadyForTurnEnd = bReady;
 	if (UPE_TurnManagerComponent* TM = GetCachedTurnManager())
 	{
 		TM->RequestTurnEnd(this, bReady);
+
+		if (TM->IsPendingTurnEnd())
+		{
+			if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+			{
+				if (!GS->IsActionQueueActive())
+				{
+					GS->AdvanceTurnEndPhase();
+				}
+			}
+		}
 	}
 }
 
@@ -649,7 +694,7 @@ void APE_PlayerController::Client_ResetReadyState_Implementation()
 	bIsReadyForTurnEnd = false;
 }
 
-void APE_PlayerController::SendSkillCastRequest(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, APE_CardActor* SourceCard)
+void APE_PlayerController::SendSkillCastRequest(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, APE_CardActor* SourceCard, bool bIsFreeCast)
 {
 	// 고유 번호 발급 및 카드 매핑 저장
 	int32 ReqID = ++CurrentSkillRequestID;
@@ -659,21 +704,21 @@ void APE_PlayerController::SendSkillCastRequest(UPE_SkillData* SkillData, AACTil
 	}
 
 	// 네트워크를 넘을 수 있는 ID만 서버로 전송
-	Server_RequestSkillCast(SkillData, TargetTile, TargetCharacter, ReqID);
+	Server_RequestSkillCast(SkillData, TargetTile, TargetCharacter, ReqID, bIsFreeCast);
 }
 
-bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID)
+bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID, bool bIsFreeCast)
 {
 	return SkillData != nullptr;
 }
-void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID)
+void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID, bool bIsFreeCast)
 {
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
 	if (!PC) return;
 
 	if (UACSkillComponent* SkillComp = PC->FindComponentByClass<UACSkillComponent>())
 	{
-		if (!SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage, ClientRequestID)) 
+		if (!SkillComp->TryExecuteSkillByData(SkillData, TargetTile, TargetCharacter, SkillData->BaseDamage, ClientRequestID, bIsFreeCast)) 
 		{
 			// 실패 시 클라이언트에게 취소 메시지 전송
 			Client_CancelSkillExecution(ClientRequestID);
@@ -880,33 +925,32 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 {
 	if (!TriggeredCard || !TriggeredCard->GetSkillData() || !DeckManagerComp) return;
 
+	UPE_CardInstance* CardInst = TriggeredCard->GetCardInstance();
+	UPE_CardData* BaseData = CardInst ? CardInst->GetBaseCardData() : nullptr;
 	UPE_SkillData* SkillData = TriggeredCard->GetSkillData();
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
 
-	if (!PC || !PC->GetStatComponent()) return;
+	if (!PC || !BaseData) return;
 
-	if (PC->GetStatComponent()->GetCurrentAP() < SkillData->BaseAPCost)
-	{
-		ShowToastMessage(FText::FromString(TEXT("트리거 발동 실패: AP가 부족합니다.")));
-		return;
-	}
+	// [수정됨: AP 부족 여부를 묻지도 따지지도 않습니다 (Free Cast)]
 
 	AACTile* TargetTile = nullptr;
 	APE_CharacterBase* TargetCharacter = nullptr;
-
 	bool bHasTarget = GetRandomValidTargetForSkill(SkillData, TargetTile, TargetCharacter);
 
 	if (bHasTarget)
 	{
 		DeckManagerComp->QueueCard(TriggeredCard);
-		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, TriggeredCard);
+
+		// [핵심] bIsFreeCast 파라미터를 true로 날립니다!
+		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, TriggeredCard, true);
 
 		TriggeredCard->PlayInstantCastingAnimation();
-		ShowToastMessage(FText::FromString(FString::Printf(TEXT("트리거 발동: %s!"), *SkillData->SkillID.ToString())));
+		ShowToastMessage(FText::FromString(FString::Printf(TEXT("%s 자동 발동!"), *BaseData->CardName.ToString())));
 	}
 	else
 	{
-		ShowToastMessage(FText::FromString(TEXT("트리거 실패: 사거리 내 대상이 없습니다.")));
+		ShowToastMessage(FText::FromString(FString::Printf(TEXT("%s 발동 실패: 대상 없음"), *BaseData->CardName.ToString())));
 		DeckManagerComp->DiscardCard(TriggeredCard);
 		TriggeredCard->PlayDiscardAnimation();
 	}

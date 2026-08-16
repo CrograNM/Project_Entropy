@@ -34,6 +34,8 @@ public:
 	void ReportActionStarted();
 	void ReportActionEnded(int32 ActionLogID = -1);
 
+	void AdvanceTurnEndPhase();
+
 	// 현재 큐에 남은 행동이 있거나, 누군가 스킬을 실행 중인지 확인
 	bool IsActionQueueActive() const { return bIsProcessingAction || !ActionQueue.IsEmpty() || PendingActionCount > 0; }
 
@@ -65,6 +67,11 @@ protected:
 private:
 	// 스킬 발동 대기열
 	TQueue<FPESkillActionPayload> ActionQueue;
+
+	// --- [턴 종료 대기열 관리 변수] ---
+	UPROPERTY()
+	TArray<class APE_PlayerController*> TurnEndPlayersQueue;
+	bool bTurnEndCardPhaseActive = false;
 
 	// 현재 누군가 스킬을 쏘고 진행 중인지 여부
 	bool bIsProcessingAction = false;

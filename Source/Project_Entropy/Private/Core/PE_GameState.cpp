@@ -94,10 +94,10 @@ void APE_GameState::ProcessNextAction()
 	{
 		bIsProcessingAction = false;
 
-		// 큐가 완전히 비워진 순간, 턴 매니저가 만장일치로 대기 중이었다면 턴을 끝냅니다.
+		// 만장일치 시 즉시 종료가 아니라, 카드 발동 페이즈(AdvanceTurnEndPhase)로 진입
 		if (TurnManager && TurnManager->IsPendingTurnEnd())
 		{
-			TurnManager->ExecuteTurnEnd();
+			AdvanceTurnEndPhase();
 		}
 		return;
 	}
@@ -121,6 +121,47 @@ void APE_GameState::ProcessNextAction()
 		else ReportActionEnded();
 	}
 	else ReportActionEnded();
+}
+
+void APE_GameState::AdvanceTurnEndPhase()
+{
+	if (!HasAuthority()) return;
+
+	// 1. 처음 진입했을 때 플레이어들을 배열(줄)에 세웁니다.
+	if (!bTurnEndCardPhaseActive)
+	{
+		bTurnEndCardPhaseActive = true;
+		TurnEndPlayersQueue.Empty();
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
+			{
+				TurnEndPlayersQueue.Add(PC);
+			}
+		}
+	}
+
+	// 2. 대기열에 남은 사람이 있으면 1명씩 호명합니다.
+	if (TurnEndPlayersQueue.Num() > 0)
+	{
+		APE_PlayerController* NextPC = TurnEndPlayersQueue[0];
+		TurnEndPlayersQueue.RemoveAt(0);
+
+		if (NextPC)
+		{
+			NextPC->Client_TriggerTurnEndCards(); // "네 카드들 쏴라"
+		}
+		else
+		{
+			AdvanceTurnEndPhase(); // 오류로 빈자리일 경우 다음 사람으로
+		}
+	}
+	else
+	{
+		// 3. 모든 사람의 카드 발동이 끝났다면 진짜 턴을 끝냅니다!
+		bTurnEndCardPhaseActive = false;
+		if (TurnManager) TurnManager->ExecuteTurnEnd();
+	}
 }
 
 // --- [UI 액션 큐 제어부] ---

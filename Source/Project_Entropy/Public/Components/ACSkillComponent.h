@@ -27,7 +27,7 @@ public:
 
 	/** [카드 시스템용] 카드 인스턴스가 연산된 최종 데미지와 함께 스킬 데이터를 직접 주입하여 발동 */
 	UFUNCTION(BlueprintCallable, Category = "Skill System")
-	bool TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage, int32 ClientRequestID = -1);
+	bool TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, float CalculatedDamage, int32 ClientRequestID = -1, bool bIsFreeCast = false);
 
 	// GameState의 큐가 자신의 차례일 때 스킬을 물리적으로 발동시키는 함수 (개별 인자 대신 Payload를 직접 받도록 변경)
 	void ExecuteQueuedSkill(const FPESkillActionPayload& Payload);

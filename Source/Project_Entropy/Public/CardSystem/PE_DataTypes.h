@@ -5,6 +5,16 @@
 #include "CoreMinimal.h"
 #include "PE_DataTypes.generated.h"
 
+// 카드의 자동 발동 트리거 조건
+UENUM(BlueprintType)
+enum class EPECardTriggerType : uint8
+{
+	None        UMETA(DisplayName = "조건 없음 (일반 사용)"),
+	OnTurnEnd   UMETA(DisplayName = "내 턴 종료 시 발동 (On Turn End)")
+	// OnDrawn     UMETA(DisplayName = "뽑았을 때 발동 (On Drawn)"),
+	// OnDamaged   UMETA(DisplayName = "피격 시 발동 (On Damaged)")
+};
+
 // 스킬의 타겟팅 방식
 UENUM(BlueprintType)
 enum class EPESkillTargetType : uint8
@@ -58,8 +68,11 @@ struct FPESkillActionPayload
 	// 로컬 클라이언트의 카드 식별용 고유 요청 번호
 	UPROPERTY() int32 ClientRequestID = -1;
 
-	// [추가됨: 발급받은 UI 큐 로그 고유 ID]
+	// 발급받은 UI 큐 로그 고유 ID
 	UPROPERTY() int32 ActionLogID = -1;
+
+	// 강제 시전(AP 소모 및 환불 면제) 여부
+	UPROPERTY() bool bIsFreeCast = false;
 };
 
 // 광역 스킬(AoE)의 형태 정의
