@@ -103,12 +103,17 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 {
 	UPE_SkillData* SkillData = Payload.SkillData;
 	APE_CharacterBase* Caster = Payload.Instigator;
+
+	// 함수가 시작되자마자 GS를 무조건 찾아 캐싱
 	APE_GameState* GS = nullptr;
+	if (Caster && Caster->GetWorld())
+	{
+		GS = Caster->GetWorld()->GetGameState<APE_GameState>();
+	}
 
 	if (!SkillData || !Caster)
 	{
-		GS = Caster->GetWorld()->GetGameState<APE_GameState>();
-		if (GS) GS->ReportActionEnded();
+		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
 		return;
 	}
 
@@ -144,7 +149,12 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 	// --- [2. 사거리 및 타겟 유효성 재검증 (실행 시점 최신 기준)] ---
 	bool bIsValidTarget = true;
 
-	if (TargetGridPos == FIntPoint(-999, -999))
+	// Self나 All_Enemies는 타겟 위치(-999) 검사를 아예 면제
+	if (SkillData->TargetType == EPESkillTargetType::Self || SkillData->TargetType == EPESkillTargetType::All_Enemies)
+	{
+		bIsValidTarget = true;
+	}
+	else if (TargetGridPos == FIntPoint(-999, -999))
 	{
 		bIsValidTarget = false;
 	}
@@ -169,7 +179,7 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		{
 			PC->Client_CancelSkillExecution(Payload.ClientRequestID);
 		}
-		if (GS) GS->ReportActionEnded();
+		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
 		return;
 	}
 

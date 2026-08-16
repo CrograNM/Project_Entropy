@@ -806,3 +806,108 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		CardInteractionComp->CancelCasting();
 	}
 }
+
+bool APE_PlayerController::GetRandomValidTargetForSkill(UPE_SkillData* SkillData, AACTile*& OutTile, APE_CharacterBase*& OutChar)
+{
+	OutTile = nullptr;
+	OutChar = nullptr;
+
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+	if (!PC || !GridSystem) return false;
+
+	FIntPoint CasterPos = PC->GetGridMovementComponent()->GetGridPosition();
+
+	if (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self)
+	{
+		return true;
+	}
+
+	if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
+	{
+		TArray<AActor*> AllChars;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
+		TArray<APE_CharacterBase*> ValidEnemies;
+		for (AActor* Actor : AllChars)
+		{
+			APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
+			if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
+			{
+				FIntPoint TargetPos = TargetChar->GetGridMovementComponent()->GetGridPosition();
+				int32 Dist = FMath::Abs(CasterPos.X - TargetPos.X) + FMath::Abs(CasterPos.Y - TargetPos.Y);
+				if (Dist <= SkillData->BaseRange)
+				{
+					ValidEnemies.Add(TargetChar);
+				}
+			}
+		}
+
+		if (ValidEnemies.Num() > 0)
+		{
+			OutChar = ValidEnemies[FMath::RandRange(0, ValidEnemies.Num() - 1)];
+			OutTile = GridSystem->GetTileAtPosition(OutChar->GetGridMovementComponent()->GetGridPosition());
+			return true;
+		}
+	}
+	else if (SkillData->TargetType == EPESkillTargetType::Tile)
+	{
+		TArray<AACTile*> ValidTiles;
+		for (int32 x = -SkillData->BaseRange; x <= SkillData->BaseRange; ++x)
+		{
+			for (int32 y = -SkillData->BaseRange; y <= SkillData->BaseRange; ++y)
+			{
+				if (FMath::Abs(x) + FMath::Abs(y) <= SkillData->BaseRange)
+				{
+					if (AACTile* Tile = GridSystem->GetTileAtPosition(CasterPos + FIntPoint(x, y)))
+					{
+						ValidTiles.Add(Tile);
+					}
+				}
+			}
+		}
+
+		if (ValidTiles.Num() > 0)
+		{
+			OutTile = ValidTiles[FMath::RandRange(0, ValidTiles.Num() - 1)];
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
+{
+	if (!TriggeredCard || !TriggeredCard->GetSkillData() || !DeckManagerComp) return;
+
+	UPE_SkillData* SkillData = TriggeredCard->GetSkillData();
+	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
+
+	if (!PC || !PC->GetStatComponent()) return;
+
+	if (PC->GetStatComponent()->GetCurrentAP() < SkillData->BaseAPCost)
+	{
+		ShowToastMessage(FText::FromString(TEXT("트리거 발동 실패: AP가 부족합니다.")));
+		return;
+	}
+
+	AACTile* TargetTile = nullptr;
+	APE_CharacterBase* TargetCharacter = nullptr;
+
+	bool bHasTarget = GetRandomValidTargetForSkill(SkillData, TargetTile, TargetCharacter);
+
+	if (bHasTarget)
+	{
+		DeckManagerComp->QueueCard(TriggeredCard);
+		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, TriggeredCard);
+
+		TriggeredCard->PlayInstantCastingAnimation();
+		ShowToastMessage(FText::FromString(FString::Printf(TEXT("트리거 발동: %s!"), *SkillData->SkillID.ToString())));
+	}
+	else
+	{
+		ShowToastMessage(FText::FromString(TEXT("트리거 실패: 사거리 내 대상이 없습니다.")));
+		DeckManagerComp->DiscardCard(TriggeredCard);
+		TriggeredCard->PlayDiscardAnimation();
+	}
+}

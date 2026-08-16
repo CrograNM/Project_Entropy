@@ -90,6 +90,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
 	void TryExecuteCardDrop(class APE_CardActor* DroppedCard);
 
+	// 카드 강제 트리거 
+	UFUNCTION(BlueprintCallable, Category = "Battle Input|Trigger")
+	void ForceTriggerCardLocally(class APE_CardActor* TriggeredCard);
+
 	// --- [안전한 멀티플레이어 참조 헬퍼 함수] ---
 	UFUNCTION(BlueprintCallable, Category = "References")
 	APE_PlayerCharacter* GetCachedPlayerCharacter();
@@ -185,6 +189,9 @@ private:
 	bool bIsGridMoveActivated = false;	// 이동 모드 활성화 여부
 
 	bool IsMyTurn() const; // 현재 턴이 내 팀의 턴인지 확인
+
+	// 강제 트리거용 무작위 타겟 탐색 유틸리티
+	bool GetRandomValidTargetForSkill(class UPE_SkillData* SkillData, class AACTile*& OutTile, class APE_CharacterBase*& OutChar);
 
 	// 카드 정보 전송용 클라이언트 로컬 매핑 데이터 (시전 요청 ID -> 카드 액터)
 	int32 CurrentSkillRequestID = 0;

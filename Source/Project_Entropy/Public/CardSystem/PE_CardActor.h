@@ -63,7 +63,11 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayCastingReadyAnimation();
 
-	// 2-1. 즉발 카드 사용: 중앙으로 날아가 바로 산화되는 연출
+	// 2-1. 즉발 스킬 시전 대기
+	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
+	void PlayInstantCastingReadyAnimation();
+
+	// 2-2. 즉발 카드 사용: 중앙으로 날아가 바로 산화되는 연출
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayInstantCastingAnimation();
 

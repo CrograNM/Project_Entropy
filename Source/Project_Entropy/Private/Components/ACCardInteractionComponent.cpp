@@ -84,11 +84,22 @@ void UACCardInteractionComponent::ProcessDragging()
 	float MouseX, MouseY;
 	PC->GetMousePosition(MouseX, MouseY);
 
-	// 하단 1/3 지점을 넘었는지 실시간 판단 후 덱 매니저에 전달 (시전 구역 진입 여부)
-	bool bIsOverCastingZone = MouseY < (ViewportSizeY * 0.66f);
+	// 하단 1/5 지점을 넘었는지 실시간 판단 후 덱 매니저에 전달 (시전 구역 진입 여부)
+	bool bIsOverCastingZone = MouseY < (ViewportSizeY * 0.8f);
 
 	UACDeckManagerComponent* DeckManager = PC->FindComponentByClass<UACDeckManagerComponent>();
 	if (DeckManager) DeckManager->SetInCastingZone(bIsOverCastingZone);
+
+	// 즉발 카드 처리 -> 시전 구역 진입 처리하지 않고 계속 드래그 모드 유지
+	bool bIsInstantCast = false;
+	UPE_SkillData* SkillData = GrabbedCard->GetSkillData();
+	if (SkillData)
+	{
+		if (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self)
+		{
+			bIsInstantCast = true;
+		}
+	}
 
 	if (bIsOverCastingZone)
 	{
@@ -100,20 +111,27 @@ void UACCardInteractionComponent::ProcessDragging()
 			// 마우스를 따라가지 않도록 고정
 			GrabbedCard->CancelMoveToTarget();
 
-			// 타겟팅 비주얼 활성화
-			UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
-			UPE_SkillData* SkillData = CardInst ? CardInst->GetBaseCardData()->SkillDataToCast : nullptr;
-			if (SkillData && PC)
+			if (bIsInstantCast)
 			{
-				if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
-				{
-					if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
-						Visualizer->SetTargetingMode(ETargetingMode::Skill, SkillData->BaseRange, SkillData);
-				}
+				// 즉발 스킬: 타겟팅 비주얼을 켜지 않고 중앙 대기 애니메이션만 재생합니다.
+				GrabbedCard->PlayInstantCastingReadyAnimation();
 			}
+			else
+			{
+				// 타겟팅 비주얼 활성화
+				UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
+				if (SkillData && PC)
+				{
+					if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+					{
+						if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+							Visualizer->SetTargetingMode(ETargetingMode::Skill, SkillData->BaseRange, SkillData);
+					}
+				}
 
-			// 카드 시전 연출 재생 (중앙으로 띄우는 모션 -> 이후 옆쪽으로 날아가 대기)
-			GrabbedCard->PlayCastingReadyAnimation();
+				// 카드 시전 연출 재생 (중앙으로 띄우는 모션 -> 이후 옆쪽으로 날아가 대기)
+				GrabbedCard->PlayCastingReadyAnimation();
+			}
 		}
 
 		HoveredCardDuringDrag = nullptr; // 스왑 초기화
@@ -197,13 +215,13 @@ void UACCardInteractionComponent::GrabCard()
 void UACCardInteractionComponent::ReleaseCard()
 {
 	if (CurrentState != EPEInteractionState::Selecting || !GrabbedCard) return;
-
+	
 	// 마우스를 놓는 순간 캐스팅 구역이었다면 스킬 발사
 	if (bIsPreparingToCast)
 	{
 		// 검증 및 실행을 PC에게 완전히 위임합니다.
 		if (PC) PC->TryExecuteCardDrop(GrabbedCard);
-	} 
+	}
 	else
 	{
 		// 손패 구역에서 놓았다면 조용히 원래 위치로 복귀
