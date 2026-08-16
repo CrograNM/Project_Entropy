@@ -134,59 +134,95 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
 			StartLoc += OwnerActor->GetActorForwardVector() * 70.f;
 
-			FVector EndLoc = FVector::ZeroVector;
+			FVector OriginalEndLoc = FVector::ZeroVector;
 			if (APE_CharacterBase* TargetChar = GridSystem->GetCharacterAtPosition(RepHoveredTile))
 			{
-				EndLoc = TargetChar->GetActorLocation();
+				OriginalEndLoc = TargetChar->GetActorLocation();
 				if (UCapsuleComponent* TargetCap = TargetChar->FindComponentByClass<UCapsuleComponent>())
-					EndLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
+					OriginalEndLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
 			}
 			else if (AACTile* HoveredTileActor = GridSystem->GetTileAtPosition(RepHoveredTile))
 			{
-				EndLoc = HoveredTileActor->GetActorLocation();
+				OriginalEndLoc = HoveredTileActor->GetActorLocation();
+				OriginalEndLoc.Z += 20.f; // 바닥 마찰 방지용 미세 오프셋
 			}
 
-			// 직사 차단 판정
-			if (RepSkillData->ProjectileSpeed > 0.f && RepSkillData->ProjectileGravity == 0.f)
+			// --- [핵심 수정됨: 가상 투사체 스윕(Sweep) 예측 시스템] ---
+			FVector FinalEndLoc = OriginalEndLoc;
+
+			if (RepSkillData->ProjectileSpeed > 0.f)
 			{
-				FHitResult HitResult;
+				int32 NumSegments = 20; // 궤적 해상도
+				FVector LastPos = StartLoc;
+
 				FCollisionQueryParams Params;
 				Params.AddIgnoredActor(OwnerActor);
+				// 투사체 충돌 크기 반경 설정 (대략 15cm)
+				FCollisionShape SweepShape = FCollisionShape::MakeSphere(15.f);
 
-				if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, EndLoc, ECC_Visibility, Params))
-				{
-					if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
-					{
-						if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
-							ActualTargetPos = HitMove->GetGridPosition();
-					}
-					else if (AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
-					{
-						ActualTargetPos = HitTile->GetGridPosition();
-					}
-				}
-			}
+				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
 
-			// 스킬 궤적 포인트 생성
-			if (RepSkillData->ProjectileGravity > 0.f)
-			{
-				int32 NumPoints = 15;
-				for (int32 i = 0; i <= NumPoints; ++i)
+				for (int32 i = 1; i <= NumSegments; ++i)
 				{
-					float Alpha = (float)i / (float)NumPoints;
-					FVector LerpPos = FMath::Lerp(StartLoc, EndLoc, Alpha);
-					LerpPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
-					TrajectorySpline->AddSplinePoint(LerpPos, ESplineCoordinateSpace::World, false);
+					float Alpha = (float)i / (float)NumSegments;
+					FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
+
+					// 곡사일 경우 궤적 고도 반영
+					if (RepSkillData->ProjectileGravity > 0.f)
+					{
+						NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
+					}
+
+					FHitResult HitResult;
+					// 직사, 곡사 관계없이 궤적 조각을 따라 구체를 훑어 충돌 판정
+					if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
+					{
+						// 부딪혔다면 궤적 그리기를 그 자리에서 중단하고 최종 좌표 덮어쓰기
+						FinalEndLoc = HitResult.Location;
+						TrajectorySpline->AddSplinePoint(FinalEndLoc, ESplineCoordinateSpace::World, false);
+
+						if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+						{
+							if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
+								ActualTargetPos = HitMove->GetGridPosition();
+						}
+						else if (AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
+						{
+							ActualTargetPos = HitTile->GetGridPosition();
+						}
+						break; // 중도 요격 확인, 더 이상 예측하지 않음
+					}
+					else
+					{
+						TrajectorySpline->AddSplinePoint(NextPos, ESplineCoordinateSpace::World, false);
+						LastPos = NextPos;
+					}
 				}
 				TrajectorySpline->UpdateSpline();
 			}
 			else
 			{
+				// 즉발/장판형 스킬
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
-				TrajectorySpline->AddSplinePoint(EndLoc, ESplineCoordinateSpace::World, true);
+				TrajectorySpline->AddSplinePoint(OriginalEndLoc, ESplineCoordinateSpace::World, false);
+				TrajectorySpline->UpdateSpline();
 			}
 
-			// --- 실제 타격 범위(AoE) 타일들 저장 및 하이라이트 (가로채인 위치 기준) ---
+			// --- [예측 결과 렌더링: 착탄 지점 구체 생성] ---
+			if (ImpactSphereMesh && ImpactSphereMaterial && TrajectorySpline->GetNumberOfSplinePoints() > 1)
+			{
+				UStaticMeshComponent* ImpactSphere = NewObject<UStaticMeshComponent>(GetOwner());
+				ImpactSphere->SetMobility(EComponentMobility::Movable);
+				ImpactSphere->SetStaticMesh(ImpactSphereMesh);
+				ImpactSphere->SetMaterial(0, ImpactSphereMaterial);
+				ImpactSphere->SetRelativeLocation(FinalEndLoc);
+				ImpactSphere->SetRelativeScale3D(ImpactSphereScale);
+				ImpactSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				ImpactSphere->RegisterComponent();
+				GeneratedMeshes.Add(ImpactSphere);
+			}
+
+			// 타격 범위 하이라이트 (요격당한 위치 ActualTargetPos 기준)
 			TSet<FIntPoint> AffectedGridPositions;
 			if (RepSkillData->AoEShape != EPEAoEShape::None)
 			{
@@ -199,7 +235,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				GridSystem->HighlightTarget(OwnerActor, ActualTargetPos);
 			}
 
-			// --- [가상 보드 및 연쇄 밀치기 시뮬레이션] ---
+			// 연쇄 밀치기 시뮬레이션
 			const UPE_SkillEffect_Push* PushModule = nullptr;
 			for (const UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
 			{
@@ -212,7 +248,6 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			if (PushModule)
 			{
-				// 모듈 내부 함수 호출하여 시뮬레이션 결과 구조체 배열 획득
 				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, MoveComp->GetGridPosition(), AffectedGridPositions);
 
 				for (const FPushSimulationResult& Result : PushResults)
@@ -231,25 +266,20 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 					FVector PushEnd;
 					if (Result.StartPos != Result.EndPos)
 					{
-						// 정상적으로 밀려난 경우
 						AACTile* EndTile = GridSystem->GetTileAtPosition(Result.EndPos);
 						PushEnd = EndTile ? EndTile->GetActorLocation() : PushStart;
 						PushEnd.Z = PushStart.Z;
 
 						FVector Dir = (PushEnd - PushStart).GetSafeNormal();
-						PushEnd += (Dir * PushArrowExtension); // 화살촉 연장 보정
+						PushEnd += (Dir * PushArrowExtension);
 					}
 					else
 					{
-						// 부딪혀서 이동하지 못한 경우 (매우 짧은 화살표)
-						// PushDir(그리드 방향)을 월드 방향(Vector)으로 변환
 						FVector WorldPushDir = FVector(Result.PushDir.X, Result.PushDir.Y, 0).GetSafeNormal();
-						// 40.f 등 고정값으로 짧은 길이 지정 (타일 크기보다 훨씬 짧게)
 						PushEnd = PushStart + (WorldPushDir * 40.f);
 						PushEnd.Z = PushStart.Z;
 					}
 
-					// 개별 화살표 렌더링
 					PushSpline->ClearSplinePoints();
 					PushSpline->AddSplinePoint(PushStart, ESplineCoordinateSpace::World, false);
 					PushSpline->AddSplinePoint(PushEnd, ESplineCoordinateSpace::World, true);
@@ -259,7 +289,6 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				PushSpline->ClearSplinePoints();
 			}
 
-			// 본체의 스킬 발사 궤적 메쉬 생성
 			if (TrajectorySpline->GetNumberOfSplinePoints() > 1)
 			{
 				GenerateMeshesAlongSpline(TrajectorySpline, TrajectoryMaterial, TrajectoryThickness, TrajectoryArrowSize);

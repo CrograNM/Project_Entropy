@@ -99,7 +99,6 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 	return false;
 }
 
-// 큐에서 대기하다가 자기 차례가 오면 GameState가 이 함수를 부릅니다.
 void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 {
 	UPE_SkillData* SkillData = Payload.SkillData;
@@ -115,7 +114,7 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 
 	// --- [1. 타일 지정 vs 캐릭터 대상 분리 및 타겟 위치 확정] ---
 	APE_CharacterBase* FinalTargetChar = nullptr;
-	FVector FinalTargetLoc = FVector::ZeroVector;
+	FVector OriginalTargetLoc = FVector::ZeroVector;
 	FIntPoint TargetGridPos = FIntPoint(-999, -999);
 
 	if (SkillData->TargetType == EPESkillTargetType::Tile)
@@ -123,7 +122,8 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		// 타일 지정일 경우, 캐릭터 추적(TargetCharacter)을 완전히 무시하고 타일 좌표로 고정
 		if (Payload.TargetTile)
 		{
-			FinalTargetLoc = Payload.TargetTile->GetActorLocation();
+			OriginalTargetLoc = Payload.TargetTile->GetActorLocation();
+			OriginalTargetLoc.Z += 20.f; // 스윕 오프셋 일치화
 			TargetGridPos = Payload.TargetTile->GetGridPosition();
 		}
 	}
@@ -132,9 +132,9 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		FinalTargetChar = Payload.TargetCharacter;
 		if (FinalTargetChar && !FinalTargetChar->GetStatComponent()->IsDead())
 		{
-			FinalTargetLoc = FinalTargetChar->GetActorLocation();
+			OriginalTargetLoc = FinalTargetChar->GetActorLocation();
 			if (UCapsuleComponent* TargetCap = FinalTargetChar->FindComponentByClass<UCapsuleComponent>())
-				FinalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
+				OriginalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
 
 			if (UACGridMovementComponent* MoveComp = FinalTargetChar->GetGridMovementComponent())
 				TargetGridPos = MoveComp->GetGridPosition();
@@ -146,7 +146,7 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 
 	if (TargetGridPos == FIntPoint(-999, -999))
 	{
-		bIsValidTarget = false; // 타겟이 죽었거나 유효하지 않음
+		bIsValidTarget = false;
 	}
 	else if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
 	{
@@ -156,15 +156,13 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 
 		if (CurrentDistance > SkillData->BaseRange)
 		{
-			bIsValidTarget = false; // 사거리 밖으로 도망침
+			bIsValidTarget = false;
 		}
 	}
 
 	// 검증 실패 시: 환불 및 카드 반환 (ID 전송)
 	if (!bIsValidTarget)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ACSkillComponent] 실행 시점 재검증 실패. 스킬을 취소합니다."));
-
 		OwnerStatComponent->SetAP(OwnerStatComponent->GetCurrentAP() + SkillData->BaseAPCost);
 
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
@@ -184,7 +182,7 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 	// 물리 연산 및 발사 전, 대상을 향해 정확히 회전시켜 방향 벡터 오차를 100% 억제
 	if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
 	{
-		FVector Dir = (FinalTargetLoc - Caster->GetActorLocation()).GetSafeNormal2D();
+		FVector Dir = (OriginalTargetLoc - Caster->GetActorLocation()).GetSafeNormal2D();
 		if (!Dir.IsNearlyZero())
 		{
 			Caster->SetActorRotation(Dir.Rotation());
@@ -202,21 +200,43 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		FTransform SpawnTransform = Caster->GetActorTransform();
 		SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
 
-		// 직사 판정
-		if (SkillData->ProjectileSpeed > 0.f && SkillData->ProjectileGravity == 0.f)
+		// --- [핵심 수정됨: 물리 서버측 궤적 스윕 동기화] ---
+		FVector FinalTargetLoc = OriginalTargetLoc;
+
+		if (SkillData->ProjectileSpeed > 0.f)
 		{
-			FHitResult HitResult;
+			int32 NumSegments = 20;
+			FVector LastPos = SpawnTransform.GetLocation();
+
 			FCollisionQueryParams Params;
 			Params.AddIgnoredActor(Caster);
+			FCollisionShape SweepShape = FCollisionShape::MakeSphere(15.f);
 
-			if (GetWorld()->LineTraceSingleByChannel(HitResult, SpawnTransform.GetLocation(), FinalTargetLoc, ECC_Visibility, Params))
+			for (int32 i = 1; i <= NumSegments; ++i)
 			{
-				if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
-					FinalTargetChar = HitChar;
-				else
-					FinalTargetChar = nullptr;
+				float Alpha = (float)i / (float)NumSegments;
+				FVector NextPos = FMath::Lerp(SpawnTransform.GetLocation(), OriginalTargetLoc, Alpha);
 
-				FinalTargetLoc = HitResult.Location;
+				if (SkillData->ProjectileGravity > 0.f)
+				{
+					NextPos.Z += FMath::Sin(Alpha * PI) * SkillData->ProjectileGravity;
+				}
+
+				FHitResult HitResult;
+				if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
+				{
+					FinalTargetLoc = HitResult.Location;
+					if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+					{
+						FinalTargetChar = HitChar; // 요격당한 대상을 최종 타겟으로 덮어씀
+					}
+					else
+					{
+						FinalTargetChar = nullptr; // 지형지물에 막힘
+					}
+					break;
+				}
+				LastPos = NextPos;
 			}
 		}
 

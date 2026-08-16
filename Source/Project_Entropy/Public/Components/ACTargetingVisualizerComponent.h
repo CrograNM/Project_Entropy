@@ -76,18 +76,27 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visualizer|Spline")
 	TObjectPtr<USplineComponent> PushSpline; // 밀치기로 날아갈 선
 
-	// --- [추가됨: 메쉬 및 머티리얼 세팅] ---
+	// --- [메쉬 및 머티리얼 세팅] ---
+	// 몸통용 메쉬 (원기둥 권장)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
-	TObjectPtr<UStaticMesh> LineMesh; // 몸통용 메쉬 (원기둥 권장)
+	TObjectPtr<UStaticMesh> LineMesh; 
 
+	// 화살촉 메쉬 (원뿔 권장)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
-	TObjectPtr<UStaticMesh> ArrowHeadMesh; // 화살촉 메쉬 (원뿔 권장)
+	TObjectPtr<UStaticMesh> ArrowHeadMesh; 
+
+	// 중도 충돌 및 최종 착탄 지점을 보여줄 반투명 마커
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
+	TObjectPtr<UStaticMesh> ImpactSphereMesh;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
 	TObjectPtr<UMaterialInterface> TrajectoryMaterial; 
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
 	TObjectPtr<UMaterialInterface> PushMaterial; 
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Assets")
+	TObjectPtr<UMaterialInterface> ImpactSphereMaterial;
 
 	// 화살촉 뒤로 당기기 배율
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
@@ -112,6 +121,10 @@ protected:
 	// 밀치기 화살촉을 연장할 거리
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
 	float PushArrowExtension = 25.f;
+
+	// 구체 메쉬의 스케일
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visualizer|Settings")
+	FVector ImpactSphereScale = FVector(0.5f);
 
 private:
 	// 현재 시각화에 사용 중인 유효 타일 목록 (내부 보관용)
