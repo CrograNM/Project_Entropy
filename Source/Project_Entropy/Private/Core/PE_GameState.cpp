@@ -3,6 +3,7 @@
 #include "Core/PE_GameState.h"
 #include "Core/PE_TurnManagerComponent.h"
 #include "Characters/PE_CharacterBase.h"
+#include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACSkillComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/PE_PlayerController.h"
@@ -132,11 +133,22 @@ void APE_GameState::AdvanceTurnEndPhase()
 	{
 		bTurnEndCardPhaseActive = true;
 		TurnEndPlayersQueue.Empty();
+
+		// 현재 턴을 종료하려는 팀 번호 가져오기
+		int32 CurrentTeam = TurnManager ? TurnManager->GetCurrentTeamTurn() : 0;
+
 		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 		{
 			if (APE_PlayerController* PC = Cast<APE_PlayerController>(It->Get()))
 			{
-				TurnEndPlayersQueue.Add(PC);
+				if (APE_PlayerCharacter* Char = PC->GetCachedPlayerCharacter())
+				{
+					// PVP 대응: 턴을 마치는 팀 소속 플레이어들만 지목합니다!
+					if (Char->GetTeamID() == CurrentTeam)
+					{
+						TurnEndPlayersQueue.Add(PC);
+					}
+				}
 			}
 		}
 	}

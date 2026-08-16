@@ -637,15 +637,30 @@ void APE_PlayerController::ToggleTurnReadyState()
 
 void APE_PlayerController::Client_TriggerTurnEndCards_Implementation()
 {
+	UE_LOG(LogTemp, Warning, TEXT("[TurnSystem] 클라이언트 턴 종료 카드 자동 발동 검사 시작..."));
+
 	if (DeckManagerComp)
 	{
-		TArray<APE_CardActor*> HandCardsCopy = DeckManagerComp->GetHandCards();
+		// 1. 원본 배열을 가져옵니다.
+		const TArray<TObjectPtr<APE_CardActor>>& HandCardsRef = DeckManagerComp->GetHandCards();
+
+		// 2. 루프 도중 카드가 큐에 들어가면 원본 배열이 수정되어 에러가 날 수 있으므로, 완벽한 복사본을 만듭니다.
+		TArray<APE_CardActor*> HandCardsCopy;
+		for (auto CardObj : HandCardsRef)
+		{
+			HandCardsCopy.Add(CardObj);
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[TurnSystem] 손패에 있는 총 카드 수: %d"), HandCardsCopy.Num());
+
+		// 3. 복사본을 순회하며 검사 및 발사합니다.
 		for (APE_CardActor* Card : HandCardsCopy)
 		{
 			if (Card && Card->GetCardInstance() && Card->GetCardInstance()->GetBaseCardData())
 			{
 				if (Card->GetCardInstance()->GetBaseCardData()->TriggerType == EPECardTriggerType::OnTurnEnd)
 				{
+					UE_LOG(LogTemp, Warning, TEXT("[TurnSystem] 턴 종료 카드 발견! 강제 시전: %s"), *Card->GetCardInstance()->GetBaseCardData()->CardName.ToString());
 					ForceTriggerCardLocally(Card);
 				}
 			}
