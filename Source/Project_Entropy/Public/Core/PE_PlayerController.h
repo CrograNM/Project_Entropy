@@ -107,6 +107,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Input|Trigger")
 	void ForceTriggerCardLocally(class APE_CardActor* TriggeredCard);
 
+	UFUNCTION(BlueprintCallable, Category = "Turn System")
+	void NotifyTurnEndCardReadyAnimFinished(class APE_CardActor* Card);
+
 	// --- [안전한 멀티플레이어 참조 헬퍼 함수] ---
 	UFUNCTION(BlueprintCallable, Category = "References")
 	APE_PlayerCharacter* GetCachedPlayerCharacter();
@@ -221,8 +224,8 @@ private:
 	UPROPERTY()
 	class APE_CardActor* PendingTurnEndCard = nullptr;
 
-	UFUNCTION()
-	void OnTurnEndCardReadyAnimFinished();
+	UPROPERTY()
+	class APE_CardActor* FailedTurnEndCard = nullptr;
 
 	// ----- [Temporary Variables] -----
 	float StoredMouseX = 0.f;

@@ -193,6 +193,9 @@ void APE_CardActor::NotifyCastingReadyAnimFinished()
 				InteractionComp->NotifyCastingReadyAnimFinished();
 			}
 		}
+
+		// 턴 종료 카드의 애니메이션 완료를 직접 호출하여 델리게이트 크래시 원천 차단
+		PC->NotifyTurnEndCardReadyAnimFinished(this);
 	}
 }
 

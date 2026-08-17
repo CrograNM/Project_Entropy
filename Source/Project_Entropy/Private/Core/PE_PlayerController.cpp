@@ -659,8 +659,13 @@ void APE_PlayerController::Server_RequestGridMove_Implementation(AACTile* Target
 
 void APE_PlayerController::ToggleTurnReadyState()
 {
-	if (CurrentInputMode != EPEGameState::Battle) return;
-	if (!IsMyTurn()) return; // 내 팀의 턴일 때만 턴 종료(Ready)를 누를 수 있음
+	if (CurrentInputMode != EPEGameState::Battle || !IsMyTurn()) return;
+
+	// 이미 만장일치가 통과되어 턴 종료 시퀀스가 돌고 있다면 사용자의 추가 개입(광클 등)을 차단하여 꼬임과 크래시를 원천 방지
+	if (UPE_TurnManagerComponent* TM = GetCachedTurnManager())
+	{
+		if (TM->IsPendingTurnEnd()) return;
+	}
 
 	bIsReadyForTurnEnd = !bIsReadyForTurnEnd;
 	Server_SetTurnReadyState(bIsReadyForTurnEnd);
@@ -697,9 +702,13 @@ void APE_PlayerController::Client_TriggerTurnEndCards_Implementation()
 				if (Card->GetCardInstance()->GetBaseCardData()->TriggerType == EPECardTriggerType::OnTurnEnd)
 				{
 					PendingTurnEndCard = Card;
-					Card->OnCastingReadyAnimFinishedEvent.AddDynamic(this, &APE_PlayerController::OnTurnEndCardReadyAnimFinished);
+
+					// 강제 발동 연출 중 손패 정렬(UpdateHandLayout)의 간섭을 막기 위해 
+					// 일시적으로 시전 카드(CastingCard)로 등록하고 C++ 기반의 물리 이동을 즉시 중단시킵니다.
+					DeckManagerComp->SetCastingCard(Card);
+					Card->CancelMoveToTarget();
+
 					Card->PlayInstantCastingReadyAnimation();
-					// 한 장을 트리거하고 시각적 동기화를 위해 리턴(종료)합니다. 루프의 다음 진행은 게임 스테이트가 조절합니다.
 					return;
 				}
 			}
@@ -708,11 +717,11 @@ void APE_PlayerController::Client_TriggerTurnEndCards_Implementation()
 	Server_TurnEndCardsFinished();
 }
 
-void APE_PlayerController::OnTurnEndCardReadyAnimFinished()
+void APE_PlayerController::NotifyTurnEndCardReadyAnimFinished(APE_CardActor* Card)
 {
-	if (PendingTurnEndCard)
+	// 브로드캐스트 도중 델리게이트를 지우려다 엔진이 꺼지는 증상(Ensure Failed)을 해결하기 위한 명시적 함수 연결
+	if (PendingTurnEndCard == Card)
 	{
-		PendingTurnEndCard->OnCastingReadyAnimFinishedEvent.RemoveDynamic(this, &APE_PlayerController::OnTurnEndCardReadyAnimFinished);
 		ForceTriggerCardLocally(PendingTurnEndCard);
 		PendingTurnEndCard = nullptr;
 	}
@@ -822,6 +831,17 @@ void APE_PlayerController::Client_PlaySkillAnim_Implementation(int32 ClientReque
 
 void APE_PlayerController::NotifyDiscardAnimFinishedForCard(APE_CardActor* Card)
 {
+	// 대상 지정에 실패한 턴 종료 카드의 산화 애니메이션이 끝난 시점을 감지합니다.
+	if (FailedTurnEndCard == Card)
+	{
+		FailedTurnEndCard = nullptr;
+
+		// 겹침 현상 없이 부드럽게 폐기가 완료된 직후, 그제서야 다음 카드를 찾도록 지시
+		FTimerHandle DelayTimer;
+		GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_PlayerController::Client_TriggerTurnEndCards, 0.2f, false);
+		return;
+	}
+
 	for (auto& Elem : PendingSkillRequests)
 	{
 		if (Elem.Value == Card)
@@ -1032,11 +1052,13 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 
 	if (!PC || !BaseData) return;
 
-	// [수정됨: AP 부족 여부를 묻지도 따지지도 않습니다 (Free Cast)]
-
 	AACTile* TargetTile = nullptr;
 	APE_CharacterBase* TargetCharacter = nullptr;
 	bool bHasTarget = GetRandomValidTargetForSkill(SkillData, TargetTile, TargetCharacter);
+
+	// 시전 대기 연출과 연산이 모두 끝났으므로 캐스팅 카드 등록을 해제합니다.
+	// (이후 QueueCard 또는 DiscardCard 내부에서 안전하게 HandCards 배열에서 카드를 완전히 제거합니다)
+	DeckManagerComp->SetCastingCard(nullptr);
 
 	if (bHasTarget)
 	{
@@ -1048,10 +1070,9 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 	{
 		ShowToastMessage(FText::FromString(FString::Printf(TEXT("%s 발동 실패: 대상 없음"), *BaseData->CardName.ToString())));
 		DeckManagerComp->DiscardCard(TriggeredCard);
-		TriggeredCard->PlayDiscardAnimation();
 
-		// 유효한 타겟이 없어 서버 스킬 큐에 등록되지 않았으므로, 
-		// 여기서 스스로 다음 턴 종료 카드를 검색하도록 함수를 재호출하여 무한 대기를 방지합니다.
-		Client_TriggerTurnEndCards();
+		// 실패한 카드를 버릴 때 다음 탐색을 무작정 시작하지 않고 대기하기 위한 캐싱 작업
+		FailedTurnEndCard = TriggeredCard;
+		TriggeredCard->PlayInstantCastingAnimation();
 	}
 }
