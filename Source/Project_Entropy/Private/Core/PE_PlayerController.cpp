@@ -719,12 +719,13 @@ bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* Skill
 }
 void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID, bool bIsFreeCast)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] Server_RequestSkillCast_Implementation 호출: SkillData=%s, TargetTile=%s, TargetCharacter=%s, ClientRequestID=%d, bIsFreeCast=%d"),
-		SkillData ? *SkillData->GetName() : TEXT("null"),
-		TargetTile ? *TargetTile->GetName() : TEXT("null"),
-		TargetCharacter ? *TargetCharacter->GetName() : TEXT("null"),
-		ClientRequestID,
-		bIsFreeCast);
+	//	UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] Server_RequestSkillCast_Implementation 호출: SkillData=%s, TargetTile=%s, TargetCharacter=%s, ClientRequestID=%d, bIsFreeCast=%d"),
+	//		SkillData ? *SkillData->GetName() : TEXT("null"),
+	//		TargetTile ? *TargetTile->GetName() : TEXT("null"),
+	//		TargetCharacter ? *TargetCharacter->GetName() : TEXT("null"),
+	//		ClientRequestID,
+	//		bIsFreeCast);
+
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
 	if (!PC) return;
 
@@ -761,7 +762,6 @@ void APE_PlayerController::Client_PlaySkillAnim_Implementation(int32 ClientReque
 			}
 
 			bAnimStarted = true; // 애니메이션 재생 성공
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] Client_PlaySkillAnim_Implementation: 애니메이션 재생 시작 - Card=%s, RequestID=%d"), *Card->GetName(), ClientRequestID);
 		}
 	}
 
@@ -778,7 +778,6 @@ void APE_PlayerController::NotifyDiscardAnimFinishedForCard(APE_CardActor* Card)
 	{
 		if (Elem.Value == Card)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] NotifyDiscardAnimFinishedForCard: 애니메이션 완료 - Card=%s, RequestID=%d"), *Card->GetName(), Elem.Key);
 			Server_NotifySkillAnimFinished(Elem.Key);
 			return;
 		}
