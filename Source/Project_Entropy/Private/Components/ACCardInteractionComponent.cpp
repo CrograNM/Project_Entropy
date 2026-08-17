@@ -101,66 +101,80 @@ void UACCardInteractionComponent::ProcessDragging()
 		}
 	}
 
-	if (bIsOverCastingZone)
+	// 1. 상태 전이 및 연출 제어
+	if (bIsInstantCast)
 	{
-		if (!bIsPreparingToCast)
+		// 즉발 카드: 시전 구역 진입 시 애니메이션 대기 없이 즉시 시전 가능 상태로 설정
+		if (bIsOverCastingZone)
 		{
 			bIsPreparingToCast = true;
-			bIsCastingReadyAnimFinished = false;
+			bIsCastingReadyAnimFinished = true;
 			if (DeckManager) DeckManager->SetCastingCard(GrabbedCard);
-
-			// 마우스를 따라가지 않도록 고정
-			GrabbedCard->CancelMoveToTarget();
-
-			if (bIsInstantCast)
-			{
-				// 즉발 스킬: 타겟팅 비주얼을 켜지 않고 중앙 대기 애니메이션만 재생합니다.
-				GrabbedCard->PlayInstantCastingReadyAnimation();
-			}
-			else
-			{
-				GrabbedCard->PlayCastingReadyAnimation();
-			}
-			// 타겟팅 비주얼 활성화는 애니메이션 완료 알림 이후(NotifyCastingReadyAnimFinished)로 위임
+			HoveredCardDuringDrag = nullptr;
 		}
-
-		HoveredCardDuringDrag = nullptr; // 스왑 초기화
-	}
-	else
-	{
-		// 캐스팅 구역에서 다시 손패 영역으로 내려왔을 때 타겟팅 취소
-		if (bIsPreparingToCast)
+		else
 		{
 			bIsPreparingToCast = false;
 			bIsCastingReadyAnimFinished = false;
 			if (DeckManager) DeckManager->SetCastingCard(nullptr);
-
-			if (PC)
-			{
-				if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
-				{
-					if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
-						Visualizer->ClearTargeting();
-				}
-			}
-
-			// 취소 연출 (손패로 돌아가는 모션 준비 - 기존 애니메이션을 멈춤)
-			GrabbedCard->StopCardAnimations();
 		}
-
-		// [일반 드래그 모드 (마우스 추적 및 스왑 로직)]
-		FHitResult HitResult;
-		PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-		APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
-
-		if (HitCard && DeckManager && !DeckManager->GetHandCards().Contains(HitCard)) HitCard = nullptr;
-
-		if (HitCard != HoveredCardDuringDrag)
+	}
+	else
+	{
+		// 타겟팅 카드: 기존처럼 중앙 고정 및 대기 애니메이션 재생 로직 유지
+		if (bIsOverCastingZone)
 		{
-			HoveredCardDuringDrag = HitCard;
-			if (HoveredCardDuringDrag != nullptr && HoveredCardDuringDrag != GrabbedCard)
+			if (!bIsPreparingToCast)
 			{
-				if (DeckManager) DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
+				bIsPreparingToCast = true;
+				bIsCastingReadyAnimFinished = false;
+				if (DeckManager) DeckManager->SetCastingCard(GrabbedCard);
+
+				GrabbedCard->CancelMoveToTarget();
+				GrabbedCard->PlayCastingReadyAnimation();
+			}
+			HoveredCardDuringDrag = nullptr;
+		}
+		else
+		{
+			if (bIsPreparingToCast)
+			{
+				bIsPreparingToCast = false;
+				bIsCastingReadyAnimFinished = false;
+				if (DeckManager) DeckManager->SetCastingCard(nullptr);
+
+				if (PC)
+				{
+					if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+					{
+						if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+							Visualizer->ClearTargeting();
+					}
+				}
+
+				GrabbedCard->StopCardAnimations();
+			}
+		}
+	}
+
+	// 2. 물리적 이동 및 손패 스왑 처리 (즉발 카드는 위치 상관없이 항상 허용, 타겟팅 카드는 시전 구역이 아닐 때만 허용)
+	if (bIsInstantCast || !bIsOverCastingZone)
+	{
+		if (!bIsOverCastingZone)
+		{
+			FHitResult HitResult;
+			PC->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+			APE_CardActor* HitCard = Cast<APE_CardActor>(HitResult.GetActor());
+
+			if (HitCard && DeckManager && !DeckManager->GetHandCards().Contains(HitCard)) HitCard = nullptr;
+
+			if (HitCard != HoveredCardDuringDrag)
+			{
+				HoveredCardDuringDrag = HitCard;
+				if (HoveredCardDuringDrag != nullptr && HoveredCardDuringDrag != GrabbedCard)
+				{
+					if (DeckManager) DeckManager->ReorderHandCards(GrabbedCard, HoveredCardDuringDrag);
+				}
 			}
 		}
 
@@ -282,6 +296,11 @@ void UACCardInteractionComponent::ReleaseCard()
 
 void UACCardInteractionComponent::CompleteCasting()
 {
+	if (GrabbedCard)
+	{
+		GrabbedCard->CancelMoveToTarget();
+	}
+
 	if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 	{
 		DeckManager->SetCastingCard(nullptr);
@@ -312,6 +331,8 @@ void UACCardInteractionComponent::CancelCasting()
 {
 	if (GrabbedCard)
 	{
+		GrabbedCard->CancelMoveToTarget();
+
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
 			DeckManager->SetCastingCard(nullptr);
