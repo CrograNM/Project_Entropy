@@ -1073,6 +1073,6 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 
 		// 실패한 카드를 버릴 때 다음 탐색을 무작정 시작하지 않고 대기하기 위한 캐싱 작업
 		FailedTurnEndCard = TriggeredCard;
-		TriggeredCard->PlayInstantCastingAnimation();
+		TriggeredCard->PlayDiscardAnimation();
 	}
 }
