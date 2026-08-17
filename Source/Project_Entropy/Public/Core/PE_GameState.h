@@ -34,30 +34,30 @@ public:
 	void ReportActionStarted();
 	void ReportActionEnded(int32 ActionLogID = -1);
 
-	void AdvanceTurnEndPhase();
+	// 클라이언트에서 애니메이션이 완전히 끝나 발사 확정을 지을 때 호출
+	void CommitCurrentAction();
 
-	// 현재 큐에 남은 행동이 있거나, 누군가 스킬을 실행 중인지 확인
+	void AdvanceTurnEndPhase();
+	void ReportTurnEndCardsFinished(class APE_PlayerController* PC);
+
 	bool IsActionQueueActive() const { return bIsProcessingAction || !ActionQueue.IsEmpty() || PendingActionCount > 0; }
 
 	// --- [Action UI Queue 시스템] ---
 	UPROPERTY(BlueprintAssignable, Category = "Action Queue")
 	FOnActionQueueUpdatedSignature OnActionQueueUpdated;
 
-	// 텍스트 로그 등록 및 ID 반환
 	int32 AddActionLog(int32 TeamID, const FString& Text);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
 	TObjectPtr<UPE_TurnManagerComponent> TurnManager;
 
-	// 현재 게임의 상태를 모든 클라이언트에 복제
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentState, Category = "State")
 	EPEGameState CurrentState;
 
 	UFUNCTION()
 	void OnRep_CurrentState();
 
-	// 복제되는 실시간 UI 큐
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_ActionLogQueue, Category = "Action Queue")
 	TArray<FPEActionLogData> ActionLogQueue;
 
@@ -67,6 +67,10 @@ protected:
 private:
 	// 스킬 발동 대기열
 	TQueue<FPESkillActionPayload> ActionQueue;
+
+	// 애니메이션 재생 등을 대기 중인 현재 큐 아이템
+	UPROPERTY()
+	FPESkillActionPayload CurrentProcessingPayload;
 
 	// --- [턴 종료 대기열 관리 변수] ---
 	UPROPERTY()

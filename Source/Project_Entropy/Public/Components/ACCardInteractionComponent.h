@@ -45,6 +45,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
 	void CancelCasting();
 
+	void NotifyCastingReadyAnimFinished();
+
 	// --- Getter ---
 	EPEInteractionState GetCurrentState() const { return CurrentState; }
 	APE_CardActor* GetGrabbedCard() const { return GrabbedCard; }
@@ -60,6 +62,7 @@ private:
 
 	bool bIsSuspended = false;
 	bool bIsPreparingToCast = false;
+	bool bIsCastingReadyAnimFinished = false;
 
 	void ProcessHovering();
 	void ProcessDragging();

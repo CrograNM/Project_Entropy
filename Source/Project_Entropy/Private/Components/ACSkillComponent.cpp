@@ -4,6 +4,8 @@
 #include "Core/PE_PlayerController.h"
 #include "CardSystem/PE_SkillData.h"
 #include "CardSystem/PE_SkillActionActor.h"
+#include "CardSystem/PE_DataTypes.h"
+#include "CardSystem/PE_SkillEffectModule.h"
 #include "Components/ACStatComponent.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Characters/PE_CharacterBase.h"
@@ -11,12 +13,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Core/PE_GameState.h"
-#include "Components/CapsuleComponent.h" // [추가됨] 콜리전 높이 계산용
+#include "Components/CapsuleComponent.h"
 
 UACSkillComponent::UACSkillComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-
 	SetIsReplicatedByDefault(true);
 }
 
@@ -106,12 +107,12 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 	return false;
 }
 
-void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
+void UACSkillComponent::PrepareQueuedSkill(const FPESkillActionPayload& Payload)
 {
 	UPE_SkillData* SkillData = Payload.SkillData;
 	APE_CharacterBase* Caster = Payload.Instigator;
 
-	// 함수가 시작되자마자 GS를 무조건 찾아 캐싱
+	// 게임 스테이트 캐싱
 	APE_GameState* GS = nullptr;
 	if (Caster && Caster->GetWorld())
 	{
@@ -124,18 +125,17 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		return;
 	}
 
-	// --- [1. 타일 지정 vs 캐릭터 대상 분리 및 타겟 위치 확정] ---
+	// 타일 지정 vs 캐릭터 대상 분리 및 타겟 위치 확정
 	APE_CharacterBase* FinalTargetChar = nullptr;
 	FVector OriginalTargetLoc = FVector::ZeroVector;
 	FIntPoint TargetGridPos = FIntPoint(-999, -999);
 
 	if (SkillData->TargetType == EPESkillTargetType::Tile)
 	{
-		// 타일 지정일 경우, 캐릭터 추적(TargetCharacter)을 완전히 무시하고 타일 좌표로 고정
 		if (Payload.TargetTile)
 		{
 			OriginalTargetLoc = Payload.TargetTile->GetActorLocation();
-			OriginalTargetLoc.Z += 20.f; // 스윕 오프셋 일치화
+			OriginalTargetLoc.Z += 20.f;
 			TargetGridPos = Payload.TargetTile->GetGridPosition();
 		}
 	}
@@ -153,10 +153,9 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		}
 	}
 
-	// --- [2. 사거리 및 타겟 유효성 재검증 (실행 시점 최신 기준)] ---
+	// 사거리 및 타겟 유효성 재검증 (실행 시점 최신 기준)
 	bool bIsValidTarget = true;
 
-	// Self나 All_Enemies는 타겟 위치(-999) 검사를 아예 면제
 	if (SkillData->TargetType == EPESkillTargetType::Self || SkillData->TargetType == EPESkillTargetType::All_Enemies)
 	{
 		bIsValidTarget = true;
@@ -167,7 +166,6 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 	}
 	else if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
 	{
-		// 발동 시점의 맨해튼 거리 재계산
 		FIntPoint CasterPos = Caster->GetGridMovementComponent()->GetGridPosition();
 		int32 CurrentDistance = FMath::Abs(CasterPos.X - TargetGridPos.X) + FMath::Abs(CasterPos.Y - TargetGridPos.Y);
 
@@ -182,7 +180,6 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[ACSkillComponent] 실행 시점 재검증 실패. 스킬을 취소합니다."));
 
-		// 공짜 스킬이 아니었을 때만 환불
 		if (!Payload.bIsFreeCast)
 		{
 			OwnerStatComponent->SetAP(OwnerStatComponent->GetCurrentAP() + SkillData->BaseAPCost);
@@ -196,13 +193,63 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		return;
 	}
 
-	// 검증 성공: 실제 스킬 발동 시작 및 카드 영구 소멸 확정 (ID 전송)
-	if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
+	// 몬스터의 스킬이거나 ID가 없는 경우(클라이언트 애니메이션이 불필요한 경우) 즉시 스킬 발사 처리
+	if (Payload.ClientRequestID == -1)
 	{
-		PC->Client_ConfirmSkillExecution(Payload.ClientRequestID);
+		CommitQueuedSkill(Payload);
+	}
+	else
+	{
+		// 클라이언트에게 산화(버리기) 애니메이션 재생을 명령하고 대기
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
+		{
+			PC->Client_PlaySkillAnim(Payload.ClientRequestID);
+		}
+	}
+}
+
+void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
+{
+	UPE_SkillData* SkillData = Payload.SkillData;
+	APE_CharacterBase* Caster = Payload.Instigator;
+
+	APE_GameState* GS = nullptr;
+	if (Caster && Caster->GetWorld()) GS = Caster->GetWorld()->GetGameState<APE_GameState>();
+
+	if (!SkillData || !Caster)
+	{
+		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
+		return;
 	}
 
-	// 물리 연산 및 발사 전, 대상을 향해 정확히 회전시켜 방향 벡터 오차를 100% 억제
+	UE_LOG(LogTemp, Warning, TEXT("[ACSkillComponent] 스킬 실행 확정: %s"), *SkillData->SkillID.ToString());
+
+	// 타겟팅 정보 다시 추적 (방향을 위해)
+	FVector OriginalTargetLoc = FVector::ZeroVector;
+	APE_CharacterBase* FinalTargetChar = nullptr;
+
+	if (SkillData->TargetType == EPESkillTargetType::Tile && Payload.TargetTile)
+	{
+		OriginalTargetLoc = Payload.TargetTile->GetActorLocation();
+		OriginalTargetLoc.Z += 20.f;
+	}
+	else if (Payload.TargetCharacter)
+	{
+		FinalTargetChar = Payload.TargetCharacter;
+		OriginalTargetLoc = FinalTargetChar->GetActorLocation();
+		if (UCapsuleComponent* TargetCap = FinalTargetChar->FindComponentByClass<UCapsuleComponent>())
+			OriginalTargetLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
+	}
+
+	// 클라이언트에서 애니메이션이 완전히 종료되었으므로, 논리적인 덱 매니저의 버리기를 확정 명령
+	if (Payload.ClientRequestID != -1)
+	{
+		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
+		{
+			PC->Client_ConfirmSkillExecution(Payload.ClientRequestID);
+		}
+	}
+
 	if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
 	{
 		FVector Dir = (OriginalTargetLoc - Caster->GetActorLocation()).GetSafeNormal2D();
@@ -223,7 +270,6 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 		FTransform SpawnTransform = Caster->GetActorTransform();
 		SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
 
-		// --- [핵심 수정됨: 물리 서버측 궤적 스윕 동기화] ---
 		FVector FinalTargetLoc = OriginalTargetLoc;
 
 		if (SkillData->ProjectileSpeed > 0.f)
@@ -251,11 +297,11 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 					FinalTargetLoc = HitResult.Location;
 					if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
 					{
-						FinalTargetChar = HitChar; // 요격당한 대상을 최종 타겟으로 덮어씀
+						FinalTargetChar = HitChar;
 					}
 					else
 					{
-						FinalTargetChar = nullptr; // 지형지물에 막힘
+						FinalTargetChar = nullptr;
 					}
 					break;
 				}
@@ -263,19 +309,97 @@ void UACSkillComponent::ExecuteQueuedSkill(const FPESkillActionPayload& Payload)
 			}
 		}
 
-		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform);
+		// 시전자와 겹쳐도 무조건 스폰되도록 보장
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = Caster;
+		SpawnParams.Instigator = Caster;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform, SpawnParams);
 		if (ActionActor)
 		{
 			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID);
 		}
+		else
+		{
+			// 생성 실패 시 큐 무한 대기를 막기 위한 예외 처리
+			if (GS) GS->ReportActionEnded(Payload.ActionLogID);
+		}
 	}
 	else
 	{
+		NetMulticast_PlayCastVisuals(SkillData);
+
+		TSet<APE_CharacterBase*> AffectedTargets;
+
+		if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
+		{
+			TArray<AActor*> AllChars;
+			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+			for (AActor* Actor : AllChars)
+			{
+				if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+				{
+					if (Char->GetTeamID() != Caster->GetTeamID() && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
+					{
+						AffectedTargets.Add(Char);
+					}
+				}
+			}
+		}
+		else if (SkillData->TargetType == EPESkillTargetType::Self)
+		{
+			AffectedTargets.Add(Caster);
+		}
+		else
+		{
+			FIntPoint CenterPos(-999, -999);
+			if (FinalTargetChar && FinalTargetChar->GetGridMovementComponent())
+			{
+				CenterPos = FinalTargetChar->GetGridMovementComponent()->GetGridPosition();
+			}
+			else if (Payload.TargetTile)
+			{
+				CenterPos = Payload.TargetTile->GetGridPosition();
+			}
+
+			if (CenterPos != FIntPoint(-999, -999))
+			{
+				TSet<FIntPoint> AffectedPositions = SkillData->GetAffectedGridPositions(CenterPos);
+				TArray<AActor*> AllChars;
+				UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+				for (AActor* Actor : AllChars)
+				{
+					if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+					{
+						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+						{
+							if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
+							{
+								AffectedTargets.Add(Char);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// 수집된 타겟들에게 즉시 이펙트 적용
+		for (UPE_SkillEffectModule* Module : SkillData->EffectModules)
+		{
+			if (Module)
+			{
+				Module->ApplyEffects(Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload.CalculatedDamage);
+			}
+		}
+
+		NetMulticast_PlayHitVisuals(SkillData, OriginalTargetLoc);
+
+		// 즉발 스킬은 여기서 스스로 액션 종료를 보고해야 큐가 넘어감
 		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
 	}
 }
 
-// 모든 클라이언트에서 동일한 시전(Cast) 애니메이션과 사운드를 재생합니다.
 void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_SkillData* SkillData)
 {
 	if (!SkillData) return;
@@ -291,7 +415,6 @@ void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_Sk
 	}
 }
 
-// 모든 클라이언트에서 동일한 적중(Hit) 폭발과 사운드를 재생합니다.
 void UACSkillComponent::NetMulticast_PlayHitVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation)
 {
 	if (!SkillData) return;

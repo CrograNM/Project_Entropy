@@ -316,7 +316,6 @@ void UACDeckManagerComponent::RevertQueuedCard(APE_CardActor* Card)
 	CastingCard = nullptr;
 	bInCastingZone = false;
 
-	FTransform RelativeTransform = Card->GetRootComponent()->GetRelativeTransform();
-	Card->PlayCancelCastingAnimation(RelativeTransform);
+	Card->StopCardAnimations();
 	UpdateHandLayout(); // 자기 자리를 찾아가도록 상대 좌표 계산
 }

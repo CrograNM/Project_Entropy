@@ -336,8 +336,7 @@ void APE_PlayerController::ToggleGridMovementActivation()
 	}
 	
 	// 필터링: 배틀모드, 플레이어 턴, GridSystem 존재 여부
-	if (!GridSystem) return;
-	if (CurrentInputMode != EPEGameState::Battle) return;
+	if (!GridSystem || CurrentInputMode != EPEGameState::Battle) return;
 
 
 	// 이동 모드 토글
@@ -637,50 +636,45 @@ void APE_PlayerController::ToggleTurnReadyState()
 
 void APE_PlayerController::Client_TriggerTurnEndCards_Implementation()
 {
-	UE_LOG(LogTemp, Warning, TEXT("[TurnSystem] 클라이언트 턴 종료 카드 자동 발동 검사 시작..."));
-
 	if (DeckManagerComp)
 	{
-		// 1. 원본 배열을 가져옵니다.
 		const TArray<TObjectPtr<APE_CardActor>>& HandCardsRef = DeckManagerComp->GetHandCards();
-
-		// 2. 루프 도중 카드가 큐에 들어가면 원본 배열이 수정되어 에러가 날 수 있으므로, 완벽한 복사본을 만듭니다.
 		TArray<APE_CardActor*> HandCardsCopy;
-		for (auto CardObj : HandCardsRef)
-		{
-			HandCardsCopy.Add(CardObj);
-		}
+		for (auto CardObj : HandCardsRef) HandCardsCopy.Add(CardObj);
 
-		UE_LOG(LogTemp, Log, TEXT("[TurnSystem] 손패에 있는 총 카드 수: %d"), HandCardsCopy.Num());
-
-		// 3. 복사본을 순회하며 검사 및 발사합니다.
 		for (APE_CardActor* Card : HandCardsCopy)
 		{
 			if (Card && Card->GetCardInstance() && Card->GetCardInstance()->GetBaseCardData())
 			{
 				if (Card->GetCardInstance()->GetBaseCardData()->TriggerType == EPECardTriggerType::OnTurnEnd)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("[TurnSystem] 턴 종료 카드 발견! 강제 시전: %s"), *Card->GetCardInstance()->GetBaseCardData()->CardName.ToString());
-					ForceTriggerCardLocally(Card);
+					PendingTurnEndCard = Card;
+					Card->OnCastingReadyAnimFinishedEvent.AddDynamic(this, &APE_PlayerController::OnTurnEndCardReadyAnimFinished);
+					Card->PlayInstantCastingReadyAnimation();
+					// 한 장을 트리거하고 시각적 동기화를 위해 리턴(종료)합니다. 루프의 다음 진행은 게임 스테이트가 조절합니다.
+					return;
 				}
 			}
 		}
 	}
-
-	// 카드 큐 등록이 끝났음을 서버에 보고
 	Server_TurnEndCardsFinished();
+}
+
+void APE_PlayerController::OnTurnEndCardReadyAnimFinished()
+{
+	if (PendingTurnEndCard)
+	{
+		PendingTurnEndCard->OnCastingReadyAnimFinishedEvent.RemoveDynamic(this, &APE_PlayerController::OnTurnEndCardReadyAnimFinished);
+		ForceTriggerCardLocally(PendingTurnEndCard);
+		PendingTurnEndCard = nullptr;
+	}
 }
 
 void APE_PlayerController::Server_TurnEndCardsFinished_Implementation()
 {
 	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 	{
-		// 등록한 카드가 하나도 없다면 큐가 비어있으므로 바로 다음 사람을 부름.
-		// 만약 카드가 있었다면 현재 ActionQueue가 돌아가는 중이므로 자연스럽게 끝난 뒤 부르게 됨.
-		if (!GS->IsActionQueueActive())
-		{
-			GS->AdvanceTurnEndPhase();
-		}
+		GS->ReportTurnEndCardsFinished(this);
 	}
 }
 
@@ -690,15 +684,11 @@ void APE_PlayerController::Server_SetTurnReadyState_Implementation(bool bReady)
 	if (UPE_TurnManagerComponent* TM = GetCachedTurnManager())
 	{
 		TM->RequestTurnEnd(this, bReady);
-
 		if (TM->IsPendingTurnEnd())
 		{
 			if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 			{
-				if (!GS->IsActionQueueActive())
-				{
-					GS->AdvanceTurnEndPhase();
-				}
+				if (!GS->IsActionQueueActive()) GS->AdvanceTurnEndPhase();
 			}
 		}
 	}
@@ -729,6 +719,12 @@ bool APE_PlayerController::Server_RequestSkillCast_Validate(UPE_SkillData* Skill
 }
 void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData* SkillData, AACTile* TargetTile, APE_CharacterBase* TargetCharacter, int32 ClientRequestID, bool bIsFreeCast)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] Server_RequestSkillCast_Implementation 호출: SkillData=%s, TargetTile=%s, TargetCharacter=%s, ClientRequestID=%d, bIsFreeCast=%d"),
+		SkillData ? *SkillData->GetName() : TEXT("null"),
+		TargetTile ? *TargetTile->GetName() : TEXT("null"),
+		TargetCharacter ? *TargetCharacter->GetName() : TEXT("null"),
+		ClientRequestID,
+		bIsFreeCast);
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
 	if (!PC) return;
 
@@ -742,59 +738,83 @@ void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData*
 	}
 }
 
-void APE_PlayerController::Client_ConfirmSkillExecution_Implementation(int32 ClientRequestID)
+void APE_PlayerController::Client_PlaySkillAnim_Implementation(int32 ClientRequestID)
 {
-	// 1. 해당 요청이 오토 캐스트(강제 시전)였는지 플래그를 꺼냅니다.
-	bool bIsAutoCast = false;
-	if (bool* pAutoCast = PendingSkillAutoCastFlags.Find(ClientRequestID))
-	{
-		bIsAutoCast = *pAutoCast;
-		PendingSkillAutoCastFlags.Remove(ClientRequestID);
-	}
+	bool bAnimStarted = false;
 
 	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
 	{
 		APE_CardActor* Card = *FoundCard;
+		bool bIsAutoCast = false;
+		if (bool* pAutoCast = PendingSkillAutoCastFlags.Find(ClientRequestID)) bIsAutoCast = *pAutoCast;
 
-		if (DeckManagerComp)
-		{
-			DeckManagerComp->ConfirmQueuedCard(Card);
-		}
-
-		// 서버가 큐에서 이 카드를 꺼냈을 때 비로소 시각적 연출을 재생
 		if (Card && Card->GetSkillData())
 		{
 			EPESkillTargetType TargetType = Card->GetSkillData()->TargetType;
-
-			// 즉발 카드이거나, 손패에서 강제로 끌려나온(Auto-Cast) 카드라면 중앙으로 날아가는 연출 재생
 			if (bIsAutoCast || TargetType == EPESkillTargetType::All_Enemies || TargetType == EPESkillTargetType::Self)
 			{
 				Card->PlayInstantCastingAnimation();
 			}
 			else
 			{
-				// 수동으로 타겟팅을 마친 카드는 이미 화면 중앙에 대기 중이므로 그 자리에서 산화 연출 재생
 				Card->PlayDiscardAnimation();
 			}
-		}
 
+			bAnimStarted = true; // 애니메이션 재생 성공
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] Client_PlaySkillAnim_Implementation: 애니메이션 재생 시작 - Card=%s, RequestID=%d"), *Card->GetName(), ClientRequestID);
+		}
+	}
+
+	// 카드를 못 찾았거나 데이터가 비어있어 애니메이션 재생을 시작하지 못했다면 즉시 완료 처리 (무한 대기 방지)
+	if (!bAnimStarted)
+	{
+		Server_NotifySkillAnimFinished(ClientRequestID);
+	}
+}
+
+void APE_PlayerController::NotifyDiscardAnimFinishedForCard(APE_CardActor* Card)
+{
+	for (auto& Elem : PendingSkillRequests)
+	{
+		if (Elem.Value == Card)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APE_PlayerController] NotifyDiscardAnimFinishedForCard: 애니메이션 완료 - Card=%s, RequestID=%d"), *Card->GetName(), Elem.Key);
+			Server_NotifySkillAnimFinished(Elem.Key);
+			return;
+		}
+	}
+}
+
+void APE_PlayerController::Server_NotifySkillAnimFinished_Implementation(int32 ClientRequestID)
+{
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+	{
+		GS->CommitCurrentAction();
+	}
+}
+
+void APE_PlayerController::Client_ConfirmSkillExecution_Implementation(int32 ClientRequestID)
+{
+	PendingSkillAutoCastFlags.Remove(ClientRequestID);
+
+	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
+	{
+		if (DeckManagerComp) DeckManagerComp->ConfirmQueuedCard(*FoundCard);
 		PendingSkillRequests.Remove(ClientRequestID);
 	}
 }
 
 void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 ClientRequestID)
 {
-	PendingSkillAutoCastFlags.Remove(ClientRequestID); // 찌꺼기 플래그 제거
-
+	PendingSkillAutoCastFlags.Remove(ClientRequestID);
 	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
 	{
-		if (DeckManagerComp) 
+		if (DeckManagerComp)
 		{
 			DeckManagerComp->RevertQueuedCard(*FoundCard);
 			DeckManagerComp->UpdateHandLayout();
 		}
 		ShowToastMessage(FText::FromString(TEXT("시전 취소: 검증 실패")));
-
 		PendingSkillRequests.Remove(ClientRequestID);
 	}
 }
@@ -975,7 +995,6 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 	{
 		DeckManagerComp->QueueCard(TriggeredCard);
 		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, TriggeredCard, true);
-
 		ShowToastMessage(FText::FromString(FString::Printf(TEXT("%s 자동 발동!"), *BaseData->CardName.ToString())));
 	}
 	else

@@ -106,6 +106,7 @@ void UACCardInteractionComponent::ProcessDragging()
 		if (!bIsPreparingToCast)
 		{
 			bIsPreparingToCast = true;
+			bIsCastingReadyAnimFinished = false;
 			if (DeckManager) DeckManager->SetCastingCard(GrabbedCard);
 
 			// 마우스를 따라가지 않도록 고정
@@ -118,20 +119,9 @@ void UACCardInteractionComponent::ProcessDragging()
 			}
 			else
 			{
-				// 타겟팅 비주얼 활성화
-				UPE_CardInstance* CardInst = GrabbedCard->GetCardInstance();
-				if (SkillData && PC)
-				{
-					if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
-					{
-						if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
-							Visualizer->SetTargetingMode(ETargetingMode::Skill, SkillData->BaseRange, SkillData);
-					}
-				}
-
-				// 카드 시전 연출 재생 (중앙으로 띄우는 모션 -> 이후 옆쪽으로 날아가 대기)
 				GrabbedCard->PlayCastingReadyAnimation();
 			}
+			// 타겟팅 비주얼 활성화는 애니메이션 완료 알림 이후(NotifyCastingReadyAnimFinished)로 위임
 		}
 
 		HoveredCardDuringDrag = nullptr; // 스왑 초기화
@@ -142,6 +132,7 @@ void UACCardInteractionComponent::ProcessDragging()
 		if (bIsPreparingToCast)
 		{
 			bIsPreparingToCast = false;
+			bIsCastingReadyAnimFinished = false;
 			if (DeckManager) DeckManager->SetCastingCard(nullptr);
 
 			if (PC)
@@ -154,7 +145,7 @@ void UACCardInteractionComponent::ProcessDragging()
 			}
 
 			// 취소 연출 (손패로 돌아가는 모션 준비 - 기존 애니메이션을 멈춤)
-			GrabbedCard->PlayCancelCastingAnimation(GrabbedCard->GetActorTransform());
+			GrabbedCard->StopCardAnimations();
 		}
 
 		// [일반 드래그 모드 (마우스 추적 및 스왑 로직)]
@@ -187,6 +178,29 @@ void UACCardInteractionComponent::ProcessDragging()
 	}
 }
 
+void UACCardInteractionComponent::NotifyCastingReadyAnimFinished()
+{
+	if (!bIsPreparingToCast || !GrabbedCard) return;
+
+	bIsCastingReadyAnimFinished = true;
+
+	UPE_SkillData* SkillData = GrabbedCard->GetSkillData();
+	bool bIsInstantCast = false;
+	if (SkillData && (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self))
+	{
+		bIsInstantCast = true;
+	}
+
+	if (!bIsInstantCast && SkillData && PC)
+	{
+		if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
+		{
+			if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
+				Visualizer->SetTargetingMode(ETargetingMode::Skill, SkillData->BaseRange, SkillData);
+		}
+	}
+}
+
 void UACCardInteractionComponent::GrabCard()
 {
 	if (CurrentState != EPEInteractionState::Hovering) return;
@@ -202,6 +216,7 @@ void UACCardInteractionComponent::GrabCard()
 
 		// 상태 전환
 		bIsPreparingToCast = false;
+		bIsCastingReadyAnimFinished = false;
 		CurrentState = EPEInteractionState::Selecting; 
 
 		// 드래그 중인 카드 등록 (강제 정렬 무효화)
@@ -215,16 +230,21 @@ void UACCardInteractionComponent::GrabCard()
 void UACCardInteractionComponent::ReleaseCard()
 {
 	if (CurrentState != EPEInteractionState::Selecting || !GrabbedCard) return;
-	
-	// 마우스를 놓는 순간 캐스팅 구역이었다면 스킬 발사
+
 	if (bIsPreparingToCast)
 	{
-		// 검증 및 실행을 PC에게 완전히 위임합니다.
-		if (PC) PC->TryExecuteCardDrop(GrabbedCard);
+		// 애니메이션이 완전히 끝나기 전에 마우스를 놓으면 시전 취소로 간주
+		if (bIsCastingReadyAnimFinished)
+		{
+			if (PC) PC->TryExecuteCardDrop(GrabbedCard);
+		}
+		else
+		{
+			CancelCasting();
+		}
 	}
 	else
 	{
-		// 손패 구역에서 놓았다면 조용히 원래 위치로 복귀
 		CancelCasting();
 	}
 }
@@ -276,11 +296,12 @@ void UACCardInteractionComponent::CancelCasting()
 			}
 		}
 
-		GrabbedCard->PlayCancelCastingAnimation(GrabbedCard->GetActorTransform());
+		GrabbedCard->StopCardAnimations();
 		GrabbedCard->SetActorEnableCollision(true);
 	}
 
 	bIsPreparingToCast = false;
+	bIsCastingReadyAnimFinished = false;
 	GrabbedCard = nullptr;
 	HoveredCard = nullptr;
 	HoveredCardDuringDrag = nullptr;

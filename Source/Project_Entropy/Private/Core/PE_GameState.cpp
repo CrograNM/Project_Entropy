@@ -95,10 +95,10 @@ void APE_GameState::ProcessNextAction()
 	{
 		bIsProcessingAction = false;
 
-		// 만장일치 시 즉시 종료가 아니라, 카드 발동 페이즈(AdvanceTurnEndPhase)로 진입
 		if (TurnManager && TurnManager->IsPendingTurnEnd())
 		{
-			AdvanceTurnEndPhase();
+			// 0.2초 딜레이를 타이머로 작동시킴으로써 턴 종료 카드 간의 흐름을 자연스럽게 유도
+			GetWorld()->GetTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_GameState::AdvanceTurnEndPhase, ActionInterval, false);
 		}
 		return;
 	}
@@ -108,20 +108,29 @@ void APE_GameState::ProcessNextAction()
 	// 1차 스킬 본체의 액션 카운트 부여
 	ReportActionStarted();
 
-	FPESkillActionPayload Payload;
-	ActionQueue.Dequeue(Payload);
+	ActionQueue.Dequeue(CurrentProcessingPayload);
 
-	// 꺼낸 명세서를 바탕으로 스킬 실제 실행 지시
-	if (Payload.Instigator && Payload.SkillData)
+	// 스킬 실제 실행 지시
+	if (CurrentProcessingPayload.Instigator && CurrentProcessingPayload.SkillData)
 	{
-		UACSkillComponent* SkillComp = Payload.Instigator->FindComponentByClass<UACSkillComponent>();
-		if (SkillComp)
+		if (UACSkillComponent* SkillComp = CurrentProcessingPayload.Instigator->FindComponentByClass<UACSkillComponent>())
 		{
-			SkillComp->ExecuteQueuedSkill(Payload);
+			SkillComp->PrepareQueuedSkill(CurrentProcessingPayload);
 		}
 		else ReportActionEnded();
 	}
 	else ReportActionEnded();
+}
+
+void APE_GameState::CommitCurrentAction()
+{
+	if (CurrentProcessingPayload.Instigator)
+	{
+		if (UACSkillComponent* SkillComp = CurrentProcessingPayload.Instigator->FindComponentByClass<UACSkillComponent>())
+		{
+			SkillComp->CommitQueuedSkill(CurrentProcessingPayload);
+		}
+	}
 }
 
 void APE_GameState::AdvanceTurnEndPhase()
@@ -174,6 +183,16 @@ void APE_GameState::AdvanceTurnEndPhase()
 		bTurnEndCardPhaseActive = false;
 		if (TurnManager) TurnManager->ExecuteTurnEnd();
 	}
+}
+
+void APE_GameState::ReportTurnEndCardsFinished(APE_PlayerController* PC)
+{
+	if (TurnEndPlayersQueue.Contains(PC))
+	{
+		TurnEndPlayersQueue.Remove(PC);
+	}
+	// 방금 끝낸 플레이어를 큐에서 제거하고 다음 플레이어 검사
+	AdvanceTurnEndPhase();
 }
 
 // --- [UI 액션 큐 제어부] ---

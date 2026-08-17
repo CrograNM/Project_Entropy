@@ -27,6 +27,8 @@ enum class EPECardVisualState : uint8
 	Discarding  UMETA(DisplayName = "Discarding, 버려지는 중 (빛 알갱이 산화)")
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCardAnimFinishedSignature);
+
 /** 3D 공간 상에 존재할 카드 액터 */
 UCLASS()
 class PROJECT_ENTROPY_API APE_CardActor : public AActor
@@ -71,9 +73,9 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void PlayInstantCastingAnimation();
 
-	// 3. 시전 취소: 스윽하고 원래 손패 위치로 자연스럽게 돌아가는 연출
+	// 3. 시전 취소: 단순 타임라인 정지 신호, 손패 돌아가는 연출은 DeckManager->UpdateHandLayout에서 자연스럽게 처리됨
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
-	void PlayCancelCastingAnimation(FTransform ReturnHandTransform);
+	void StopCardAnimations();
 
 	// 4. 카드 사용 완료 (산화): 빛 알갱이로 부서지며 무덤으로 날아가는 연출
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "Card|Animation")
@@ -82,6 +84,16 @@ public:
 	// 캐스팅 대기 중 마우스 호버링 상태 변경 (오프셋 조절용)
 	UFUNCTION(BlueprintImplementableEvent, Category = "Card|Animation")
 	void OnCastingHoverStateChanged(bool IsHovered);
+
+	// --- [블루프린트 타임라인 완료 시 C++로 신호를 보내는 함수들] ---
+	UPROPERTY(BlueprintAssignable, Category = "Card|Events")
+	FOnCardAnimFinishedSignature OnCastingReadyAnimFinishedEvent;
+
+	UFUNCTION(BlueprintCallable, Category = "Card|Animation")
+	void NotifyCastingReadyAnimFinished();
+
+	UFUNCTION(BlueprintCallable, Category = "Card|Animation")
+	void NotifyDiscardAnimFinished();
 
 	/** --- Getter/Setter --- */
 	UFUNCTION(BlueprintCallable, Category = "Card|Data")
@@ -116,7 +128,6 @@ protected:
 	TObjectPtr<UPE_CardThemeData> GlobalCardTheme;
 
 	// --- 컴포넌트 ---
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> RootScene;
 
@@ -139,7 +150,6 @@ protected:
 private:
 	// --- 이동 보간용 변수 ---
 	bool bIsMovingToTarget = false;
-
 	FTransform TargetRelativeTransform;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Card|Movement")

@@ -10,6 +10,9 @@
 #include "Components/WidgetComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "NiagaraComponent.h"
+#include "Core/PE_PlayerController.h"
+#include "Components/ACCardInteractionComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 APE_CardActor::APE_CardActor()
 {
@@ -174,4 +177,29 @@ void APE_CardActor::SetHoverOffsetEnabled(bool bEnable)
 	// 호버링 트리거: 이동 연산을 즉시 시작하여 호버링 오프셋 적용
 	bIsHovered = bEnable;
 	bIsMovingToTarget = true; // 이동 연산 활성화
+}
+
+void APE_CardActor::NotifyCastingReadyAnimFinished()
+{
+	OnCastingReadyAnimFinishedEvent.Broadcast();
+
+	// 드래그 앤 드롭 시전 대기용 연결
+	if (APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
+	{
+		if (UACCardInteractionComponent* InteractionComp = PC->FindComponentByClass<UACCardInteractionComponent>())
+		{
+			if (InteractionComp->GetGrabbedCard() == this)
+			{
+				InteractionComp->NotifyCastingReadyAnimFinished();
+			}
+		}
+	}
+}
+
+void APE_CardActor::NotifyDiscardAnimFinished()
+{
+	if (APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
+	{
+		PC->NotifyDiscardAnimFinishedForCard(this);
+	}
 }
