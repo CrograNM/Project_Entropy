@@ -716,6 +716,7 @@ void APE_PlayerController::SendSkillCastRequest(UPE_SkillData* SkillData, AACTil
 	if (SourceCard)
 	{
 		PendingSkillRequests.Add(ReqID, SourceCard);
+		PendingSkillAutoCastFlags.Add(ReqID, bIsFreeCast);
 	}
 
 	// 네트워크를 넘을 수 있는 ID만 서버로 전송
@@ -743,25 +744,54 @@ void APE_PlayerController::Server_RequestSkillCast_Implementation(UPE_SkillData*
 
 void APE_PlayerController::Client_ConfirmSkillExecution_Implementation(int32 ClientRequestID)
 {
-	// 전달받은 번호를 대조하여 로컬에 보관해둔 카드 포인터를 찾아냅니다.
+	// 1. 해당 요청이 오토 캐스트(강제 시전)였는지 플래그를 꺼냅니다.
+	bool bIsAutoCast = false;
+	if (bool* pAutoCast = PendingSkillAutoCastFlags.Find(ClientRequestID))
+	{
+		bIsAutoCast = *pAutoCast;
+		PendingSkillAutoCastFlags.Remove(ClientRequestID);
+	}
+
 	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
 	{
+		APE_CardActor* Card = *FoundCard;
+
 		if (DeckManagerComp)
 		{
-			DeckManagerComp->ConfirmQueuedCard(*FoundCard);
+			DeckManagerComp->ConfirmQueuedCard(Card);
 		}
-		// 처리 완료 후 메모리 정리
+
+		// 서버가 큐에서 이 카드를 꺼냈을 때 비로소 시각적 연출을 재생
+		if (Card && Card->GetSkillData())
+		{
+			EPESkillTargetType TargetType = Card->GetSkillData()->TargetType;
+
+			// 즉발 카드이거나, 손패에서 강제로 끌려나온(Auto-Cast) 카드라면 중앙으로 날아가는 연출 재생
+			if (bIsAutoCast || TargetType == EPESkillTargetType::All_Enemies || TargetType == EPESkillTargetType::Self)
+			{
+				Card->PlayInstantCastingAnimation();
+			}
+			else
+			{
+				// 수동으로 타겟팅을 마친 카드는 이미 화면 중앙에 대기 중이므로 그 자리에서 산화 연출 재생
+				Card->PlayDiscardAnimation();
+			}
+		}
+
 		PendingSkillRequests.Remove(ClientRequestID);
 	}
 }
 
 void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 ClientRequestID)
 {
+	PendingSkillAutoCastFlags.Remove(ClientRequestID); // 찌꺼기 플래그 제거
+
 	if (APE_CardActor** FoundCard = PendingSkillRequests.Find(ClientRequestID))
 	{
 		if (DeckManagerComp) 
 		{
 			DeckManagerComp->RevertQueuedCard(*FoundCard);
+			DeckManagerComp->UpdateHandLayout();
 		}
 		ShowToastMessage(FText::FromString(TEXT("시전 취소: 검증 실패")));
 
@@ -771,7 +801,6 @@ void APE_PlayerController::Client_CancelSkillExecution_Implementation(int32 Clie
 
 void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 {
-	// 드래그를 놓았을 때 결제 및 큐 등록 로직
 	if (!DroppedCard || !DroppedCard->GetSkillData() || !CardInteractionComp) return;
 
 	UPE_SkillData* SkillData = DroppedCard->GetSkillData();
@@ -783,7 +812,6 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		return;
 	}
 
-	// AP 부족 체크
 	if (PC->GetStatComponent()->GetCurrentAP() < SkillData->BaseAPCost)
 	{
 		ShowToastMessage(FText::FromString(TEXT("AP가 부족합니다.")));
@@ -791,21 +819,16 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		return;
 	}
 
-	// 1. 즉발 카드 처리 (타겟팅 무시)
 	if (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self)
 	{
 		if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
-
 		SendSkillCastRequest(SkillData, nullptr, nullptr, DroppedCard);
 
-		DroppedCard->PlayInstantCastingAnimation();
 		PC->GetTargetingVisualizer()->ClearTargeting();
-
 		CardInteractionComp->CompleteCasting();
 		return;
 	}
 
-	// 2. 타겟팅 스킬 처리 (마우스를 놓은 위치 검사)
 	FHitResult HitResult;
 	GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
 
@@ -827,10 +850,7 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 	bool bIsValidTarget = false;
 	if (PC->GetTargetingVisualizer()->IsTileInRange(TargetTile))
 	{
-		if (SkillData->TargetType == EPESkillTargetType::Tile)
-		{
-			bIsValidTarget = true;
-		}
+		if (SkillData->TargetType == EPESkillTargetType::Tile) bIsValidTarget = true;
 		else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
 		{
 			TArray<AActor*> AllChars;
@@ -856,8 +876,6 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
 		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, DroppedCard);
 		PC->GetTargetingVisualizer()->ClearTargeting();
-
-		// 인터랙션 완전 초기화
 		CardInteractionComp->CompleteCasting();
 	}
 	else
@@ -956,11 +974,8 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 	if (bHasTarget)
 	{
 		DeckManagerComp->QueueCard(TriggeredCard);
-
-		// [핵심] bIsFreeCast 파라미터를 true로 날립니다!
 		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, TriggeredCard, true);
 
-		TriggeredCard->PlayInstantCastingAnimation();
 		ShowToastMessage(FText::FromString(FString::Printf(TEXT("%s 자동 발동!"), *BaseData->CardName.ToString())));
 	}
 	else

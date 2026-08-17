@@ -206,6 +206,8 @@ private:
 	UPROPERTY()
 	TMap<int32, class APE_CardActor*> PendingSkillRequests;
 
+	TMap<int32, bool> PendingSkillAutoCastFlags;
+
 	// ----- [Temporary Variables] -----
 	float StoredMouseX = 0.f;
 	float StoredMouseY = 0.f;

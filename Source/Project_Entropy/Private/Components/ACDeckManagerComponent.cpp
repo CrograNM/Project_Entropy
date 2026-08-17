@@ -299,7 +299,7 @@ void UACDeckManagerComponent::ConfirmQueuedCard(APE_CardActor* Card)
 	DiscardPile.Add(Card->GetCardInstance());
 	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
 
-	Card->PlayDiscardAnimation(); // 산화 연출 실행
+	// Card->PlayDiscardAnimation(); // 산화 연출 실행
 }
 
 void UACDeckManagerComponent::RevertQueuedCard(APE_CardActor* Card)
