@@ -178,6 +178,37 @@ void UACCardInteractionComponent::ProcessDragging()
 	}
 }
 
+void UACCardInteractionComponent::ForceGrabCardByKeyboard(APE_CardActor* TargetCard)
+{
+	if (CurrentState == EPEInteractionState::Disabled || !TargetCard) return;
+
+	if (HoveredCard)
+	{
+		HoveredCard->SetHighlightState(false);
+		HoveredCard->SetHoverOffsetEnabled(false);
+		HoveredCard = nullptr;
+	}
+	// 기존에 쥐고 있던 카드가 있다면 안전하게 내려놓음
+	if (GrabbedCard) CancelCasting();
+	
+
+	GrabbedCard = TargetCard;
+	bIsKeyboardCasting = true;
+
+	GrabbedCard->SetActorEnableCollision(false);
+	GrabbedCard->SetHighlightState(false);
+	GrabbedCard->SetHoverOffsetEnabled(false);
+
+	bIsPreparingToCast = false;
+	bIsCastingReadyAnimFinished = false;
+	CurrentState = EPEInteractionState::Selecting;
+
+	if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
+	{
+		DeckManager->SetDraggedCard(GrabbedCard);
+	}
+}
+
 void UACCardInteractionComponent::NotifyCastingReadyAnimFinished()
 {
 	if (!bIsPreparingToCast || !GrabbedCard) return;
@@ -269,8 +300,10 @@ void UACCardInteractionComponent::CompleteCasting()
 	}
 
 	bIsPreparingToCast = false;
+	bIsCastingReadyAnimFinished = false;
+	bIsKeyboardCasting = false; 
 	GrabbedCard = nullptr;
-	HoveredCard = nullptr; // 안전망
+	HoveredCard = nullptr; 
 	HoveredCardDuringDrag = nullptr;
 	CurrentState = EPEInteractionState::Hovering;
 }
@@ -302,6 +335,7 @@ void UACCardInteractionComponent::CancelCasting()
 
 	bIsPreparingToCast = false;
 	bIsCastingReadyAnimFinished = false;
+	bIsKeyboardCasting = false;
 	GrabbedCard = nullptr;
 	HoveredCard = nullptr;
 	HoveredCardDuringDrag = nullptr;

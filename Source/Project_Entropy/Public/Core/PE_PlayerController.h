@@ -151,6 +151,9 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> IA_CameraHeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Action", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> IA_SelectCardByIndex;
 	
 	// ----- [References] -----
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Battle")
@@ -184,6 +187,8 @@ private:
 	void OnSelect(const FInputActionValue& Value);
 	void OnCardSelect(const FInputActionValue& Value);
 	void OnCardRelease(const FInputActionValue& Value);
+	void OnSelectCardByIndexStarted(const FInputActionValue& Value);
+	void OnSelectCardByIndexCompleted(const FInputActionValue& Value);
 
 	// ----- [Universal Cancel Action] -----
 	void OnCancelAction(const FInputActionValue& Value);

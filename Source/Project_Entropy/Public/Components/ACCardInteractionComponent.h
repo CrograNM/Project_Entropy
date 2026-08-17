@@ -47,6 +47,13 @@ public:
 
 	void NotifyCastingReadyAnimFinished();
 
+	// --- 키보드 캐스팅 강제 제어 ---
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Card")
+	void ForceGrabCardByKeyboard(APE_CardActor* TargetCard);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction|State")
+	bool bIsKeyboardCasting = false;
+
 	// --- Getter ---
 	EPEInteractionState GetCurrentState() const { return CurrentState; }
 	APE_CardActor* GetGrabbedCard() const { return GrabbedCard; }

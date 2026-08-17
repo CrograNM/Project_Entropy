@@ -155,7 +155,13 @@ void APE_PlayerController::SetupInputComponent()
 			// 클릭 종료 (Released) -> 카드 놓기 시도
 			EnhancedInputComponent->BindAction(IA_Select, ETriggerEvent::Completed, this, &APE_PlayerController::OnCardRelease);
 		}
-		
+		if (IA_SelectCardByIndex)
+		{
+			EnhancedInputComponent->BindAction(IA_SelectCardByIndex, ETriggerEvent::Started, this, &APE_PlayerController::OnSelectCardByIndexStarted);
+			EnhancedInputComponent->BindAction(IA_SelectCardByIndex, ETriggerEvent::Completed, this, &APE_PlayerController::OnSelectCardByIndexCompleted);
+			EnhancedInputComponent->BindAction(IA_SelectCardByIndex, ETriggerEvent::Canceled, this, &APE_PlayerController::OnSelectCardByIndexCompleted);
+		}
+
 		// ----- [Universal Cancel Action] -----
 		if (IA_Cancel)
 		{
@@ -463,23 +469,55 @@ void APE_PlayerController::OnSelect(const FInputActionValue& Value)
 }
 void APE_PlayerController::OnCardSelect(const FInputActionValue& Value)
 {
-	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
-	if (!IsMyTurn()) return;
-	if (bIsGridMoveActivated) return;
+	if (bIsReadyForTurnEnd || !IsMyTurn() || bIsGridMoveActivated) return;
 
-	if (CardInteractionComp)
+	// 마우스를 눌렀을 때, 키보드로 카드를 쥐고 있는 상태라면 집기가 아니라 발사를 트리거합니다.
+	if (CardInteractionComp && CardInteractionComp->bIsKeyboardCasting)
 	{
-		CardInteractionComp->GrabCard();
+		if (CardInteractionComp->IsPreparingToCast())
+		{
+			TryExecuteCardDrop(CardInteractionComp->GetGrabbedCard());
+		}
+		return;
 	}
+
+	if (CardInteractionComp) CardInteractionComp->GrabCard();
 }
 void APE_PlayerController::OnCardRelease(const FInputActionValue& Value)
 {
-	if (bIsReadyForTurnEnd) return; // 레디 상태면 클릭 불가
-	if (!IsMyTurn()) return;
+	if (bIsReadyForTurnEnd || !IsMyTurn()) return;
 
-	if (CardInteractionComp)
+	// 키보드로 캐스팅 중일 때는 마우스 릴리즈가 드래그 종료를 의미하지 않으므로 무시합니다.
+	if (CardInteractionComp && CardInteractionComp->bIsKeyboardCasting) return;
+
+	if (CardInteractionComp) CardInteractionComp->ReleaseCard();
+}
+
+void APE_PlayerController::OnSelectCardByIndexStarted(const FInputActionValue& Value)
+{
+	if (bIsReadyForTurnEnd || !IsMyTurn() || bIsGridMoveActivated) return;
+
+	// 키보드 입력값을 float(Axis1D)로 받아서 인덱스 계산 (1번 키 -> 배열의 0번 인덱스)
+	int32 CardIndex = FMath::RoundToInt(Value.Get<float>()) - 1;
+
+	if (DeckManagerComp && CardInteractionComp)
 	{
-		CardInteractionComp->ReleaseCard();
+		const TArray<APE_CardActor*>& Hand = DeckManagerComp->GetHandCards();
+		if (Hand.IsValidIndex(CardIndex))
+		{
+			CardInteractionComp->ForceGrabCardByKeyboard(Hand[CardIndex]);
+		}
+	}
+}
+
+void APE_PlayerController::OnSelectCardByIndexCompleted(const FInputActionValue& Value)
+{
+	if (bIsReadyForTurnEnd || !IsMyTurn()) return;
+
+	// 키를 떼면 강제로 캐스팅을 취소 (무조건 클릭으로 발동 시키기)
+	if (CardInteractionComp && CardInteractionComp->bIsKeyboardCasting)
+	{
+		CardInteractionComp->CancelCasting();
 	}
 }
 
@@ -1001,5 +1039,9 @@ void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
 		ShowToastMessage(FText::FromString(FString::Printf(TEXT("%s 발동 실패: 대상 없음"), *BaseData->CardName.ToString())));
 		DeckManagerComp->DiscardCard(TriggeredCard);
 		TriggeredCard->PlayDiscardAnimation();
+
+		// 유효한 타겟이 없어 서버 스킬 큐에 등록되지 않았으므로, 
+		// 여기서 스스로 다음 턴 종료 카드를 검색하도록 함수를 재호출하여 무한 대기를 방지합니다.
+		Client_TriggerTurnEndCards();
 	}
 }

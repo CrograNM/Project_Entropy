@@ -162,11 +162,10 @@ void APE_GameState::AdvanceTurnEndPhase()
 		}
 	}
 
-	// 2. 대기열에 남은 사람이 있으면 1명씩 호명합니다.
+	// 2. 대기열에 남은 사람이 있으면 호출합니다.
 	if (TurnEndPlayersQueue.Num() > 0)
 	{
 		APE_PlayerController* NextPC = TurnEndPlayersQueue[0];
-		TurnEndPlayersQueue.RemoveAt(0);
 
 		if (NextPC)
 		{
@@ -174,7 +173,9 @@ void APE_GameState::AdvanceTurnEndPhase()
 		}
 		else
 		{
-			AdvanceTurnEndPhase(); // 오류로 빈자리일 경우 다음 사람으로
+			// 오류로 빈자리일 경우에만 큐에서 수동으로 빼고 다음 사람으로 넘깁니다.
+			TurnEndPlayersQueue.RemoveAt(0);
+			AdvanceTurnEndPhase();
 		}
 	}
 	else
