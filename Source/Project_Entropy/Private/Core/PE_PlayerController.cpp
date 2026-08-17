@@ -669,6 +669,16 @@ void APE_PlayerController::ToggleTurnReadyState()
 	if (bIsReadyForTurnEnd)
 	{
 		CancelCurrentAction();
+
+		if (CardInteractionComp) {
+			CardInteractionComp->SetInteractionEnabled(false);
+		}
+	}
+	else
+	{
+		if (CardInteractionComp) {
+			CardInteractionComp->SetInteractionEnabled(true);
+		}
 	}
 }
 
