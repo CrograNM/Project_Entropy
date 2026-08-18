@@ -132,7 +132,19 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			FVector StartLoc = OwnerActor->GetActorLocation();
 			if (UCapsuleComponent* Cap = OwnerActor->FindComponentByClass<UCapsuleComponent>())
 				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
-			StartLoc += OwnerActor->GetActorForwardVector() * 70.f;
+
+			// 캐릭터의 현재 회전값이 아닌, 마우스 타일 방향(예정 회전 방향)을 도출하여 궤적 시작 오프셋을 잡습니다.
+			FVector IntendedDir = OwnerActor->GetActorForwardVector();
+			if (AACTile* HoveredTile = GridSystem->GetTileAtPosition(RepHoveredTile))
+			{
+				FVector TargetLoc = HoveredTile->GetActorLocation();
+				FVector CalcDir = (TargetLoc - OwnerActor->GetActorLocation()).GetSafeNormal2D();
+				if (!CalcDir.IsNearlyZero())
+				{
+					IntendedDir = CalcDir;
+				}
+			}
+			StartLoc += IntendedDir * 70.f;
 
 			FVector OriginalEndLoc = FVector::ZeroVector;
 
