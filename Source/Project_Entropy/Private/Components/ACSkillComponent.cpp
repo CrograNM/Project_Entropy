@@ -278,7 +278,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	}
 	else if (SkillData->TargetType == EPESkillTargetType::Self)
 	{
-		AffectedTargets.Add(Caster);
+		AffectedTargets.Add(Caster); // Self일 때만 자신을 타겟으로 인정
 	}
 	else
 	{
@@ -288,14 +288,38 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		else if (Payload.TargetTile)
 			TargetPos = Payload.TargetTile->GetGridPosition();
 
-		// 레이저일 경우 서버 연산 시점에서도 타겟을 화면 끝으로 확장
+		// 서버 연산 시점에서도 레이저 타겟을 가장 끝 타일로 팽창(Clamp)시킵니다.
 		if (SkillData->AoEShape == EPEAoEShape::Line && TargetPos != FIntPoint(-999, -999))
 		{
 			FVector2D CasterV(CasterPos.X, CasterPos.Y);
 			FVector2D TargetV(TargetPos.X, TargetPos.Y);
 			FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
 			if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
-			TargetPos = CasterPos + FIntPoint(FMath::RoundToInt(Dir.X * SkillData->BaseRange), FMath::RoundToInt(Dir.Y * SkillData->BaseRange));
+
+			AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
+			if (GridSystem)
+			{
+				FIntPoint LastValidPos = CasterPos;
+				for (int32 i = 1; i <= SkillData->BaseRange; ++i)
+				{
+					FIntPoint TestPos = CasterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
+					if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
+					else break;
+				}
+				TargetPos = LastValidPos;
+
+				// 투사체가 날아갈 물리적 종착점 갱신
+				if (APE_CharacterBase* EdgeChar = GridSystem->GetCharacterAtPosition(TargetPos))
+				{
+					OriginalTargetLoc = EdgeChar->GetActorLocation();
+					if (UCapsuleComponent* Cap = EdgeChar->FindComponentByClass<UCapsuleComponent>()) OriginalTargetLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.8f;
+				}
+				else if (AACTile* EdgeTile = GridSystem->GetTileAtPosition(TargetPos))
+				{
+					OriginalTargetLoc = EdgeTile->GetActorLocation();
+					OriginalTargetLoc.Z += 20.f;
+				}
+			}
 		}
 
 		if (TargetPos != FIntPoint(-999, -999))
@@ -303,14 +327,19 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 			TSet<FIntPoint> AffectedPositions = SkillData->GetAffectedGridPositions(CasterPos, TargetPos);
 			TArray<AActor*> AllChars;
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
 			for (AActor* Actor : AllChars)
 			{
 				if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
 				{
-					if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+					// 기본적으로 시전자(Caster) 본인은 피격 대상에서 무조건 제외시킵니다.
+					if (Char != Caster && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
 					{
-						if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
-							AffectedTargets.Add(Char);
+						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+						{
+							if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
+								AffectedTargets.Add(Char);
+						}
 					}
 				}
 			}

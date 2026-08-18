@@ -205,10 +205,7 @@ void APE_SkillActionActor::Explode()
 	}
 
 	// 잔여물 정리
-	if (RepSkillData && RepSkillData->bDestroyOnHit)
-	{
-		if (ActionVFXComponent) ActionVFXComponent->Deactivate();
-		if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.2f, 0.f);
-		SetLifeSpan(0.2f);
-	}
+	if (ActionVFXComponent) ActionVFXComponent->Deactivate();
+	if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.2f, 0.f);
+	SetLifeSpan(0.2f);
 }
