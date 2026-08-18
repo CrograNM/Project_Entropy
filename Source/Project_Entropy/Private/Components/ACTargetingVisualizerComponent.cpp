@@ -179,54 +179,59 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			{
 				int32 NumSegments = 20;
 				FVector LastPos = StartLoc;
-
-				FCollisionQueryParams Params;
-				Params.AddIgnoredActor(OwnerActor);
-
-				// 파괴형 투사체가 아닌 '관통형' 이라면 시각화에서 캐릭터 콜리전 무시 (막히지 않고 끝까지 통과)
-				if (!RepSkillData->bDestroyOnHit)
-				{
-					TArray<AActor*> AllChars;
-					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-					Params.AddIgnoredActors(AllChars);
-				}
-
-				FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
-
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
 
-				for (int32 i = 1; i <= NumSegments; ++i)
+				// 관통 스킬은 스윕 없이 무조건 끝까지 그립니다.
+				if (RepSkillData->bDestroyOnHit)
 				{
-					float Alpha = (float)i / (float)NumSegments;
-					FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
+					FCollisionQueryParams Params;
+					Params.AddIgnoredActor(OwnerActor);
+					FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
 
-					if (RepSkillData->ProjectileGravity > 0.f)
+					for (int32 i = 1; i <= NumSegments; ++i)
 					{
-						NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
-					}
+						float Alpha = (float)i / (float)NumSegments;
+						FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
 
-					FHitResult HitResult;
-					if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
-					{
-						FinalEndLoc = HitResult.Location;
-						TrajectorySpline->AddSplinePoint(FinalEndLoc, ESplineCoordinateSpace::World, false);
+						if (RepSkillData->ProjectileGravity > 0.f)
+							NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
 
-						if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+						FHitResult HitResult;
+						if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
 						{
-							if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
-								ActualTargetPos = HitMove->GetGridPosition();
+							FinalEndLoc = HitResult.Location;
+							TrajectorySpline->AddSplinePoint(FinalEndLoc, ESplineCoordinateSpace::World, false);
+
+							if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+							{
+								if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
+									ActualTargetPos = HitMove->GetGridPosition();
+							}
+							else if (AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
+							{
+								ActualTargetPos = HitTile->GetGridPosition();
+							}
+							break;
 						}
-						else if (AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
+						else
 						{
-							ActualTargetPos = HitTile->GetGridPosition();
+							TrajectorySpline->AddSplinePoint(NextPos, ESplineCoordinateSpace::World, false);
+							LastPos = NextPos;
 						}
-						break;
 					}
-					else
+				}
+				else
+				{
+					// 장애물을 무시하고 사거리 끝단(OriginalEndLoc)까지 스플라인을 그립니다.
+					for (int32 i = 1; i <= NumSegments; ++i)
 					{
+						float Alpha = (float)i / (float)NumSegments;
+						FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
+						if (RepSkillData->ProjectileGravity > 0.f)
+							NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
 						TrajectorySpline->AddSplinePoint(NextPos, ESplineCoordinateSpace::World, false);
-						LastPos = NextPos;
 					}
+					FinalEndLoc = OriginalEndLoc; // 끝까지 도달
 				}
 				TrajectorySpline->UpdateSpline();
 			}

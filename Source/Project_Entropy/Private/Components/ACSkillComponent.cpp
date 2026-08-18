@@ -361,38 +361,41 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 
 		if (SkillData->ProjectileSpeed > 0.f)
 		{
-			int32 NumSegments = 20;
-			FVector LastPos = SpawnTransform.GetLocation();
-
-			FCollisionQueryParams Params;
-			Params.AddIgnoredActor(Caster);
-			FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
-
-			for (int32 i = 1; i <= NumSegments; ++i)
+			if (SkillData->bDestroyOnHit)
 			{
-				float Alpha = (float)i / (float)NumSegments;
-				FVector NextPos = FMath::Lerp(SpawnTransform.GetLocation(), OriginalTargetLoc, Alpha);
+				int32 NumSegments = 20;
+				FVector LastPos = SpawnTransform.GetLocation();
 
-				if (SkillData->ProjectileGravity > 0.f)
-				{
-					NextPos.Z += FMath::Sin(Alpha * PI) * SkillData->ProjectileGravity;
-				}
+				FCollisionQueryParams Params;
+				Params.AddIgnoredActor(Caster);
+				FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
 
-				FHitResult HitResult;
-				if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
+				for (int32 i = 1; i <= NumSegments; ++i)
 				{
-					FinalTargetLoc = HitResult.Location;
-					if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+					float Alpha = (float)i / (float)NumSegments;
+					FVector NextPos = FMath::Lerp(SpawnTransform.GetLocation(), OriginalTargetLoc, Alpha);
+
+					if (SkillData->ProjectileGravity > 0.f)
 					{
-						FinalTargetChar = HitChar;
+						NextPos.Z += FMath::Sin(Alpha * PI) * SkillData->ProjectileGravity;
 					}
-					else
+
+					FHitResult HitResult;
+					if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
 					{
-						FinalTargetChar = nullptr;
+						FinalTargetLoc = HitResult.Location;
+						if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
+						{
+							FinalTargetChar = HitChar;
+						}
+						else
+						{
+							FinalTargetChar = nullptr;
+						}
+						break;
 					}
-					break;
+					LastPos = NextPos;
 				}
-				LastPos = NextPos;
 			}
 		}
 
