@@ -238,7 +238,7 @@ void APE_EnemyBase::NetMulticast_ShowSkillIntent_Implementation(UPE_SkillData* S
 			// 단일/AOE 여부에 따라 타겟팅을 칠합니다.
 			if (SkillData->AoEShape != EPEAoEShape::None)
 			{
-				TSet<FIntPoint> AoE = SkillData->GetAffectedGridPositions(TargetTile->GetGridPosition());
+				TSet<FIntPoint> AoE = SkillData->GetAffectedGridPositions(GridMovement->GetGridPosition(), TargetTile->GetGridPosition());
 				GridSystem->HighlightAoE(this, AoE);
 			}
 			else

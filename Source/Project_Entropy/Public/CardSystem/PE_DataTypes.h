@@ -83,5 +83,6 @@ enum class EPEAoEShape : uint8
 	Cross   UMETA(DisplayName = "십자 (Cross)"),
 	Square  UMETA(DisplayName = "정사각형 (Square)"),
 	Ring    UMETA(DisplayName = "도넛/링 (Ring)"),
+	Line    UMETA(DisplayName = "직선/관통 (Line)"),
 	Custom  UMETA(DisplayName = "커스텀 (Custom Offset)")
 };

@@ -259,6 +259,64 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		}
 	}
 
+	// 타겟 탐색을 즉발/투사체 가리지 않고 통일하여 연산합니다.
+	TSet<APE_CharacterBase*> AffectedTargets;
+	FIntPoint CasterPos = Caster->GetGridMovementComponent() ? Caster->GetGridMovementComponent()->GetGridPosition() : FIntPoint(0, 0);
+
+	if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
+	{
+		TArray<AActor*> AllChars;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+		for (AActor* Actor : AllChars)
+		{
+			if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+			{
+				if (Char->GetTeamID() != Caster->GetTeamID() && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
+					AffectedTargets.Add(Char);
+			}
+		}
+	}
+	else if (SkillData->TargetType == EPESkillTargetType::Self)
+	{
+		AffectedTargets.Add(Caster);
+	}
+	else
+	{
+		FIntPoint TargetPos(-999, -999);
+		if (FinalTargetChar && FinalTargetChar->GetGridMovementComponent())
+			TargetPos = FinalTargetChar->GetGridMovementComponent()->GetGridPosition();
+		else if (Payload.TargetTile)
+			TargetPos = Payload.TargetTile->GetGridPosition();
+
+		// 레이저일 경우 서버 연산 시점에서도 타겟을 화면 끝으로 확장
+		if (SkillData->AoEShape == EPEAoEShape::Line && TargetPos != FIntPoint(-999, -999))
+		{
+			FVector2D CasterV(CasterPos.X, CasterPos.Y);
+			FVector2D TargetV(TargetPos.X, TargetPos.Y);
+			FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
+			if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
+			TargetPos = CasterPos + FIntPoint(FMath::RoundToInt(Dir.X * SkillData->BaseRange), FMath::RoundToInt(Dir.Y * SkillData->BaseRange));
+		}
+
+		if (TargetPos != FIntPoint(-999, -999))
+		{
+			TSet<FIntPoint> AffectedPositions = SkillData->GetAffectedGridPositions(CasterPos, TargetPos);
+			TArray<AActor*> AllChars;
+			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+			for (AActor* Actor : AllChars)
+			{
+				if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+				{
+					if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+					{
+						if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
+							AffectedTargets.Add(Char);
+					}
+				}
+			}
+		}
+	}
+
 	if (SkillData->SkillActorClass)
 	{
 		NetMulticast_PlayCastVisuals(SkillData);
@@ -318,7 +376,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform, SpawnParams);
 		if (ActionActor)
 		{
-			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID);
+			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID, AffectedTargets);
 		}
 		else
 		{
@@ -329,60 +387,6 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	else
 	{
 		NetMulticast_PlayCastVisuals(SkillData);
-
-		TSet<APE_CharacterBase*> AffectedTargets;
-
-		if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
-		{
-			TArray<AActor*> AllChars;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-			for (AActor* Actor : AllChars)
-			{
-				if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-				{
-					if (Char->GetTeamID() != Caster->GetTeamID() && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
-					{
-						AffectedTargets.Add(Char);
-					}
-				}
-			}
-		}
-		else if (SkillData->TargetType == EPESkillTargetType::Self)
-		{
-			AffectedTargets.Add(Caster);
-		}
-		else
-		{
-			FIntPoint CenterPos(-999, -999);
-			if (FinalTargetChar && FinalTargetChar->GetGridMovementComponent())
-			{
-				CenterPos = FinalTargetChar->GetGridMovementComponent()->GetGridPosition();
-			}
-			else if (Payload.TargetTile)
-			{
-				CenterPos = Payload.TargetTile->GetGridPosition();
-			}
-
-			if (CenterPos != FIntPoint(-999, -999))
-			{
-				TSet<FIntPoint> AffectedPositions = SkillData->GetAffectedGridPositions(CenterPos);
-				TArray<AActor*> AllChars;
-				UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-				for (AActor* Actor : AllChars)
-				{
-					if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-					{
-						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
-						{
-							if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
-							{
-								AffectedTargets.Add(Char);
-							}
-						}
-					}
-				}
-			}
-		}
 
 		// 수집된 타겟들에게 즉시 이펙트 적용
 		for (UPE_SkillEffectModule* Module : SkillData->EffectModules)

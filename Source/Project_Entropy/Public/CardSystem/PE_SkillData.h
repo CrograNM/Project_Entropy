@@ -35,7 +35,7 @@ public:
 	TSubclassOf<APE_SkillActionActor> SkillActorClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
-	bool bDestroyOnHit = true;		// true: 투사체(맞으면 파괴), false: 장판(계속 유지)
+	bool bDestroyOnHit = true;		// true: 투사체(맞으면 파괴), false: 관통/장판(계속 유지)
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
 	float ProjectileSpeed = 800.f;	// 0이면 장판처럼 제자리에 고정됨
@@ -62,17 +62,26 @@ public:
 
 	// --- [광역 공격(AoE) 커스텀 데이터] ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)")
-	EPEAoEShape AoEShape = EPEAoEShape::None; // 광역 모양
+	EPEAoEShape AoEShape = EPEAoEShape::None; 
 
+	// 십자 모양의 가지 길이, 정사각형의 반경 등
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape != EPEAoEShape::None && AoEShape != EPEAoEShape::Custom"))
-	int32 AoESize = 1; // 십자 모양의 가지 길이, 정사각형의 반경 등
+	int32 AoESize = 1; 
 
 	// Custom 선택 시 에디터에서 직접 칠할 수 있는 타일 오프셋 배열 (0,0 은 타겟 중심점)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
 	TArray<FIntPoint> CustomAoEOffsets;
 
-	// 설정된 모양에 맞춰 영향받는 타일들의 그리드 좌표 세트를 반환하는 헬퍼 함수
-	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CenterPos) const;
+	// 관통 스킬 / 레이저 폭 (0.0이면 1칸짜리 선)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Line"))
+	float LineWidth = 0.0f; 
+
+	// 커스텀 오프셋 4방향 자동 회전 여부
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
+	bool bRotateToTarget = true; 
+
+	// 시전자 위치를 알아야 방향(Direction)을 구할 수 있음
+	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos) const;
 
 	// ---- 1단계: 시전 (Cast) 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")

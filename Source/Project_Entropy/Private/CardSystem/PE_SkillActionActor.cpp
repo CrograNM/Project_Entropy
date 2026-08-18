@@ -43,7 +43,7 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
-void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID)
+void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<APE_CharacterBase*>& InTargets)
 {
 	Caster = InInstigator;
 	DamageToApply = InDamage;
@@ -53,6 +53,8 @@ void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* I
 	RepSkillData = InData;
 	RepTargetLocation = InLoc; // 목표 타일 좌표 동기화
 	StartLocation = GetActorLocation(); // 출발지 확정
+
+	PendingTargets = InTargets;
 
 	// 서버 측 시각 효과 및 비행 변수 초기화를 위해 직접 호출
 	OnRep_SkillData();
@@ -122,6 +124,46 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 	// 4. 위치 갱신
 	SetActorLocation(LerpXY);
 
+	// 비행 도중 관통 타격 처리 로직
+	if (HasAuthority() && RepSkillData && !RepSkillData->bDestroyOnHit && RepSkillData->ProjectileSpeed > 0.f)
+	{
+		TArray<APE_CharacterBase*> HitThisFrame;
+
+		for (APE_CharacterBase* Target : PendingTargets)
+		{
+			if (Target)
+			{
+				float Dist = FVector::Distance(GetActorLocation(), Target->GetActorLocation());
+
+				// 투사체가 타겟과 150 유닛 내로 겹칠 때 타격 인정 (투사체 속도에 따른 오차 방지)
+				if (Dist < 150.f)
+				{
+					HitThisFrame.Add(Target);
+				}
+			}
+		}
+
+		// 이번 프레임에 부딪힌 적들에게 모듈 효과(데미지/넉백 등) 적용 및 VFX 발동
+		for (APE_CharacterBase* HitTarget : HitThisFrame)
+		{
+			TSet<APE_CharacterBase*> SingleTarget;
+			SingleTarget.Add(HitTarget);
+
+			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
+			{
+				Module->ApplyEffects(Caster, SingleTarget, HitTarget->GetActorLocation(), RepSkillData, DamageToApply);
+			}
+
+			if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
+			{
+				SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, HitTarget->GetActorLocation());
+			}
+
+			// 두 번 맞지 않도록 대기 명단에서 제거
+			PendingTargets.Remove(HitTarget);
+		}
+	}
+
 	// 5. 정확히 목표 타일에 도달 시
 	if (Alpha >= 1.0f)
 	{
@@ -134,86 +176,31 @@ void APE_SkillActionActor::Explode()
 {
 	if (HasAuthority())
 	{
-		// 1. [Delivery]: 타겟 긁어모으기
-		TSet<APE_CharacterBase*> AffectedTargets;
-
-		if (RepSkillData->AoEShape == EPEAoEShape::None)
+		// 파괴형 투사체이거나, 범위에 도달했는데 아직 타격받지 않은 잔여 타겟이 남아있을 때 일괄 처리
+		if (RepSkillData && (RepSkillData->bDestroyOnHit || PendingTargets.Num() > 0))
 		{
-			// 단일 타겟
-			if (APE_CharacterBase* TC = Cast<APE_CharacterBase>(RepTargetActor))
+			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
 			{
-				AffectedTargets.Add(TC);
-			}
-		}
-		else
-		{
-			// 광역(AoE) 타겟 연산 (기존 AoE Logic에 있던 수학 연산 흡수)
-			FIntPoint CenterPos(-999, -999);
-			if (RepTargetActor)
-			{
-				if (UACGridMovementComponent* MoveComp = RepTargetActor->FindComponentByClass<UACGridMovementComponent>())
-					CenterPos = MoveComp->GetGridPosition();
-			}
-			else
-			{
-				TArray<AActor*> Tiles;
-				UGameplayStatics::GetAllActorsOfClass(GetWorld(), AACTile::StaticClass(), Tiles);
-				for (AActor* Actor : Tiles)
+				if (Module)
 				{
-					if (Actor->GetActorLocation().Equals(RepTargetLocation, 50.f))
-					{
-						CenterPos = Cast<AACTile>(Actor)->GetGridPosition();
-						break;
-					}
+					Module->ApplyEffects(Caster, PendingTargets, RepTargetLocation, RepSkillData, DamageToApply);
 				}
 			}
 
-			if (CenterPos != FIntPoint(-999, -999))
+			// 폭발 시각 효과
+			if (Caster)
 			{
-				// PE_SkillData의 일원화된 헬퍼 함수 호출
-				TSet<FIntPoint> AffectedPositions = RepSkillData->GetAffectedGridPositions(CenterPos);
-
-				// 범위 내 캐릭터 추출
-				TArray<AActor*> AllChars;
-				UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-				for (AActor* Actor : AllChars)
+				if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
 				{
-					if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-					{
-						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
-						{
-							if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
-							{
-								AffectedTargets.Add(Char);
-							}
-						}
-					}
+					SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, RepTargetLocation);
 				}
 			}
 		}
 
-		// 2. 모듈에 그룹 타겟 전체(AffectedTargets)를 전달
-		for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
-		{
-			if (Module)
-			{
-				Module->ApplyEffects(Caster, AffectedTargets, RepTargetLocation, RepSkillData, DamageToApply);
-			}
-		}
-
-		// 3. 중앙 폭발 시각 효과
-		if (Caster)
-		{
-			if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
-			{
-				SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, RepTargetLocation);
-			}
-		}
-
-		// 4. 액션 종료 통보
+		// 액션 종료 통보
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
-			GS->ReportActionEnded(ActionLogID); // 스킬 본체(1 카운트) 소멸 보고
+			GS->ReportActionEnded(ActionLogID);
 		}
 	}
 

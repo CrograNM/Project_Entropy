@@ -23,7 +23,7 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 public:
 	APE_SkillActionActor(); 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
-	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID = -1);
+	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<class APE_CharacterBase*>& InTargets);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
@@ -65,6 +65,10 @@ private:
 	float CurrentFlightTime = 0.f;
 	float ArcHeight = 0.f;
 	bool bIsFlying = false;
+
+	// 타격 대기 중인 대상 목록
+	UPROPERTY()
+	TSet<class APE_CharacterBase*> PendingTargets;
 
 	// 목표 도착 시 폭발 처리
 	void Explode();

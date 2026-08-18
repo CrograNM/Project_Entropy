@@ -135,30 +135,49 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			StartLoc += OwnerActor->GetActorForwardVector() * 70.f;
 
 			FVector OriginalEndLoc = FVector::ZeroVector;
-			if (APE_CharacterBase* TargetChar = GridSystem->GetCharacterAtPosition(RepHoveredTile))
+
+			// 레이저라면 마우스 타일을 방향 축으로 삼아 궤적의 끝점(BaseRange)까지 확장
+			if (RepSkillData->AoEShape == EPEAoEShape::Line)
+			{
+				FVector2D CasterV(CenterPos.X, CenterPos.Y);
+				FVector2D TargetV(ActualTargetPos.X, ActualTargetPos.Y);
+				FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
+
+				if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
+
+				ActualTargetPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * RepSkillData->BaseRange), FMath::RoundToInt(Dir.Y * RepSkillData->BaseRange));
+			}
+
+			if (APE_CharacterBase* TargetChar = GridSystem->GetCharacterAtPosition(ActualTargetPos))
 			{
 				OriginalEndLoc = TargetChar->GetActorLocation();
 				if (UCapsuleComponent* TargetCap = TargetChar->FindComponentByClass<UCapsuleComponent>())
 					OriginalEndLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
 			}
-			else if (AACTile* HoveredTileActor = GridSystem->GetTileAtPosition(RepHoveredTile))
+			else if (AACTile* HoveredTileActor = GridSystem->GetTileAtPosition(ActualTargetPos))
 			{
 				OriginalEndLoc = HoveredTileActor->GetActorLocation();
-				OriginalEndLoc.Z += 20.f; // 바닥 마찰 방지용 미세 오프셋
+				OriginalEndLoc.Z += 20.f;
 			}
 
-			// --- [핵심 수정됨: 가상 투사체 스윕(Sweep) 예측 시스템] ---
 			FVector FinalEndLoc = OriginalEndLoc;
 
 			if (RepSkillData->ProjectileSpeed > 0.f)
 			{
-				int32 NumSegments = 20; // 궤적 해상도
+				int32 NumSegments = 20;
 				FVector LastPos = StartLoc;
 
 				FCollisionQueryParams Params;
 				Params.AddIgnoredActor(OwnerActor);
 
-				// 투사체 충돌 크기 반경 설정 
+				// 파괴형 투사체가 아닌 '관통형' 이라면 시각화에서 캐릭터 콜리전 무시 (막히지 않고 끝까지 통과)
+				if (!RepSkillData->bDestroyOnHit)
+				{
+					TArray<AActor*> AllChars;
+					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+					Params.AddIgnoredActors(AllChars);
+				}
+
 				FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
 
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
@@ -168,17 +187,14 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 					float Alpha = (float)i / (float)NumSegments;
 					FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
 
-					// 곡사일 경우 궤적 고도 반영
 					if (RepSkillData->ProjectileGravity > 0.f)
 					{
 						NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
 					}
 
 					FHitResult HitResult;
-					// 직사, 곡사 관계없이 궤적 조각을 따라 구체를 훑어 충돌 판정
 					if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
 					{
-						// 부딪혔다면 궤적 그리기를 그 자리에서 중단하고 최종 좌표 덮어쓰기
 						FinalEndLoc = HitResult.Location;
 						TrajectorySpline->AddSplinePoint(FinalEndLoc, ESplineCoordinateSpace::World, false);
 
@@ -191,7 +207,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 						{
 							ActualTargetPos = HitTile->GetGridPosition();
 						}
-						break; // 중도 요격 확인, 더 이상 예측하지 않음
+						break;
 					}
 					else
 					{
@@ -203,7 +219,6 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			}
 			else
 			{
-				// 즉발/장판형 스킬
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
 				TrajectorySpline->AddSplinePoint(OriginalEndLoc, ESplineCoordinateSpace::World, false);
 				TrajectorySpline->UpdateSpline();
@@ -223,11 +238,11 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				GeneratedMeshes.Add(ImpactSphere);
 			}
 
-			// 타격 범위 하이라이트 (요격당한 위치 ActualTargetPos 기준)
+			// CenterPos(시전자)와 ActualTargetPos(타겟 방향)를 같이 넘겨 타겟 타일을 칠함
 			TSet<FIntPoint> AffectedGridPositions;
 			if (RepSkillData->AoEShape != EPEAoEShape::None)
 			{
-				AffectedGridPositions = RepSkillData->GetAffectedGridPositions(ActualTargetPos);
+				AffectedGridPositions = RepSkillData->GetAffectedGridPositions(CenterPos, ActualTargetPos);
 				GridSystem->HighlightAoE(OwnerActor, AffectedGridPositions);
 			}
 			else
