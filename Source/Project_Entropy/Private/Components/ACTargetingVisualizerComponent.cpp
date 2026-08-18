@@ -136,7 +136,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			FVector OriginalEndLoc = FVector::ZeroVector;
 
-			// 레이저라면 마우스 타일을 방향 축으로 삼아 궤적의 끝점(BaseRange)까지 확장
+			// 레이저 목표 타일이 그리드(맵) 밖을 벗어나지 않도록 최대 사거리 내의 '가장 마지막 유효 타일'로 보정합니다.
 			if (RepSkillData->AoEShape == EPEAoEShape::Line)
 			{
 				FVector2D CasterV(CenterPos.X, CenterPos.Y);
@@ -145,7 +145,20 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 				if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
 
-				ActualTargetPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * RepSkillData->BaseRange), FMath::RoundToInt(Dir.Y * RepSkillData->BaseRange));
+				FIntPoint LastValidPos = CenterPos;
+				for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
+				{
+					FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
+					if (GridSystem->GetTileAtPosition(TestPos))
+					{
+						LastValidPos = TestPos;
+					}
+					else
+					{
+						break; // 맵 범위를 벗어나면 탐색 중지
+					}
+				}
+				ActualTargetPos = LastValidPos;
 			}
 
 			if (APE_CharacterBase* TargetChar = GridSystem->GetCharacterAtPosition(ActualTargetPos))
