@@ -52,7 +52,20 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		}
 	}
 
-	// 지향성 밀치기 시 사용할 공통 방향 벡터 도출
+	// TargetLocation 벡터를 기반으로 스킬이 떨어진 중심(그리드 좌표)을 유추합니다.
+	FIntPoint SkillTargetGridPos(-999, -999);
+	TArray<AActor*> TilesArr;
+	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), AACTile::StaticClass(), TilesArr);
+	for (AActor* Actor : TilesArr)
+	{
+		if (FVector::DistXY(Actor->GetActorLocation(), TargetLocation) < 50.f)
+		{
+			SkillTargetGridPos = Cast<AACTile>(Actor)->GetGridPosition();
+			break;
+		}
+	}
+	if (SkillTargetGridPos == FIntPoint(-999, -999)) SkillTargetGridPos = InstPos; // 예비 보정
+
 	FVector Dir3D = (TargetLocation - Instigator->GetActorLocation()).GetSafeNormal2D();
 	if (Dir3D.IsNearlyZero()) Dir3D = Instigator->GetActorForwardVector();
 	FVector2D DirV(Dir3D.X, Dir3D.Y);
@@ -80,20 +93,32 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		if (!Target->IsPushable()) continue;
 		if (!CurrentPosMap.Contains(Target)) continue;
 
-		FIntPoint TargetPos = CurrentPosMap[Target];
+		FIntPoint TargetGridPos = CurrentPosMap[Target];
 		FIntPoint FinalPushDir(0, 0);
 
-		// 옵션에 따른 방향 선택
 		if (PushType == EPEPushType::Directional)
 		{
 			FinalPushDir = DirectionalDir;
 		}
-		else // Radial
+		else // 방사형(Radial) 로직 고도화
 		{
-			FinalPushDir = FIntPoint(
-				FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
-				FMath::Clamp(TargetPos.Y - InstPos.Y, -1, 1)
-			);
+			if (TargetGridPos == SkillTargetGridPos)
+			{
+				// 정확히 중심에 있는 녀석은 시전자가 바라본 방향으로 넉백
+				FinalPushDir = FIntPoint(
+					FMath::Clamp(TargetGridPos.X - InstPos.X, -1, 1),
+					FMath::Clamp(TargetGridPos.Y - InstPos.Y, -1, 1)
+				);
+			}
+			else
+			{
+				// 그 외 범위 안의 적들은 폭발 중심점(Target) 기준으로 방사형으로 밀려남
+				FinalPushDir = FIntPoint(
+					FMath::Clamp(TargetGridPos.X - SkillTargetGridPos.X, -1, 1),
+					FMath::Clamp(TargetGridPos.Y - SkillTargetGridPos.Y, -1, 1)
+				);
+			}
+
 			if (FMath::Abs(FinalPushDir.X) == 1 && FMath::Abs(FinalPushDir.Y) == 1) FinalPushDir.Y = 0;
 		}
 
@@ -240,6 +265,19 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 		}
 	}
 
+	FVector2D DirV(TargetPos.X - InstigatorPos.X, TargetPos.Y - InstigatorPos.Y);
+	if (DirV.IsNearlyZero()) DirV = FVector2D(1, 0);
+	DirV.Normalize();
+
+	float Angle = FMath::Atan2(DirV.Y, DirV.X);
+	int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f));
+
+	FIntPoint DirectionalDir(0, 0);
+	if (DirIdx == 1) DirectionalDir = FIntPoint(0, 1);
+	else if (DirIdx == 2 || DirIdx == -2) DirectionalDir = FIntPoint(-1, 0);
+	else if (DirIdx == -1) DirectionalDir = FIntPoint(0, -1);
+	else DirectionalDir = FIntPoint(1, 0);
+
 	struct FSimulatedPush {
 		APE_CharacterBase* Actor;
 		int32 RemainingDist;
@@ -247,12 +285,12 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 	};
 	TArray<FSimulatedPush> PendingPushes;
 
-	for (const FIntPoint& TargetPos : AffectedGridPositions)
+	for (const FIntPoint& CurrentTargetPos : AffectedGridPositions)
 	{
 		APE_CharacterBase* HitChar = nullptr;
 		for (const auto& Pair : CurrentPosMap)
 		{
-			if (Pair.Value == TargetPos)
+			if (Pair.Value == CurrentTargetPos)
 			{
 				HitChar = Pair.Key;
 				break;
@@ -261,11 +299,31 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 
 		if (HitChar && HitChar->IsPushable())
 		{
-			FIntPoint PushDir(
-				FMath::Clamp(TargetPos.X - InstigatorPos.X, -1, 1),
-				FMath::Clamp(TargetPos.Y - InstigatorPos.Y, -1, 1)
-			);
-			if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
+			FIntPoint PushDir(0, 0);
+
+			if (PushType == EPEPushType::Directional)
+			{
+				PushDir = DirectionalDir;
+			}
+			else // 시각화에서도 방사형 연산을 TargetPos(스킬 타겟 타일) 기준으로 수행
+			{
+				if (CurrentTargetPos == TargetPos)
+				{
+					PushDir = FIntPoint(
+						FMath::Clamp(CurrentTargetPos.X - InstigatorPos.X, -1, 1),
+						FMath::Clamp(CurrentTargetPos.Y - InstigatorPos.Y, -1, 1)
+					);
+				}
+				else
+				{
+					PushDir = FIntPoint(
+						FMath::Clamp(CurrentTargetPos.X - TargetPos.X, -1, 1),
+						FMath::Clamp(CurrentTargetPos.Y - TargetPos.Y, -1, 1)
+					);
+				}
+
+				if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
+			}
 
 			if (PushDir.X != 0 || PushDir.Y != 0)
 			{

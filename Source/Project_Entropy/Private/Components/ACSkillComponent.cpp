@@ -350,17 +350,18 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	{
 		NetMulticast_PlayCastVisuals(SkillData);
 
-		FVector StartLoc = Caster->GetActorLocation();
-		if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
-			StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
-
 		FTransform SpawnTransform = Caster->GetActorTransform();
-		SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
-
 		FVector FinalTargetLoc = OriginalTargetLoc;
 
+		// 투사체가 아닐 경우 시전자 앞이 아닌 FinalTargetLoc(목표 중심지)에 직접 스폰되도록 수정
 		if (SkillData->ProjectileSpeed > 0.f)
 		{
+			FVector StartLoc = Caster->GetActorLocation();
+			if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
+				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
+
+			SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
+
 			if (SkillData->bDestroyOnHit)
 			{
 				int32 NumSegments = 20;
@@ -397,6 +398,11 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 					LastPos = NextPos;
 				}
 			}
+		}
+		else
+		{
+			// 장판, 즉발 폭발 등 속도가 없는 경우 타겟의 중심 좌표에 생성
+			SpawnTransform.SetLocation(FinalTargetLoc);
 		}
 
 		// 시전자와 겹쳐도 무조건 스폰되도록 보장
