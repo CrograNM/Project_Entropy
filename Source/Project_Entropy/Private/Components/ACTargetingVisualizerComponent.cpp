@@ -294,7 +294,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			if (PushModule)
 			{
-				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, MoveComp->GetGridPosition(), AffectedGridPositions);
+				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, MoveComp->GetGridPosition(), ActualTargetPos, AffectedGridPositions);
 
 				for (const FPushSimulationResult& Result : PushResults)
 				{

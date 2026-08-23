@@ -103,6 +103,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
 	TObjectPtr<USoundBase> ActionSFX;
 
+	// 장판/즉발 스킬이 생성된 후 폭발(데미지/밀치기)할 때까지 대기하는 시간
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
+	float ExplosionDelay = 0.f;
+
 	// ---- 3단계: 적중/적용 (Hit / Apply)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Hit)")
 	TObjectPtr<UNiagaraSystem> HitVFX;

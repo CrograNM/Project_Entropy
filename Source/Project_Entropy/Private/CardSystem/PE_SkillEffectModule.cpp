@@ -52,6 +52,21 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		}
 	}
 
+	// 지향성 밀치기 시 사용할 공통 방향 벡터 도출
+	FVector Dir3D = (TargetLocation - Instigator->GetActorLocation()).GetSafeNormal2D();
+	if (Dir3D.IsNearlyZero()) Dir3D = Instigator->GetActorForwardVector();
+	FVector2D DirV(Dir3D.X, Dir3D.Y);
+	DirV.Normalize();
+
+	float Angle = FMath::Atan2(DirV.Y, DirV.X);
+	int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f));
+
+	FIntPoint DirectionalDir(0, 0);
+	if (DirIdx == 1) DirectionalDir = FIntPoint(0, 1);
+	else if (DirIdx == 2 || DirIdx == -2) DirectionalDir = FIntPoint(-1, 0);
+	else if (DirIdx == -1) DirectionalDir = FIntPoint(0, -1);
+	else DirectionalDir = FIntPoint(1, 0);
+
 	struct FSimulatedPush {
 		APE_CharacterBase* Actor;
 		int32 RemainingDist;
@@ -66,16 +81,25 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		if (!CurrentPosMap.Contains(Target)) continue;
 
 		FIntPoint TargetPos = CurrentPosMap[Target];
+		FIntPoint FinalPushDir(0, 0);
 
-		FIntPoint PushDir(
-			FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
-			FMath::Clamp(TargetPos.Y - InstPos.Y, -1, 1)
-		);
-		if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
-
-		if (PushDir.X != 0 || PushDir.Y != 0)
+		// 옵션에 따른 방향 선택
+		if (PushType == EPEPushType::Directional)
 		{
-			PendingPushes.Add({ Target, PushDistance, PushDir, 0.f });
+			FinalPushDir = DirectionalDir;
+		}
+		else // Radial
+		{
+			FinalPushDir = FIntPoint(
+				FMath::Clamp(TargetPos.X - InstPos.X, -1, 1),
+				FMath::Clamp(TargetPos.Y - InstPos.Y, -1, 1)
+			);
+			if (FMath::Abs(FinalPushDir.X) == 1 && FMath::Abs(FinalPushDir.Y) == 1) FinalPushDir.Y = 0;
+		}
+
+		if (FinalPushDir.X != 0 || FinalPushDir.Y != 0)
+		{
+			PendingPushes.Add({ Target, PushDistance, FinalPushDir, 0.f });
 		}
 	}
 
@@ -188,7 +212,7 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 }
 
 // --- [모듈 2: 시각화를 위한 넉백 시뮬레이션부] ---
-TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, const TSet<FIntPoint>& AffectedGridPositions) const
+TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, FIntPoint TargetPos, const TSet<FIntPoint>& AffectedGridPositions) const
 {
 	TArray<FPushSimulationResult> Results;
 	if (!GridSystem || PushDistance <= 0) return Results;

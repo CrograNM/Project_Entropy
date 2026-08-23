@@ -67,6 +67,7 @@ void APE_SkillActionActor::OnRep_SkillData()
 
 	if (RepSkillData)
 	{
+		// 이펙트는 딜레이와 상관없이 즉시 재생
 		if (RepSkillData->ActionVFX)
 		{
 			ActionVFXComponent->SetAsset(RepSkillData->ActionVFX);
@@ -91,8 +92,18 @@ void APE_SkillActionActor::OnRep_SkillData()
 		}
 		else
 		{
-			// 제자리 생성 장판/즉발일 경우 즉시 폭발
-			Explode();
+			bIsFlying = false;
+
+			// 투사체가 아닐 경우, 또는 추가 연출 등 딜레이가 있다면 타이머 후 폭발 처리
+			if (RepSkillData->ExplosionDelay > 0.f)
+			{
+				FTimerHandle DelayTimer;
+				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::Explode, RepSkillData->ExplosionDelay, false);
+			}
+			else
+			{
+				Explode();
+			}
 		}
 	}
 }
@@ -168,7 +179,17 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 	if (Alpha >= 1.0f)
 	{
 		bIsFlying = false;
-		Explode();
+
+		// 투사체가 아닐 경우, 또는 추가 연출 등 딜레이가 있다면 타이머 후 폭발 처리
+		if (RepSkillData->ExplosionDelay > 0.f)
+		{
+			FTimerHandle DelayTimer;
+			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::Explode, RepSkillData->ExplosionDelay, false);
+		}
+		else
+		{
+			Explode();
+		}
 	}
 }
 
