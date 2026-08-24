@@ -52,19 +52,24 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 		}
 	}
 
-	// TargetLocation 벡터를 기반으로 스킬이 떨어진 중심(그리드 좌표)을 유추합니다.
+	// TargetLocation으로부터 가장 가까운 타일을 무조건 찾아내어 스킬의 폭발 중심지로 지정합니다.
 	FIntPoint SkillTargetGridPos(-999, -999);
+	float MinDist = 999999.f;
 	TArray<AActor*> TilesArr;
 	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), AACTile::StaticClass(), TilesArr);
+
 	for (AActor* Actor : TilesArr)
 	{
-		if (FVector::DistXY(Actor->GetActorLocation(), TargetLocation) < 50.f)
+		float Dist = FVector::DistXY(Actor->GetActorLocation(), TargetLocation);
+		if (Dist < MinDist)
 		{
+			MinDist = Dist;
 			SkillTargetGridPos = Cast<AACTile>(Actor)->GetGridPosition();
-			break;
 		}
+
+		if (MinDist < 30.f) break; // 충분히 가까운 타일을 찾으면 더 이상 탐색하지 않음
 	}
-	if (SkillTargetGridPos == FIntPoint(-999, -999)) SkillTargetGridPos = InstPos; // 예비 보정
+	if (SkillTargetGridPos == FIntPoint(-999, -999)) SkillTargetGridPos = InstPos; // 안전망 보정
 
 	FVector Dir3D = (TargetLocation - Instigator->GetActorLocation()).GetSafeNormal2D();
 	if (Dir3D.IsNearlyZero()) Dir3D = Instigator->GetActorForwardVector();
@@ -119,7 +124,11 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 				);
 			}
 
-			if (FMath::Abs(FinalPushDir.X) == 1 && FMath::Abs(FinalPushDir.Y) == 1) FinalPushDir.Y = 0;
+			// 십자(4방향) 그리드에서 대각선 밀치기를 방지하고 가장 멀리 밀어낼 수 있는 주축(Major Axis)으로 스냅
+			if (FMath::Abs(TargetGridPos.X - SkillTargetGridPos.X) >= FMath::Abs(TargetGridPos.Y - SkillTargetGridPos.Y))
+				FinalPushDir.Y = 0;
+			else
+				FinalPushDir.X = 0;
 		}
 
 		if (FinalPushDir.X != 0 || FinalPushDir.Y != 0)
@@ -326,7 +335,10 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 					);
 				}
 
-				if (FMath::Abs(PushDir.X) == 1 && FMath::Abs(PushDir.Y) == 1) PushDir.Y = 0;
+				if (FMath::Abs(CurrentTargetPos.X - TargetPos.X) >= FMath::Abs(CurrentTargetPos.Y - TargetPos.Y))
+					PushDir.Y = 0;
+				else
+					PushDir.X = 0;
 			}
 
 			if (PushDir.X != 0 || PushDir.Y != 0)

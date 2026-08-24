@@ -432,9 +432,10 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	}
 	else
 	{
+		// 1. 스킬 시전 이펙트는 시전자에게 발생
 		NetMulticast_PlayCastVisuals(SkillData);
 
-		// 수집된 타겟들에게 즉시 이펙트 적용
+		// 2. 모듈(데미지/넉백) 일괄 적용
 		for (UPE_SkillEffectModule* Module : SkillData->EffectModules)
 		{
 			if (Module)
@@ -443,9 +444,16 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 			}
 		}
 
-		NetMulticast_PlayHitVisuals(SkillData, OriginalTargetLoc);
+		// 3. 타격 이펙트(Hit VFX)는 범위 내 모든 적의 좌표마다 따로 적용
+		for (APE_CharacterBase* Target : AffectedTargets)
+		{
+			if (Target)
+			{
+				NetMulticast_PlayHitVisuals(SkillData, Target->GetActorLocation());
+			}
+		}
 
-		// 즉발 스킬은 여기서 스스로 액션 종료를 보고해야 큐가 넘어감
+		// 즉발 스킬은 여기서 스스로 액션 종료를 보고
 		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
 	}
 }

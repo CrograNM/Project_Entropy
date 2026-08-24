@@ -208,12 +208,18 @@ void APE_SkillActionActor::Explode()
 				}
 			}
 
-			// 폭발 시각 효과
+			// 적들 각각의 몸에서 개별적으로 타격 이펙트(HitVFX)를 터뜨립니다.
 			if (Caster)
 			{
 				if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
 				{
-					SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, RepTargetLocation);
+					for (APE_CharacterBase* Target : PendingTargets)
+					{
+						if (Target)
+						{
+							SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, Target->GetActorLocation());
+						}
+					}
 				}
 			}
 		}
