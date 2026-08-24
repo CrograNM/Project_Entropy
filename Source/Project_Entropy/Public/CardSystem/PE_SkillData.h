@@ -21,6 +21,12 @@ class PROJECT_ENTROPY_API UPE_SkillData : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	// 스킬 범위를 타일 좌표(FIntPoint)로 계산하여 반환, 시전자 위치와 타겟 위치를 기준으로 AoE 모양과 크기를 고려
+	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos) const;
+
+	// 시전 방향 및 모양을 고려하여 실제 타일들이 차지하는 폭발 너비(FVector2D)와 반지름(Radius)을 계산
+	void GetAoEBounds(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius) const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Info")
 	FName SkillID;
 
@@ -79,9 +85,6 @@ public:
 	// 커스텀 오프셋 4방향 자동 회전 여부
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
 	bool bRotateToTarget = true; 
-
-	// 시전자 위치를 알아야 방향(Direction)을 구할 수 있음
-	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos) const;
 
 	// ---- 1단계: 시전 (Cast) 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")

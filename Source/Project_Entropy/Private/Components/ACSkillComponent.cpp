@@ -263,6 +263,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	// 타겟 탐색을 즉발/투사체 가리지 않고 통일하여 연산합니다.
 	TSet<APE_CharacterBase*> AffectedTargets;
 	FIntPoint CasterPos = Caster->GetGridMovementComponent() ? Caster->GetGridMovementComponent()->GetGridPosition() : FIntPoint(0, 0);
+	FIntPoint TargetPos(-999, -999);
 
 	if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
 	{
@@ -283,7 +284,6 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	}
 	else
 	{
-		FIntPoint TargetPos(-999, -999);
 		if (FinalTargetChar && FinalTargetChar->GetGridMovementComponent())
 			TargetPos = FinalTargetChar->GetGridMovementComponent()->GetGridPosition();
 		else if (Payload.TargetTile)
@@ -423,7 +423,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform, SpawnParams);
 		if (ActionActor)
 		{
-			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID, AffectedTargets);
+			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID, AffectedTargets, CasterPos, TargetPos);
 		}
 		else
 		{
@@ -435,6 +435,11 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	{
 		// 시전 이펙트는 시전자에게 발생
 		NetMulticast_PlayCastVisuals(SkillData);
+
+		// 즉발 스킬은 여기서 바로 폭발 크기를 계산합니다.
+		FVector2D ExplosionSize;
+		float ExplosionRadius;
+		SkillData->GetAoEBounds(CasterPos, TargetPos, ExplosionSize, ExplosionRadius);
 
 		// 람다(Lambda)와 타이머를 사용하여 즉발 스킬의 딜레이(Explosion, Hit) 시퀀스를 구현합니다.
 		auto ApplyHitFunc = [this, Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload]()
@@ -466,12 +471,12 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				}
 			};
 
-		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, ApplyHitFunc]()
+		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
 			{
 				if (!this || !SkillData) return;
 
 				// 목표 지점에 광역 폭발 이펙트 스폰
-				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc);
+				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc, ExplosionSize, ExplosionRadius);
 
 				// 폭발 후 타격 딜레이가 존재하면 타이머를 걸고, 없으면 즉시 타격 적용
 				if (SkillData->HitDelay > 0.f)
@@ -512,28 +517,20 @@ void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_Sk
 	}
 }
 
-void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation)
+void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation, FVector2D ExplosionSize, float ExplosionRadius)
 {
 	if (!SkillData) return;
 
 	if (SkillData->ExplosionVFX)
 	{
-		// 이펙트를 스폰하고 컴포넌트 포인터를 획득
 		UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->ExplosionVFX, TargetLocation);
 
 		if (NiagaraComp)
 		{
-			// 타일 1칸의 기본 물리적 크기(유닛) 정의
-			const float BaseTileSize = 100.f;
-			float EffectRadius = BaseTileSize;
-
-			// AoEShape가 단일 타겟이 아닐 경우, AoESize에 비례하여 폭발 반경을 증가
-			if (SkillData->AoEShape != EPEAoEShape::None && SkillData->AoEShape != EPEAoEShape::Custom)
-			{
-				// AoESize 1(십자/정사각형 등)일 경우 양옆 타일까지 덮어야 하므로 반경 계산
-				EffectRadius = BaseTileSize + (SkillData->AoESize * BaseTileSize);
-			}
-			NiagaraComp->SetVariableFloat(FName("ExplosionRadius"), EffectRadius);
+			// 나이아가라 파라미터에 2D 너비, 3D 박스, 1D 반지름을 모두 세팅
+			NiagaraComp->SetVariableVec2(FName("ExplosionSize"), ExplosionSize); // 2D 평면 스케일
+			NiagaraComp->SetVariableVec3(FName("ExplosionBox"), FVector(ExplosionSize.X, ExplosionSize.Y, 100.f)); // 3D 체적 스케일
+			NiagaraComp->SetVariableFloat(FName("ExplosionRadius"), ExplosionRadius); // 구형 반경 스케일
 		}
 	}
 	if (SkillData->ExplosionSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), SkillData->ExplosionSFX, TargetLocation); }

@@ -43,7 +43,7 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
-void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<APE_CharacterBase*>& InTargets)
+void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos)
 {
 	Caster = InInstigator;
 	DamageToApply = InDamage;
@@ -55,6 +55,10 @@ void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* I
 	StartLocation = GetActorLocation(); // 출발지 확정
 
 	PendingTargets = InTargets;
+
+	// 폭발 범위를 서버에서 연산하기 위한 캐싱
+	CasterGridPos = InCasterGridPos;
+	TargetGridPos = InTargetGridPos;
 
 	// 서버 측 시각 효과 및 비행 변수 초기화를 위해 직접 호출
 	OnRep_SkillData();
@@ -200,7 +204,12 @@ void APE_SkillActionActor::TriggerExplosion()
 	{
 		if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
 		{
-			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation);
+			// 저장해 둔 좌표를 바탕으로 폭발 범위를 도출하여 멀티캐스트에 넘김
+			FVector2D ExplosionSize;
+			float ExplosionRadius;
+			RepSkillData->GetAoEBounds(CasterGridPos, TargetGridPos, ExplosionSize, ExplosionRadius);
+
+			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation, ExplosionSize, ExplosionRadius);
 		}
 	}
 

@@ -121,3 +121,34 @@ TSet<FIntPoint> UPE_SkillData::GetAffectedGridPositions(FIntPoint CasterPos, FIn
 
 	return Result;
 }
+
+void UPE_SkillData::GetAoEBounds(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius) const
+{
+	TSet<FIntPoint> AffectedTiles = GetAffectedGridPositions(CasterPos, TargetPos);
+
+	if (AffectedTiles.IsEmpty())
+	{
+		// 대상이 없거나 단일 타겟일 경우 기본 타일 1칸 크기로 반환
+		OutSize = FVector2D(100.f, 100.f);
+		OutRadius = 50.f;
+		return;
+	}
+
+	int32 MinX = 999999, MaxX = -999999;
+	int32 MinY = 999999, MaxY = -999999;
+
+	for (const FIntPoint& Pos : AffectedTiles)
+	{
+		MinX = FMath::Min(MinX, Pos.X);
+		MaxX = FMath::Max(MaxX, Pos.X);
+		MinY = FMath::Min(MinY, Pos.Y);
+		MaxY = FMath::Max(MaxY, Pos.Y);
+	}
+
+	// 타일 1개가 100x100 유닛이므로 (Max - Min + 1)을 통해 실제 월드 유닛 크기를 산출합니다.
+	OutSize.X = (MaxX - MinX + 1) * 100.f;
+	OutSize.Y = (MaxY - MinY + 1) * 100.f;
+
+	// 구체 형태(Ring, Circle 등)의 이펙트를 위한 반지름(가장 긴 축의 절반) 산출
+	OutRadius = FMath::Max(OutSize.X, OutSize.Y) * 0.5f;
+}

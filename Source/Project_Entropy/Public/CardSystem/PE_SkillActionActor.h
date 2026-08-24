@@ -23,7 +23,7 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 public:
 	APE_SkillActionActor(); 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
-	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<class APE_CharacterBase*>& InTargets);
+	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<class APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
@@ -69,6 +69,10 @@ private:
 	// 타격 대기 중인 대상 목록
 	UPROPERTY()
 	TSet<class APE_CharacterBase*> PendingTargets;
+
+	// 폭발 크기 계산을 위해 저장하는 논리적 그리드 좌표 (서버 전용)
+	FIntPoint CasterGridPos;
+	FIntPoint TargetGridPos;
 
 	// 폭발 과정을 두 단계(시각적 폭발 -> 실제 물리적 타격)로 분리합니다.
 	void TriggerExplosion();
