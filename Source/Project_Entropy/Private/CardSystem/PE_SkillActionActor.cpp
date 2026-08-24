@@ -213,6 +213,10 @@ void APE_SkillActionActor::Explode()
 			{
 				if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
 				{
+					// 투사체가 폭발할 때 중심점에 거대한 Explosion VFX를 1회 스폰
+					SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation);
+					
+					// 휩쓸린 적들 개별 몸에 Hit VFX를 다중 스폰
 					for (APE_CharacterBase* Target : PendingTargets)
 					{
 						if (Target)

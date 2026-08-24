@@ -96,21 +96,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
 	TObjectPtr<USoundBase> CastSFX;
 
-	// ---- 2단계: 중간 동작 (Action) - 투사체 비행, 장판기 지속 이펙트 등
+	// ---- 2단계: 중간 동작 (Action - 투사체 비행, 장판기 지속 이펙트 등)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
 	TObjectPtr<UNiagaraSystem> ActionVFX;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
 	TObjectPtr<USoundBase> ActionSFX;
 
-	// 장판/즉발 스킬이 생성된 후 폭발(데미지/밀치기)할 때까지 대기하는 시간
+	// 스킬 애니메이션과 폭발 타이밍을 맞추기 위한 시간 변수 (0이면 즉시 폭발)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
 	float ExplosionDelay = 0.f;
 
-	// ---- 3단계: 적중/적용 (Hit / Apply)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Hit)")
+	// ---- 3단계: 중심점 폭발 (Explosion - 도착 타일에서 1회 발생)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
+	TObjectPtr<UNiagaraSystem> ExplosionVFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
+	TObjectPtr<USoundBase> ExplosionSFX;
+
+	// ---- 4단계: 적중/적용 (Hit / Apply - 맞은 적들의 몸에서 각각 발생)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 4 (Hit)")
 	TObjectPtr<UNiagaraSystem> HitVFX;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Hit)")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 4 (Hit)")
 	TObjectPtr<USoundBase> HitSFX;
 };

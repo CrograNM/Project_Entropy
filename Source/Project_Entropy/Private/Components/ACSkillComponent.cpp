@@ -435,6 +435,9 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		// 1. 스킬 시전 이펙트는 시전자에게 발생
 		NetMulticast_PlayCastVisuals(SkillData);
 
+		// 1.5. 즉발형 스킬(파도 등)일 경우 목표 지점에 즉시 광역 폭발 이펙트(파도 솟구침 등)를 1회 스폰
+		NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc);
+
 		// 2. 모듈(데미지/넉백) 일괄 적용
 		for (UPE_SkillEffectModule* Module : SkillData->EffectModules)
 		{
@@ -471,6 +474,14 @@ void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_Sk
 	{
 		Caster->PlayAnimMontage(SkillData->CastAnimMontage, 1.0f, SkillData->CastAnimSectionName);
 	}
+}
+
+void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation)
+{
+	if (!SkillData) return;
+
+	if (SkillData->ExplosionVFX) { UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->ExplosionVFX, TargetLocation); }
+	if (SkillData->ExplosionSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), SkillData->ExplosionSFX, TargetLocation); }
 }
 
 void UACSkillComponent::NetMulticast_PlayHitVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation)
