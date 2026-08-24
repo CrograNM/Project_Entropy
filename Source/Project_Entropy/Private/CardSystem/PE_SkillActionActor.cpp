@@ -98,11 +98,11 @@ void APE_SkillActionActor::OnRep_SkillData()
 			if (RepSkillData->ExplosionDelay > 0.f)
 			{
 				FTimerHandle DelayTimer;
-				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::Explode, RepSkillData->ExplosionDelay, false);
+				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::TriggerExplosion, RepSkillData->ExplosionDelay, false);
 			}
 			else
 			{
-				Explode();
+				TriggerExplosion();
 			}
 		}
 	}
@@ -184,22 +184,45 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 		if (RepSkillData->ExplosionDelay > 0.f)
 		{
 			FTimerHandle DelayTimer;
-			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::Explode, RepSkillData->ExplosionDelay, false);
+			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::TriggerExplosion, RepSkillData->ExplosionDelay, false);
 		}
 		else
 		{
-			Explode();
+			TriggerExplosion();
 		}
 	}
 }
 
-void APE_SkillActionActor::Explode()
+void APE_SkillActionActor::TriggerExplosion()
+{
+	// 목표 타일에 거대한 폭발 시각 효과(ExplosionVFX) 스폰
+	if (HasAuthority() && Caster)
+	{
+		if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
+		{
+			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation);
+		}
+	}
+
+	// 물리적 타격과 큐 해제 타이밍(HitDelay) 조절 (클라이언트/서버 라이프사이클 동기화)
+	if (RepSkillData && RepSkillData->HitDelay > 0.f)
+	{
+		FTimerHandle HitTimer;
+		GetWorld()->GetTimerManager().SetTimer(HitTimer, this, &APE_SkillActionActor::ApplyHitAndEffects, RepSkillData->HitDelay, false);
+	}
+	else
+	{
+		ApplyHitAndEffects();
+	}
+}
+
+void APE_SkillActionActor::ApplyHitAndEffects()
 {
 	if (HasAuthority())
 	{
-		// 파괴형 투사체이거나, 범위에 도달했는데 아직 타격받지 않은 잔여 타겟이 남아있을 때 일괄 처리
 		if (RepSkillData && (RepSkillData->bDestroyOnHit || PendingTargets.Num() > 0))
 		{
+			// 실제 물리적 타격 모듈(데미지, 넉백) 일괄 적용
 			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
 			{
 				if (Module)
@@ -208,15 +231,11 @@ void APE_SkillActionActor::Explode()
 				}
 			}
 
-			// 적들 각각의 몸에서 개별적으로 타격 이펙트(HitVFX)를 터뜨립니다.
+			// 타격된 개별 적 몸에 피격 효과(HitVFX) 스폰
 			if (Caster)
 			{
 				if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
 				{
-					// 투사체가 폭발할 때 중심점에 거대한 Explosion VFX를 1회 스폰
-					SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation);
-					
-					// 휩쓸린 적들 개별 몸에 Hit VFX를 다중 스폰
 					for (APE_CharacterBase* Target : PendingTargets)
 					{
 						if (Target)
@@ -228,7 +247,7 @@ void APE_SkillActionActor::Explode()
 			}
 		}
 
-		// 액션 종료 통보
+		// 모든 타격 판정이 끝난 현재 시점에 액션 큐 해제 보고
 		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 		{
 			GS->ReportActionEnded(ActionLogID);

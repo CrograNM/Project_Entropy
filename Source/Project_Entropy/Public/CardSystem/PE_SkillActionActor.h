@@ -70,6 +70,7 @@ private:
 	UPROPERTY()
 	TSet<class APE_CharacterBase*> PendingTargets;
 
-	// 목표 도착 시 폭발 처리
-	void Explode();
+	// 폭발 과정을 두 단계(시각적 폭발 -> 실제 물리적 타격)로 분리합니다.
+	void TriggerExplosion();
+	void ApplyHitAndEffects();
 };

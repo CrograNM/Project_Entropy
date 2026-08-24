@@ -114,6 +114,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
 	TObjectPtr<USoundBase> ExplosionSFX;
 
+	// 폭발 애니메이션과 실제 피격 타이밍을 맞추기 위한 시간 변수
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
+	float HitDelay = 0.f;
+
 	// ---- 4단계: 적중/적용 (Hit / Apply - 맞은 적들의 몸에서 각각 발생)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 4 (Hit)")
 	TObjectPtr<UNiagaraSystem> HitVFX;
