@@ -237,10 +237,14 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 }
 
 // --- [모듈 2: 시각화를 위한 넉백 시뮬레이션부] ---
-TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, FIntPoint TargetPos, const TSet<FIntPoint>& AffectedGridPositions) const
+TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetPos, const TSet<FIntPoint>& AffectedGridPositions) const
 {
 	TArray<FPushSimulationResult> Results;
-	if (!GridSystem || PushDistance <= 0) return Results;
+
+	APE_CharacterBase* InstigatorChar = Cast<APE_CharacterBase>(Instigator);
+	if (!GridSystem || PushDistance <= 0 || !InstigatorChar) return Results;
+
+	FIntPoint InstigatorPos = InstigatorChar->GetGridMovementComponent() ? InstigatorChar->GetGridMovementComponent()->GetGridPosition() : FIntPoint(0, 0);
 
 	TMap<APE_CharacterBase*, FIntPoint> InitialPosMap;
 	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
@@ -297,7 +301,7 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 			}
 		}
 
-		if (HitChar && HitChar->IsPushable())
+		if (HitChar && HitChar->IsPushable() && HitChar != InstigatorChar && HitChar->GetTeamID() != InstigatorChar->GetTeamID())
 		{
 			FIntPoint PushDir(0, 0);
 

@@ -332,8 +332,16 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 			{
 				if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
 				{
-					// 기본적으로 시전자(Caster) 본인은 피격 대상에서 무조건 제외시킵니다.
-					if (Char != Caster && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
+					// 기본적으로 시전자(Caster) 본인 및 아군(같은 팀)은 피격 대상에서 무조건 제외
+					// 단, 힐/버프 스킬(Snap_Ally)을 확장할 여지를 위해 예외 조건을 둠
+					bool bIsValidTarget = (Char != Caster) && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead();
+
+					if (SkillData->TargetType != EPESkillTargetType::Snap_Ally)
+					{
+						bIsValidTarget = bIsValidTarget && (Char->GetTeamID() != Caster->GetTeamID());
+					}
+
+					if (bIsValidTarget)
 					{
 						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
 						{

@@ -71,7 +71,7 @@ public:
 	int32 GetPushDistance() const { return PushDistance; }
 
 	// --- [시각화 컴포넌트 등에서 호출할 밀치기 예상 결과 반환 함수] ---
-	TArray<FPushSimulationResult> SimulatePush(AACGridSystem* GridSystem, FIntPoint InstigatorPos, FIntPoint TargetPos, const TSet<FIntPoint>& AffectedGridPositions) const;
+	TArray<FPushSimulationResult> SimulatePush(AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetPos, const TSet<FIntPoint>& AffectedGridPositions) const;
 
 protected:
 	// 방사형 vs 지향성 선택
