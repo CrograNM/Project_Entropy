@@ -44,7 +44,7 @@ public:
 
 	// 목표 지점에서 1번 발생하는 거대한 광역 폭발 연출
 	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_PlayExplosionVisuals(const UPE_SkillData* SkillData, FVector TargetLocation, FVector2D ExplosionSize, float ExplosionRadius);
+	void NetMulticast_PlayExplosionVisuals(const UPE_SkillData* SkillData, FVector TargetLocation, FRotator TargetRotation, FVector2D ExplosionSize, float ExplosionRadius);
 
 	// 개별 대상의 몸에서 발생하는 피격 연출
 	UFUNCTION(NetMulticast, Unreliable)

@@ -209,7 +209,7 @@ void APE_SkillActionActor::TriggerExplosion()
 			float ExplosionRadius;
 			RepSkillData->GetAoEBounds(CasterGridPos, TargetGridPos, ExplosionSize, ExplosionRadius);
 
-			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation, ExplosionSize, ExplosionRadius);
+			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation, GetActorRotation(), ExplosionSize, ExplosionRadius);
 		}
 	}
 

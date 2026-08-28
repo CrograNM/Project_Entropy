@@ -264,6 +264,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	TSet<APE_CharacterBase*> AffectedTargets;
 	FIntPoint CasterPos = Caster->GetGridMovementComponent() ? Caster->GetGridMovementComponent()->GetGridPosition() : FIntPoint(0, 0);
 	FIntPoint TargetPos(-999, -999);
+	FRotator ExactRotation = Caster->GetActorRotation();
 
 	if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
 	{
@@ -288,6 +289,14 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 			TargetPos = FinalTargetChar->GetGridMovementComponent()->GetGridPosition();
 		else if (Payload.TargetTile)
 			TargetPos = Payload.TargetTile->GetGridPosition();
+
+		// 회전각 계산
+		if (TargetPos != FIntPoint(-999, -999) && CasterPos != TargetPos)
+		{
+			FVector2D DirV(TargetPos.X - CasterPos.X, TargetPos.Y - CasterPos.Y);
+			DirV.Normalize();
+			ExactRotation = FVector(DirV.X, DirV.Y, 0).Rotation();
+		}
 
 		// 서버 연산 시점에서도 레이저 타겟을 가장 끝 타일로 팽창(Clamp)시킵니다.
 		if (SkillData->AoEShape == EPEAoEShape::Line && TargetPos != FIntPoint(-999, -999))
@@ -370,6 +379,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
 
 			SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
+			SpawnTransform.SetRotation(ExactRotation.Quaternion());
 
 			if (SkillData->bDestroyOnHit)
 			{
@@ -412,6 +422,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		{
 			// 장판, 즉발 폭발 등 속도가 없는 경우 타겟의 중심 좌표에 생성
 			SpawnTransform.SetLocation(FinalTargetLoc);
+			SpawnTransform.SetRotation(ExactRotation.Quaternion());
 		}
 
 		// 시전자와 겹쳐도 무조건 스폰되도록 보장
@@ -471,12 +482,12 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				}
 			};
 
-		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
+		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, ExactRotation, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
 			{
 				if (!this || !SkillData) return;
 
 				// 목표 지점에 광역 폭발 이펙트 스폰
-				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc, ExplosionSize, ExplosionRadius);
+				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc, ExactRotation, ExplosionSize, ExplosionRadius);
 
 				// 폭발 후 타격 딜레이가 존재하면 타이머를 걸고, 없으면 즉시 타격 적용
 				if (SkillData->HitDelay > 0.f)
@@ -517,13 +528,13 @@ void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_Sk
 	}
 }
 
-void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation, FVector2D ExplosionSize, float ExplosionRadius)
+void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation, FRotator TargetRotation, FVector2D ExplosionSize, float ExplosionRadius)
 {
 	if (!SkillData) return;
 
 	if (SkillData->ExplosionVFX)
 	{
-		UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->ExplosionVFX, TargetLocation);
+		UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->ExplosionVFX, TargetLocation, TargetRotation);
 
 		if (NiagaraComp)
 		{
