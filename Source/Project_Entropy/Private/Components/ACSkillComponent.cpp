@@ -450,7 +450,8 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		// 즉발 스킬은 여기서 바로 폭발 크기를 계산합니다.
 		FVector2D ExplosionSize;
 		float ExplosionRadius;
-		SkillData->GetAoEBounds(CasterPos, TargetPos, ExplosionSize, ExplosionRadius);
+		FRotator AoERotation;
+		SkillData->GetAoEBoundsAndRotation(CasterPos, TargetPos, ExplosionSize, ExplosionRadius, AoERotation);
 
 		// 람다(Lambda)와 타이머를 사용하여 즉발 스킬의 딜레이(Explosion, Hit) 시퀀스를 구현합니다.
 		auto ApplyHitFunc = [this, Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload]()
@@ -460,19 +461,13 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				// 실제 물리적 타격 모듈(데미지, 넉백) 일괄 적용
 				for (UPE_SkillEffectModule* Module : SkillData->EffectModules)
 				{
-					if (Module)
-					{
-						Module->ApplyEffects(Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload.CalculatedDamage);
-					}
+					if (Module) Module->ApplyEffects(Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload.CalculatedDamage);
 				}
 
 				// 타격된 개별 적 몸에 피격 효과(HitVFX) 스폰
 				for (APE_CharacterBase* Target : AffectedTargets)
 				{
-					if (Target)
-					{
-						NetMulticast_PlayHitVisuals(SkillData, Target->GetActorLocation());
-					}
+					if (Target) NetMulticast_PlayHitVisuals(SkillData, Target->GetActorLocation());
 				}
 
 				// 모든 연산 종료 후 큐 해제
@@ -482,12 +477,12 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				}
 			};
 
-		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, ExactRotation, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
+		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, AoERotation, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
 			{
 				if (!this || !SkillData) return;
 
 				// 목표 지점에 광역 폭발 이펙트 스폰
-				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc, ExactRotation, ExplosionSize, ExplosionRadius);
+				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc, AoERotation, ExplosionSize, ExplosionRadius);
 
 				// 폭발 후 타격 딜레이가 존재하면 타이머를 걸고, 없으면 즉시 타격 적용
 				if (SkillData->HitDelay > 0.f)

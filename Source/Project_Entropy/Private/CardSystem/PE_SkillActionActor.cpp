@@ -207,9 +207,10 @@ void APE_SkillActionActor::TriggerExplosion()
 			// 저장해 둔 좌표를 바탕으로 폭발 범위를 도출하여 멀티캐스트에 넘김
 			FVector2D ExplosionSize;
 			float ExplosionRadius;
-			RepSkillData->GetAoEBounds(CasterGridPos, TargetGridPos, ExplosionSize, ExplosionRadius);
+			FRotator AoERotation;
+			RepSkillData->GetAoEBoundsAndRotation(CasterGridPos, TargetGridPos, ExplosionSize, ExplosionRadius, AoERotation);
 
-			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation, GetActorRotation(), ExplosionSize, ExplosionRadius);
+			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation, AoERotation, ExplosionSize, ExplosionRadius);
 		}
 	}
 

@@ -122,33 +122,68 @@ TSet<FIntPoint> UPE_SkillData::GetAffectedGridPositions(FIntPoint CasterPos, FIn
 	return Result;
 }
 
-void UPE_SkillData::GetAoEBounds(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius) const
+void UPE_SkillData::GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius, FRotator& OutRotation) const
 {
-	TSet<FIntPoint> AffectedTiles = GetAffectedGridPositions(CasterPos, TargetPos);
+	FVector2D Dir(TargetPos.X - CasterPos.X, TargetPos.Y - CasterPos.Y);
+	if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0); // 제자리 클릭 보호
+	Dir.Normalize();
 
-	if (AffectedTiles.IsEmpty())
+	// 기본 각도 도출 (마우스 방향)
+	float Angle = FMath::Atan2(Dir.Y, Dir.X);
+	OutRotation = FRotator(0.f, FMath::RadiansToDegrees(Angle), 0.f);
+
+	switch (AoEShape)
 	{
-		// 대상이 없거나 단일 타겟일 경우 기본 타일 1칸 크기로 반환
-		OutSize = FVector2D(100.f, 100.f);
-		OutRadius = 50.f;
-		return;
-	}
-
-	int32 MinX = 999999, MaxX = -999999;
-	int32 MinY = 999999, MaxY = -999999;
-
-	for (const FIntPoint& Pos : AffectedTiles)
+	case EPEAoEShape::Line:
 	{
-		MinX = FMath::Min(MinX, Pos.X);
-		MaxX = FMath::Max(MaxX, Pos.X);
-		MinY = FMath::Min(MinY, Pos.Y);
-		MaxY = FMath::Max(MaxY, Pos.Y);
+		// 선형 스킬의 로컬 크기 (X축이 사거리 길이, Y축이 레이저 폭)
+		OutSize.X = BaseRange * 100.f;
+		OutSize.Y = ((LineWidth * 2.f) + 1.f) * 100.f;
+		OutRadius = OutSize.X * 0.5f;
+
+		// 선형 스킬은 마우스를 향한 연속적인 각도를 그대로 사용
+		break;
 	}
+	case EPEAoEShape::Custom:
+	{
+		// 오프셋 자체의 미니멈/맥시멈을 구해 '회전하기 전의 순수 로컬 크기'를 구함
+		int32 MinX = 999999, MaxX = -999999;
+		int32 MinY = 999999, MaxY = -999999;
 
-	// 타일 1개가 100x100 유닛이므로 (Max - Min + 1)을 통해 실제 월드 유닛 크기를 산출합니다.
-	OutSize.X = (MaxX - MinX + 1) * 100.f;
-	OutSize.Y = (MaxY - MinY + 1) * 100.f;
+		for (const FIntPoint& Offset : CustomAoEOffsets)
+		{
+			MinX = FMath::Min(MinX, Offset.X);
+			MaxX = FMath::Max(MaxX, Offset.X);
+			MinY = FMath::Min(MinY, Offset.Y);
+			MaxY = FMath::Max(MaxY, Offset.Y);
+		}
 
-	// 구체 형태(Ring, Circle 등)의 이펙트를 위한 반지름(가장 긴 축의 절반) 산출
-	OutRadius = FMath::Max(OutSize.X, OutSize.Y) * 0.5f;
+		OutSize.X = (MaxX - MinX + 1) * 100.f;
+		OutSize.Y = (MaxY - MinY + 1) * 100.f;
+		OutRadius = FMath::Max(OutSize.X, OutSize.Y) * 0.5f;
+
+		// 커스텀 스킬은 타일 그리드에 맞게 90도(4방향)로 스냅(Snap)된 회전값을 반환
+		if (bRotateToTarget)
+		{
+			int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f));
+			OutRotation = FRotator(0.f, DirIdx * 90.f, 0.f);
+		}
+		else
+		{
+			OutRotation = FRotator::ZeroRotator;
+		}
+		break;
+	}
+	default:
+	{
+		// 그 외 (Square, Cross, Ring, None)
+		float Side = (AoESize * 2.f + 1.f) * 100.f;
+		if (AoEShape == EPEAoEShape::None) Side = 100.f;
+
+		OutSize = FVector2D(Side, Side);
+		OutRadius = Side * 0.5f;
+		OutRotation = FRotator::ZeroRotator; // 대칭형이므로 회전 불필요
+		break;
+	}
+	}
 }

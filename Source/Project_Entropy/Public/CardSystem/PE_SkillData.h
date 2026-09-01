@@ -25,7 +25,7 @@ public:
 	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos) const;
 
 	// 시전 방향 및 모양을 고려하여 실제 타일들이 차지하는 폭발 너비(FVector2D)와 반지름(Radius)을 계산
-	void GetAoEBounds(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius) const;
+	void GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius, FRotator& OutRotation) const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Info")
 	FName SkillID;
