@@ -2,7 +2,7 @@
 
 #include "CardSystem/PE_SkillData.h"
 
-TSet<FIntPoint> UPE_SkillData::GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos) const
+TSet<FIntPoint> FPESkillHitPhase::GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange) const
 {
 	TSet<FIntPoint> Result;
 
@@ -122,7 +122,7 @@ TSet<FIntPoint> UPE_SkillData::GetAffectedGridPositions(FIntPoint CasterPos, FIn
 	return Result;
 }
 
-void UPE_SkillData::GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius, FRotator& OutRotation) const
+void FPESkillHitPhase::GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, FVector2D& OutSize, float& OutRadius, FRotator& OutRotation) const
 {
 	FVector2D Dir(TargetPos.X - CasterPos.X, TargetPos.Y - CasterPos.Y);
 	if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0); // 제자리 클릭 보호

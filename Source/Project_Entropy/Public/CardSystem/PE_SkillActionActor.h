@@ -23,7 +23,8 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 public:
 	APE_SkillActionActor(); 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
-	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<class APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos);
+	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, int32 InPhaseIndex, 
+		float InDamage, int32 InActionLogID, const TSet<class APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
@@ -45,6 +46,9 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_SkillData)
 	TObjectPtr<const UPE_SkillData> RepSkillData;
+
+	UPROPERTY(ReplicatedUsing = OnRep_SkillData)
+	int32 RepPhaseIndex = 0;
 
 	UPROPERTY(Replicated)
 	TObjectPtr<AActor> RepTargetActor;

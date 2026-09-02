@@ -156,7 +156,7 @@ TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint Start
 				else
 				{
 					// 스킬: 맵에 없는 공간(낙사)이나 비파괴 장애물(지진, 용암)은 무조건 범위가 통과함
-					if (SkillData && SkillData->ProjectileSpeed > 0.f && SkillData->ProjectileGravity == 0.f)
+					if (SkillData && SkillData->HitPhases[0].ProjectileSpeed > 0.f && SkillData->HitPhases[0].ProjectileGravity == 0.f)
 					{
 						// 직사 스킬: 타일 점유(캐릭터/동적장애물)를 통과할 수 없음
 						if (!IsTileOccupied(NextPos, Requester))

@@ -14,40 +14,89 @@ class UNiagaraSystem;
 class USoundBase;
 class UAnimMontage;
 
-// 스킬의 순수한 수치, 속성, 연출 데이터를 정의
+// [추가 핵심] 개별 타격(투사체, 장판, 근접 베기 등)의 모든 설정을 담는 페이즈 구조체
+USTRUCT(BlueprintType)
+struct FPESkillHitPhase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Timing")
+	float TriggerTime = 0.f; // 스킬 시전 시작 후 해당 타격/투사체가 발생할 때까지의 대기 시간
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Stats")
+	float DamageMultiplier = 1.0f; // 기본 데미지 배율 (예: 0.5 = 50% 데미지)
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE")
+	EPEAoEShape AoEShape = EPEAoEShape::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape != EPEAoEShape::None && AoEShape != EPEAoEShape::Custom && AoEShape != EPEAoEShape::Line"))
+	int32 AoESize = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
+	TArray<FIntPoint> CustomAoEOffsets;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Line"))
+	float LineWidth = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
+	bool bRotateToTarget = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	TSubclassOf<APE_SkillActionActor> SkillActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	bool bDestroyOnHit = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	float ProjectileSpeed = 800.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	float ProjectileGravity = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	TObjectPtr<UNiagaraSystem> ActionVFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	TObjectPtr<USoundBase> ActionSFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	float ExplosionDelay = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion")
+	TObjectPtr<UNiagaraSystem> ExplosionVFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion")
+	TObjectPtr<USoundBase> ExplosionSFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion")
+	float HitDelay = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Hit")
+	TObjectPtr<UNiagaraSystem> HitVFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Hit")
+	TObjectPtr<USoundBase> HitSFX;
+
+	// 페이즈마다 독립적인 이펙트 모듈 (밀치기 방향, 상태이상 등 독립 세팅 가능)
+	UPROPERTY(EditAnywhere, Instanced, BlueprintReadOnly, Category = "Phase|Effects")
+	TArray<TObjectPtr<UPE_SkillEffectModule>> EffectModules;
+
+	// 수학적 연산 함수 (BaseRange는 스킬 루트에서 받아옴)
+	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange) const;
+	void GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, FVector2D& OutSize, float& OutRadius, FRotator& OutRotation) const;
+};
+
 UCLASS(BlueprintType)
 class PROJECT_ENTROPY_API UPE_SkillData : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	// 스킬 범위를 타일 좌표(FIntPoint)로 계산하여 반환, 시전자 위치와 타겟 위치를 기준으로 AoE 모양과 크기를 고려
-	TSet<FIntPoint> GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos) const;
-
-	// 시전 방향 및 모양을 고려하여 실제 타일들이 차지하는 폭발 너비(FVector2D)와 반지름(Radius)을 계산
-	void GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint TargetPos, FVector2D& OutSize, float& OutRadius, FRotator& OutRotation) const;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Info")
 	FName SkillID;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Logic")
 	EPESkillTargetType TargetType;
-
-	UPROPERTY(EditAnywhere, Instanced, BlueprintReadOnly, Category = "Skill|Effects")
-	TArray<TObjectPtr<UPE_SkillEffectModule>> EffectModules;
-
-	// ---- 스킬 액터 (투사체, 장판 등) 및 물리/동작 설정
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
-	TSubclassOf<APE_SkillActionActor> SkillActorClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
-	bool bDestroyOnHit = true;		// true: 투사체(맞으면 파괴), false: 관통/장판(계속 유지)
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
-	float ProjectileSpeed = 800.f;	// 0이면 장판처럼 제자리에 고정됨
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Action Actor")
-	float ProjectileGravity = 0.f;	// 포물선 곡사 여부 (0이면 직사)
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Element")
 	FGameplayTag ElementTag;
@@ -58,73 +107,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
 	float BaseHeal = 0.f;
 
-	// AP 비용
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
 	int32 BaseAPCost = 1;
 
-	// 사거리 (타일 수)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
 	int32 BaseRange = 1;
 
-	// --- [광역 공격(AoE) 커스텀 데이터] ---
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)")
-	EPEAoEShape AoEShape = EPEAoEShape::None; 
+	// ---- 스킬 타격 페이즈 배열
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phases")
+	TArray<FPESkillHitPhase> HitPhases;
 
-	// 십자 모양의 가지 길이, 정사각형의 반경 등
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape != EPEAoEShape::None && AoEShape != EPEAoEShape::Custom"))
-	int32 AoESize = 1; 
-
-	// Custom 선택 시 에디터에서 직접 칠할 수 있는 타일 오프셋 배열 (0,0 은 타겟 중심점)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
-	TArray<FIntPoint> CustomAoEOffsets;
-
-	// 관통 스킬 / 레이저 폭 (0.0이면 1칸짜리 선)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Line"))
-	float LineWidth = 0.0f; 
-
-	// 커스텀 오프셋 4방향 자동 회전 여부
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Effect (AoE)", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
-	bool bRotateToTarget = true; 
-
-	// ---- 1단계: 시전 (Cast) 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
+	// ---- 스킬 시전 애니메이션 (루트 설정) 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	TObjectPtr<UAnimMontage> CastAnimMontage;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	FName CastAnimSectionName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	TObjectPtr<UNiagaraSystem> CastVFX;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 1 (Cast)")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	TObjectPtr<USoundBase> CastSFX;
-
-	// ---- 2단계: 중간 동작 (Action - 투사체 비행, 장판기 지속 이펙트 등)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
-	TObjectPtr<UNiagaraSystem> ActionVFX;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
-	TObjectPtr<USoundBase> ActionSFX;
-
-	// 스킬 애니메이션과 폭발 타이밍을 맞추기 위한 시간 변수 (0이면 즉시 폭발)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 2 (Action)")
-	float ExplosionDelay = 0.f;
-
-	// ---- 3단계: 중심점 폭발 (Explosion - 도착 타일에서 1회 발생)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
-	TObjectPtr<UNiagaraSystem> ExplosionVFX;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
-	TObjectPtr<USoundBase> ExplosionSFX;
-
-	// 폭발 애니메이션과 실제 피격 타이밍을 맞추기 위한 시간 변수
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 3 (Explosion)")
-	float HitDelay = 0.f;
-
-	// ---- 4단계: 적중/적용 (Hit / Apply - 맞은 적들의 몸에서 각각 발생)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 4 (Hit)")
-	TObjectPtr<UNiagaraSystem> HitVFX;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Phase 4 (Hit)")
-	TObjectPtr<USoundBase> HitSFX;
 };

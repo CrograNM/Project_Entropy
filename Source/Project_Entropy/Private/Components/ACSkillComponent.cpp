@@ -217,7 +217,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	APE_GameState* GS = nullptr;
 	if (Caster && Caster->GetWorld()) GS = Caster->GetWorld()->GetGameState<APE_GameState>();
 
-	if (!SkillData || !Caster)
+	if (!SkillData || !Caster || SkillData->HitPhases.IsEmpty())
 	{
 		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
 		return;
@@ -246,266 +246,280 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	if (Payload.ClientRequestID != -1)
 	{
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
-		{
 			PC->Client_ConfirmSkillExecution(Payload.ClientRequestID);
-		}
 	}
 
 	if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
 	{
 		FVector Dir = (OriginalTargetLoc - Caster->GetActorLocation()).GetSafeNormal2D();
 		if (!Dir.IsNearlyZero())
-		{
 			Caster->SetActorRotation(Dir.Rotation());
-		}
 	}
 
-	// 타겟 탐색을 즉발/투사체 가리지 않고 통일하여 연산합니다.
-	TSet<APE_CharacterBase*> AffectedTargets;
 	FIntPoint CasterPos = Caster->GetGridMovementComponent() ? Caster->GetGridMovementComponent()->GetGridPosition() : FIntPoint(0, 0);
-	FIntPoint TargetPos(-999, -999);
-	FRotator ExactRotation = Caster->GetActorRotation();
+	FIntPoint TargetPos = FIntPoint(-999, -999);
 
-	if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
+	// 스킬 시전 공통 애니메이션/VFX
+	NetMulticast_PlayCastVisuals(SkillData);
+
+	int32 TotalPhases = SkillData->HitPhases.Num();
+
+	// [수정 핵심] 설정된 페이즈 수만큼 루프를 돌며 각각 독립적인 타이머와 타격 범위를 생성합니다.
+	for (int32 i = 0; i < TotalPhases; ++i)
 	{
-		TArray<AActor*> AllChars;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-		for (AActor* Actor : AllChars)
-		{
-			if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+		// 큐 동기화: 페이즈가 시작될 때마다 큐 대기 카운트 추가
+		if (GS) GS->ReportActionStarted();
+
+		auto ExecutePhaseFunc = [this, Caster, Payload, SkillData, i, CasterPos, &TargetPos, OriginalTargetLoc, FinalTargetChar]()
 			{
-				if (Char->GetTeamID() != Caster->GetTeamID() && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
-					AffectedTargets.Add(Char);
-			}
-		}
-	}
-	else if (SkillData->TargetType == EPESkillTargetType::Self)
-	{
-		AffectedTargets.Add(Caster); // Self일 때만 자신을 타겟으로 인정
-	}
-	else
-	{
-		if (FinalTargetChar && FinalTargetChar->GetGridMovementComponent())
-			TargetPos = FinalTargetChar->GetGridMovementComponent()->GetGridPosition();
-		else if (Payload.TargetTile)
-			TargetPos = Payload.TargetTile->GetGridPosition();
-
-		// 회전각 계산
-		if (TargetPos != FIntPoint(-999, -999) && CasterPos != TargetPos)
-		{
-			FVector2D DirV(TargetPos.X - CasterPos.X, TargetPos.Y - CasterPos.Y);
-			DirV.Normalize();
-			ExactRotation = FVector(DirV.X, DirV.Y, 0).Rotation();
-		}
-
-		// 서버 연산 시점에서도 레이저 타겟을 가장 끝 타일로 팽창(Clamp)시킵니다.
-		if (SkillData->AoEShape == EPEAoEShape::Line && TargetPos != FIntPoint(-999, -999))
-		{
-			FVector2D CasterV(CasterPos.X, CasterPos.Y);
-			FVector2D TargetV(TargetPos.X, TargetPos.Y);
-			FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
-			if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
-
-			AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
-			if (GridSystem)
-			{
-				FIntPoint LastValidPos = CasterPos;
-				for (int32 i = 1; i <= SkillData->BaseRange; ++i)
+				if (!this || !Caster || !SkillData || !SkillData->HitPhases.IsValidIndex(i))
 				{
-					FIntPoint TestPos = CasterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
-					if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
-					else break;
+					if (APE_GameState* CheckGS = GetWorld()->GetGameState<APE_GameState>())
+						CheckGS->ReportActionEnded(-1);
+					return;
 				}
-				TargetPos = LastValidPos;
 
-				// 투사체가 날아갈 물리적 종착점 갱신
-				if (APE_CharacterBase* EdgeChar = GridSystem->GetCharacterAtPosition(TargetPos))
+				const FPESkillHitPhase& CurrentPhase = SkillData->HitPhases[i];
+				float FinalDamage = Payload.CalculatedDamage * CurrentPhase.DamageMultiplier;
+
+				// 마지막 페이즈가 끝날 때 UI의 시전 로그를 함께 날리도록 ID를 분배
+				int32 LogIDToClear = (i == SkillData->HitPhases.Num() - 1) ? Payload.ActionLogID : -1;
+
+				FRotator ExactRotation = Caster->GetActorRotation();
+				TSet<APE_CharacterBase*> AffectedTargets;
+				FVector PhaseTargetLoc = OriginalTargetLoc;
+				APE_CharacterBase* PhaseTargetChar = FinalTargetChar;
+
+				if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
 				{
-					OriginalTargetLoc = EdgeChar->GetActorLocation();
-					if (UCapsuleComponent* Cap = EdgeChar->FindComponentByClass<UCapsuleComponent>()) OriginalTargetLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.8f;
-				}
-				else if (AACTile* EdgeTile = GridSystem->GetTileAtPosition(TargetPos))
-				{
-					OriginalTargetLoc = EdgeTile->GetActorLocation();
-					OriginalTargetLoc.Z += 20.f;
-				}
-			}
-		}
-
-		if (TargetPos != FIntPoint(-999, -999))
-		{
-			TSet<FIntPoint> AffectedPositions = SkillData->GetAffectedGridPositions(CasterPos, TargetPos);
-			TArray<AActor*> AllChars;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-
-			for (AActor* Actor : AllChars)
-			{
-				if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-				{
-					// 기본적으로 시전자(Caster) 본인 및 아군(같은 팀)은 피격 대상에서 무조건 제외
-					// 단, 힐/버프 스킬(Snap_Ally)을 확장할 여지를 위해 예외 조건을 둠
-					bool bIsValidTarget = (Char != Caster) && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead();
-
-					if (SkillData->TargetType != EPESkillTargetType::Snap_Ally)
+					TArray<AActor*> AllChars;
+					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+					for (AActor* Actor : AllChars)
 					{
-						bIsValidTarget = bIsValidTarget && (Char->GetTeamID() != Caster->GetTeamID());
-					}
-
-					if (bIsValidTarget)
-					{
-						if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+						if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
 						{
-							if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
+							if (Char->GetTeamID() != Caster->GetTeamID() && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
 								AffectedTargets.Add(Char);
 						}
 					}
 				}
-			}
-		}
-	}
-
-	if (SkillData->SkillActorClass)
-	{
-		NetMulticast_PlayCastVisuals(SkillData);
-
-		FTransform SpawnTransform = Caster->GetActorTransform();
-		FVector FinalTargetLoc = OriginalTargetLoc;
-
-		// 투사체가 아닐 경우 시전자 앞이 아닌 FinalTargetLoc(목표 중심지)에 직접 스폰되도록 수정
-		if (SkillData->ProjectileSpeed > 0.f)
-		{
-			FVector StartLoc = Caster->GetActorLocation();
-			if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
-				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
-
-			SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
-			SpawnTransform.SetRotation(ExactRotation.Quaternion());
-
-			if (SkillData->bDestroyOnHit)
-			{
-				int32 NumSegments = 20;
-				FVector LastPos = SpawnTransform.GetLocation();
-
-				FCollisionQueryParams Params;
-				Params.AddIgnoredActor(Caster);
-				FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
-
-				for (int32 i = 1; i <= NumSegments; ++i)
+				else if (SkillData->TargetType == EPESkillTargetType::Self)
 				{
-					float Alpha = (float)i / (float)NumSegments;
-					FVector NextPos = FMath::Lerp(SpawnTransform.GetLocation(), OriginalTargetLoc, Alpha);
-
-					if (SkillData->ProjectileGravity > 0.f)
-					{
-						NextPos.Z += FMath::Sin(Alpha * PI) * SkillData->ProjectileGravity;
-					}
-
-					FHitResult HitResult;
-					if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
-					{
-						FinalTargetLoc = HitResult.Location;
-						if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
-						{
-							FinalTargetChar = HitChar;
-						}
-						else
-						{
-							FinalTargetChar = nullptr;
-						}
-						break;
-					}
-					LastPos = NextPos;
-				}
-			}
-		}
-		else
-		{
-			// 장판, 즉발 폭발 등 속도가 없는 경우 타겟의 중심 좌표에 생성
-			SpawnTransform.SetLocation(FinalTargetLoc);
-			SpawnTransform.SetRotation(ExactRotation.Quaternion());
-		}
-
-		// 시전자와 겹쳐도 무조건 스폰되도록 보장
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = Caster;
-		SpawnParams.Instigator = Caster;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-		APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(SkillData->SkillActorClass, SpawnTransform, SpawnParams);
-		if (ActionActor)
-		{
-			ActionActor->InitializeActionActor(Caster, FinalTargetChar, FinalTargetLoc, SkillData, Payload.CalculatedDamage, Payload.ActionLogID, AffectedTargets, CasterPos, TargetPos);
-		}
-		else
-		{
-			// 생성 실패 시 큐 무한 대기를 막기 위한 예외 처리
-			if (GS) GS->ReportActionEnded(Payload.ActionLogID);
-		}
-	}
-	else
-	{
-		// 시전 이펙트는 시전자에게 발생
-		NetMulticast_PlayCastVisuals(SkillData);
-
-		// 즉발 스킬은 여기서 바로 폭발 크기를 계산합니다.
-		FVector2D ExplosionSize;
-		float ExplosionRadius;
-		FRotator AoERotation;
-		SkillData->GetAoEBoundsAndRotation(CasterPos, TargetPos, ExplosionSize, ExplosionRadius, AoERotation);
-
-		// 람다(Lambda)와 타이머를 사용하여 즉발 스킬의 딜레이(Explosion, Hit) 시퀀스를 구현합니다.
-		auto ApplyHitFunc = [this, Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload]()
-			{
-				if (!this || !Caster || !SkillData) return;
-
-				// 실제 물리적 타격 모듈(데미지, 넉백) 일괄 적용
-				for (UPE_SkillEffectModule* Module : SkillData->EffectModules)
-				{
-					if (Module) Module->ApplyEffects(Caster, AffectedTargets, OriginalTargetLoc, SkillData, Payload.CalculatedDamage);
-				}
-
-				// 타격된 개별 적 몸에 피격 효과(HitVFX) 스폰
-				for (APE_CharacterBase* Target : AffectedTargets)
-				{
-					if (Target) NetMulticast_PlayHitVisuals(SkillData, Target->GetActorLocation());
-				}
-
-				// 모든 연산 종료 후 큐 해제
-				if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
-				{
-					GS->ReportActionEnded(Payload.ActionLogID);
-				}
-			};
-
-		auto ExplodeFunc = [this, SkillData, OriginalTargetLoc, AoERotation, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
-			{
-				if (!this || !SkillData) return;
-
-				// 목표 지점에 광역 폭발 이펙트 스폰
-				NetMulticast_PlayExplosionVisuals(SkillData, OriginalTargetLoc, AoERotation, ExplosionSize, ExplosionRadius);
-
-				// 폭발 후 타격 딜레이가 존재하면 타이머를 걸고, 없으면 즉시 타격 적용
-				if (SkillData->HitDelay > 0.f)
-				{
-					FTimerHandle HitTimer;
-					GetWorld()->GetTimerManager().SetTimer(HitTimer, FTimerDelegate::CreateWeakLambda(this, ApplyHitFunc), SkillData->HitDelay, false);
+					AffectedTargets.Add(Caster);
 				}
 				else
 				{
-					ApplyHitFunc();
-				}
-			};
+					if (PhaseTargetChar && PhaseTargetChar->GetGridMovementComponent())
+						TargetPos = PhaseTargetChar->GetGridMovementComponent()->GetGridPosition();
+					else if (Payload.TargetTile)
+						TargetPos = Payload.TargetTile->GetGridPosition();
 
-		if (SkillData->ExplosionDelay > 0.f)
+					if (TargetPos != FIntPoint(-999, -999) && CasterPos != TargetPos)
+					{
+						FVector2D DirV(TargetPos.X - CasterPos.X, TargetPos.Y - CasterPos.Y);
+						DirV.Normalize();
+						ExactRotation = FVector(DirV.X, DirV.Y, 0).Rotation();
+					}
+
+					if (CurrentPhase.AoEShape == EPEAoEShape::Line && TargetPos != FIntPoint(-999, -999))
+					{
+						FVector2D CasterV(CasterPos.X, CasterPos.Y);
+						FVector2D TargetV(TargetPos.X, TargetPos.Y);
+						FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
+						if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
+
+						AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
+						if (GridSystem)
+						{
+							FIntPoint LastValidPos = CasterPos;
+							for (int32 step = 1; step <= SkillData->BaseRange; ++step)
+							{
+								FIntPoint TestPos = CasterPos + FIntPoint(FMath::RoundToInt(Dir.X * step), FMath::RoundToInt(Dir.Y * step));
+								if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
+								else break;
+							}
+							TargetPos = LastValidPos;
+
+							if (APE_CharacterBase* EdgeChar = GridSystem->GetCharacterAtPosition(TargetPos))
+							{
+								PhaseTargetLoc = EdgeChar->GetActorLocation();
+								if (UCapsuleComponent* Cap = EdgeChar->FindComponentByClass<UCapsuleComponent>()) PhaseTargetLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.8f;
+							}
+							else if (AACTile* EdgeTile = GridSystem->GetTileAtPosition(TargetPos))
+							{
+								PhaseTargetLoc = EdgeTile->GetActorLocation();
+								PhaseTargetLoc.Z += 20.f;
+							}
+						}
+					}
+
+					if (TargetPos != FIntPoint(-999, -999))
+					{
+						TSet<FIntPoint> AffectedPositions = CurrentPhase.GetAffectedGridPositions(CasterPos, TargetPos, SkillData->BaseRange);
+						TArray<AActor*> AllChars;
+						UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+
+						for (AActor* Actor : AllChars)
+						{
+							if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+							{
+								bool bIsValidTarget = (Char != Caster) && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead();
+								if (SkillData->TargetType != EPESkillTargetType::Snap_Ally)
+									bIsValidTarget = bIsValidTarget && (Char->GetTeamID() != Caster->GetTeamID());
+
+								if (bIsValidTarget)
+								{
+									if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
+									{
+										if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
+											AffectedTargets.Add(Char);
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// 물리적 객체(투사체 등) 스폰
+				if (CurrentPhase.SkillActorClass)
+				{
+					FTransform SpawnTransform = Caster->GetActorTransform();
+
+					if (CurrentPhase.ProjectileSpeed > 0.f)
+					{
+						FVector StartLoc = Caster->GetActorLocation();
+						if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
+							StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
+
+						SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
+						SpawnTransform.SetRotation(ExactRotation.Quaternion());
+
+						if (CurrentPhase.bDestroyOnHit)
+						{
+							int32 NumSegments = 20;
+							FVector LastPos = SpawnTransform.GetLocation();
+							FCollisionQueryParams Params;
+							Params.AddIgnoredActor(Caster);
+							FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
+
+							for (int32 step = 1; step <= NumSegments; ++step)
+							{
+								float Alpha = (float)step / (float)NumSegments;
+								FVector NextPos = FMath::Lerp(SpawnTransform.GetLocation(), PhaseTargetLoc, Alpha);
+								if (CurrentPhase.ProjectileGravity > 0.f)
+									NextPos.Z += FMath::Sin(Alpha * PI) * CurrentPhase.ProjectileGravity;
+
+								FHitResult HitResult;
+								if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
+								{
+									PhaseTargetLoc = HitResult.Location;
+									PhaseTargetChar = Cast<APE_CharacterBase>(HitResult.GetActor());
+									break;
+								}
+								LastPos = NextPos;
+							}
+						}
+					}
+					else
+					{
+						SpawnTransform.SetLocation(PhaseTargetLoc);
+						SpawnTransform.SetRotation(ExactRotation.Quaternion());
+					}
+
+					FActorSpawnParameters SpawnParams;
+					SpawnParams.Owner = Caster;
+					SpawnParams.Instigator = Caster;
+					SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+					APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(CurrentPhase.SkillActorClass, SpawnTransform, SpawnParams);
+					if (ActionActor)
+					{
+						// i(PhaseIndex)를 전달하여 액터가 자기 자신의 데이터를 가져오게 합니다.
+						ActionActor->InitializeActionActor(Caster, PhaseTargetChar, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear, AffectedTargets, CasterPos, TargetPos);
+					}
+					else
+					{
+						if (APE_GameState* CheckGS = GetWorld()->GetGameState<APE_GameState>())
+							CheckGS->ReportActionEnded(LogIDToClear);
+					}
+				}
+				else
+				{
+					// 즉발 연산 람다 시퀀스 (투사체 없음)
+					FVector2D ExplosionSize;
+					float ExplosionRadius;
+					FRotator AoERotation;
+					if (PhaseTargetChar && PhaseTargetChar->GetGridMovementComponent())
+						TargetPos = PhaseTargetChar->GetGridMovementComponent()->GetGridPosition();
+					else if (Payload.TargetTile)
+						TargetPos = Payload.TargetTile->GetGridPosition();
+
+					CurrentPhase.GetAoEBoundsAndRotation(CasterPos, TargetPos, SkillData->BaseRange, ExplosionSize, ExplosionRadius, AoERotation);
+
+					auto ApplyHitFunc = [this, Caster, AffectedTargets, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear]()
+						{
+							if (!this || !SkillData || !SkillData->HitPhases.IsValidIndex(i)) return;
+							const FPESkillHitPhase& ExecPhase = SkillData->HitPhases[i];
+
+							for (UPE_SkillEffectModule* Module : ExecPhase.EffectModules)
+							{
+								if (Module)
+									Module->ApplyEffects(Caster, AffectedTargets, PhaseTargetLoc, SkillData, FinalDamage);
+							}
+							for (APE_CharacterBase* Target : AffectedTargets)
+							{
+								if (Target) NetMulticast_PlayHitVisuals(SkillData, i, Target->GetActorLocation());
+							}
+							if (APE_GameState* CheckGS = GetWorld()->GetGameState<APE_GameState>())
+							{
+								CheckGS->ReportActionEnded(LogIDToClear);
+							}
+						};
+
+					auto ExplodeFunc = [this, SkillData, i, PhaseTargetLoc, AoERotation, ExplosionSize, ExplosionRadius, ApplyHitFunc]()
+						{
+							if (!this || !SkillData || !SkillData->HitPhases.IsValidIndex(i)) return;
+							const FPESkillHitPhase& ExecPhase = SkillData->HitPhases[i];
+
+							NetMulticast_PlayExplosionVisuals(SkillData, i, PhaseTargetLoc, AoERotation, ExplosionSize, ExplosionRadius);
+
+							if (ExecPhase.HitDelay > 0.f)
+							{
+								FTimerHandle HitTimer;
+								GetWorld()->GetTimerManager().SetTimer(HitTimer, FTimerDelegate::CreateWeakLambda(this, ApplyHitFunc), ExecPhase.HitDelay, false);
+							}
+							else
+							{
+								ApplyHitFunc();
+							}
+						};
+
+					if (CurrentPhase.ExplosionDelay > 0.f)
+					{
+						FTimerHandle ExplosionTimer;
+						GetWorld()->GetTimerManager().SetTimer(ExplosionTimer, FTimerDelegate::CreateWeakLambda(this, ExplodeFunc), CurrentPhase.ExplosionDelay, false);
+					}
+					else
+					{
+						ExplodeFunc();
+					}
+				}
+			}; // ExecutePhaseFunc 끝
+
+		// 페이즈의 고유 딜레이(TriggerTime)에 맞춰 실행을 예약
+		if (SkillData->HitPhases[i].TriggerTime > 0.f)
 		{
-			FTimerHandle ExplosionTimer;
-			GetWorld()->GetTimerManager().SetTimer(ExplosionTimer, FTimerDelegate::CreateWeakLambda(this, ExplodeFunc), SkillData->ExplosionDelay, false);
+			FTimerHandle PhaseTimer;
+			GetWorld()->GetTimerManager().SetTimer(PhaseTimer, FTimerDelegate::CreateWeakLambda(this, ExecutePhaseFunc), SkillData->HitPhases[i].TriggerTime, false);
 		}
 		else
 		{
-			ExplodeFunc();
+			ExecutePhaseFunc();
 		}
 	}
+
+	// 기반 스킬의 큐 카운트를 종료. (본체 1개 해제, 위 루프에서 페이즈 수만큼 카운트가 올라가 있음)
+	if (GS) GS->ReportActionEnded(-1);
 }
 
 void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_SkillData* SkillData)
@@ -523,29 +537,29 @@ void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_Sk
 	}
 }
 
-void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation, FRotator TargetRotation, FVector2D ExplosionSize, float ExplosionRadius)
+void UACSkillComponent::NetMulticast_PlayExplosionVisuals_Implementation(const UPE_SkillData* SkillData, int32 PhaseIndex, FVector TargetLocation, FRotator TargetRotation, FVector2D ExplosionSize, float ExplosionRadius)
 {
-	if (!SkillData) return;
+	if (!SkillData || !SkillData->HitPhases.IsValidIndex(PhaseIndex)) return;
+	const FPESkillHitPhase& Phase = SkillData->HitPhases[PhaseIndex];
 
-	if (SkillData->ExplosionVFX)
+	if (Phase.ExplosionVFX)
 	{
-		UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->ExplosionVFX, TargetLocation, TargetRotation);
-
+		UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Phase.ExplosionVFX, TargetLocation, TargetRotation);
 		if (NiagaraComp)
 		{
-			// 나이아가라 파라미터에 2D 너비, 3D 박스, 1D 반지름을 모두 세팅
-			NiagaraComp->SetVariableVec2(FName("ExplosionSize"), ExplosionSize); // 2D 평면 스케일
-			NiagaraComp->SetVariableVec3(FName("ExplosionBox"), FVector(ExplosionSize.X, ExplosionSize.Y, 100.f)); // 3D 체적 스케일
-			NiagaraComp->SetVariableFloat(FName("ExplosionRadius"), ExplosionRadius); // 구형 반경 스케일
+			NiagaraComp->SetVariableVec2(FName("ExplosionSize"), ExplosionSize);
+			NiagaraComp->SetVariableVec3(FName("ExplosionBox"), FVector(ExplosionSize.X, ExplosionSize.Y, 100.f));
+			NiagaraComp->SetVariableFloat(FName("ExplosionRadius"), ExplosionRadius);
 		}
 	}
-	if (SkillData->ExplosionSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), SkillData->ExplosionSFX, TargetLocation); }
+	if (Phase.ExplosionSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), Phase.ExplosionSFX, TargetLocation); }
 }
 
-void UACSkillComponent::NetMulticast_PlayHitVisuals_Implementation(const UPE_SkillData* SkillData, FVector TargetLocation)
+void UACSkillComponent::NetMulticast_PlayHitVisuals_Implementation(const UPE_SkillData* SkillData, int32 PhaseIndex, FVector TargetLocation)
 {
-	if (!SkillData) return;
+	if (!SkillData || !SkillData->HitPhases.IsValidIndex(PhaseIndex)) return;
+	const FPESkillHitPhase& Phase = SkillData->HitPhases[PhaseIndex];
 
-	if (SkillData->HitVFX) { UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), SkillData->HitVFX, TargetLocation); }
-	if (SkillData->HitSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), SkillData->HitSFX, TargetLocation); }
+	if (Phase.HitVFX) { UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Phase.HitVFX, TargetLocation); }
+	if (Phase.HitSFX) { UGameplayStatics::PlaySoundAtLocation(GetWorld(), Phase.HitSFX, TargetLocation); }
 }

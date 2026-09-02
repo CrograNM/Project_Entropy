@@ -39,11 +39,12 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(APE_SkillActionActor, RepSkillData);
+	DOREPLIFETIME(APE_SkillActionActor, RepPhaseIndex);
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetActor);
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
-void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, float InDamage, int32 InActionLogID, const TSet<APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos)
+void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, int32 InPhaseIndex, float InDamage, int32 InActionLogID, const TSet<APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos)
 {
 	Caster = InInstigator;
 	DamageToApply = InDamage;
@@ -51,8 +52,9 @@ void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* I
 
 	RepTargetActor = InTarget;
 	RepSkillData = InData;
-	RepTargetLocation = InLoc; // 목표 타일 좌표 동기화
-	StartLocation = GetActorLocation(); // 출발지 확정
+	RepPhaseIndex = InPhaseIndex;
+	RepTargetLocation = InLoc; 
+	StartLocation = GetActorLocation();
 
 	PendingTargets = InTargets;
 
@@ -69,40 +71,35 @@ void APE_SkillActionActor::OnRep_SkillData()
 	// 클라이언트 측 시작 위치 보정 (서버에서 스폰된 위치가 클라이언트로 넘어온 직후)
 	StartLocation = GetActorLocation();
 
-	if (RepSkillData)
+	if (RepSkillData && RepSkillData->HitPhases.IsValidIndex(RepPhaseIndex))
 	{
-		// 이펙트는 딜레이와 상관없이 즉시 재생
-		if (RepSkillData->ActionVFX)
+		const FPESkillHitPhase& Phase = RepSkillData->HitPhases[RepPhaseIndex];
+
+		if (Phase.ActionVFX)
 		{
-			ActionVFXComponent->SetAsset(RepSkillData->ActionVFX);
+			ActionVFXComponent->SetAsset(Phase.ActionVFX);
 			ActionVFXComponent->Activate();
 		}
-		if (RepSkillData->ActionSFX)
+		if (Phase.ActionSFX)
 		{
-			ActionSFXComponent->SetSound(RepSkillData->ActionSFX);
+			ActionSFXComponent->SetSound(Phase.ActionSFX);
 			ActionSFXComponent->Play();
 		}
 
-		// 이동이 필요한 투사체인지 검사
-		if (RepSkillData->ProjectileSpeed > 0.f)
+		if (Phase.ProjectileSpeed > 0.f)
 		{
 			float Distance = FVector::Distance(StartLocation, RepTargetLocation);
-			FlightDuration = Distance / RepSkillData->ProjectileSpeed; // 거리 / 속도 = 걸리는 시간 보장
-
-			// ProjectileGravity 변수를 포물선의 최대 높이 값(ArcHeight)으로 활용합니다.
-			ArcHeight = RepSkillData->ProjectileGravity;
-
+			FlightDuration = Distance / Phase.ProjectileSpeed;
+			ArcHeight = Phase.ProjectileGravity;
 			bIsFlying = true;
 		}
 		else
 		{
 			bIsFlying = false;
-
-			// 투사체가 아닐 경우, 또는 추가 연출 등 딜레이가 있다면 타이머 후 폭발 처리
-			if (RepSkillData->ExplosionDelay > 0.f)
+			if (Phase.ExplosionDelay > 0.f)
 			{
 				FTimerHandle DelayTimer;
-				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::TriggerExplosion, RepSkillData->ExplosionDelay, false);
+				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::TriggerExplosion, Phase.ExplosionDelay, false);
 			}
 			else
 			{
@@ -140,7 +137,7 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 	SetActorLocation(LerpXY);
 
 	// 비행 도중 관통 타격 처리 로직
-	if (HasAuthority() && RepSkillData && !RepSkillData->bDestroyOnHit && RepSkillData->ProjectileSpeed > 0.f)
+	if (HasAuthority() && RepSkillData && !RepSkillData->HitPhases[RepPhaseIndex].bDestroyOnHit && RepSkillData->HitPhases[RepPhaseIndex].ProjectileSpeed > 0.f)
 	{
 		TArray<APE_CharacterBase*> HitThisFrame;
 
@@ -164,14 +161,14 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 			TSet<APE_CharacterBase*> SingleTarget;
 			SingleTarget.Add(HitTarget);
 
-			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
+			for (UPE_SkillEffectModule* Module : RepSkillData->HitPhases[RepPhaseIndex].EffectModules)
 			{
 				Module->ApplyEffects(Caster, SingleTarget, HitTarget->GetActorLocation(), RepSkillData, DamageToApply);
 			}
 
 			if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
 			{
-				SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, HitTarget->GetActorLocation());
+				SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, RepPhaseIndex, HitTarget->GetActorLocation());
 			}
 
 			// 두 번 맞지 않도록 대기 명단에서 제거
@@ -185,10 +182,10 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 		bIsFlying = false;
 
 		// 투사체가 아닐 경우, 또는 추가 연출 등 딜레이가 있다면 타이머 후 폭발 처리
-		if (RepSkillData->ExplosionDelay > 0.f)
+		if (RepSkillData->HitPhases[RepPhaseIndex].ExplosionDelay > 0.f)
 		{
 			FTimerHandle DelayTimer;
-			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::TriggerExplosion, RepSkillData->ExplosionDelay, false);
+			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &APE_SkillActionActor::TriggerExplosion, RepSkillData->HitPhases[RepPhaseIndex].ExplosionDelay, false);
 		}
 		else
 		{
@@ -208,17 +205,17 @@ void APE_SkillActionActor::TriggerExplosion()
 			FVector2D ExplosionSize;
 			float ExplosionRadius;
 			FRotator AoERotation;
-			RepSkillData->GetAoEBoundsAndRotation(CasterGridPos, TargetGridPos, ExplosionSize, ExplosionRadius, AoERotation);
+			RepSkillData->HitPhases[RepPhaseIndex].GetAoEBoundsAndRotation(CasterGridPos, TargetGridPos, RepSkillData->BaseRange, ExplosionSize, ExplosionRadius, AoERotation);
 
-			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepTargetLocation, AoERotation, ExplosionSize, ExplosionRadius);
+			SkillComp->NetMulticast_PlayExplosionVisuals(RepSkillData, RepPhaseIndex, RepTargetLocation, AoERotation, ExplosionSize, ExplosionRadius);
 		}
 	}
 
 	// 물리적 타격과 큐 해제 타이밍(HitDelay) 조절 (클라이언트/서버 라이프사이클 동기화)
-	if (RepSkillData && RepSkillData->HitDelay > 0.f)
+	if (RepSkillData && RepSkillData->HitPhases[RepPhaseIndex].HitDelay > 0.f)
 	{
 		FTimerHandle HitTimer;
-		GetWorld()->GetTimerManager().SetTimer(HitTimer, this, &APE_SkillActionActor::ApplyHitAndEffects, RepSkillData->HitDelay, false);
+		GetWorld()->GetTimerManager().SetTimer(HitTimer, this, &APE_SkillActionActor::ApplyHitAndEffects, RepSkillData->HitPhases[RepPhaseIndex].HitDelay, false);
 	}
 	else
 	{
@@ -230,10 +227,10 @@ void APE_SkillActionActor::ApplyHitAndEffects()
 {
 	if (HasAuthority())
 	{
-		if (RepSkillData && (RepSkillData->bDestroyOnHit || PendingTargets.Num() > 0))
+		if (RepSkillData && (RepSkillData->HitPhases[RepPhaseIndex].bDestroyOnHit || PendingTargets.Num() > 0))
 		{
 			// 실제 물리적 타격 모듈(데미지, 넉백) 일괄 적용
-			for (UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
+			for (UPE_SkillEffectModule* Module : RepSkillData->HitPhases[RepPhaseIndex].EffectModules)
 			{
 				if (Module)
 				{
@@ -250,7 +247,7 @@ void APE_SkillActionActor::ApplyHitAndEffects()
 					{
 						if (Target)
 						{
-							SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, Target->GetActorLocation());
+							SkillComp->NetMulticast_PlayHitVisuals(RepSkillData, RepPhaseIndex, Target->GetActorLocation());
 						}
 					}
 				}

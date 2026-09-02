@@ -148,8 +148,11 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			FVector OriginalEndLoc = FVector::ZeroVector;
 
+			// 단일 스킬 구조체에서 배열로 바뀌었으므로, 궤적(화살표)을 그릴 대표 페이즈를 첫 번째 페이즈로 지정
+			const FPESkillHitPhase* RepPhase = (RepSkillData->HitPhases.Num() > 0) ? &RepSkillData->HitPhases[0] : nullptr;
+
 			// 레이저 목표 타일이 그리드(맵) 밖을 벗어나지 않도록 최대 사거리 내의 '가장 마지막 유효 타일'로 보정합니다.
-			if (RepSkillData->AoEShape == EPEAoEShape::Line)
+			if (RepPhase && RepPhase->AoEShape == EPEAoEShape::Line)
 			{
 				FVector2D CasterV(CenterPos.X, CenterPos.Y);
 				FVector2D TargetV(ActualTargetPos.X, ActualTargetPos.Y);
@@ -161,14 +164,8 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
 				{
 					FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
-					if (GridSystem->GetTileAtPosition(TestPos))
-					{
-						LastValidPos = TestPos;
-					}
-					else
-					{
-						break; // 맵 범위를 벗어나면 탐색 중지
-					}
+					if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
+					else break;
 				}
 				ActualTargetPos = LastValidPos;
 			}
@@ -187,14 +184,14 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			FVector FinalEndLoc = OriginalEndLoc;
 
-			if (RepSkillData->ProjectileSpeed > 0.f)
+			// 대표 페이즈의 투사체 속성 기반으로 궤적 스플라인 렌더링[cite: 31]
+			if (RepPhase && RepPhase->ProjectileSpeed > 0.f)
 			{
 				int32 NumSegments = 20;
 				FVector LastPos = StartLoc;
 				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
 
-				// 관통 스킬은 스윕 없이 무조건 끝까지 그립니다.
-				if (RepSkillData->bDestroyOnHit)
+				if (RepPhase->bDestroyOnHit)
 				{
 					FCollisionQueryParams Params;
 					Params.AddIgnoredActor(OwnerActor);
@@ -205,8 +202,8 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 						float Alpha = (float)i / (float)NumSegments;
 						FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
 
-						if (RepSkillData->ProjectileGravity > 0.f)
-							NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
+						if (RepPhase->ProjectileGravity > 0.f)
+							NextPos.Z += FMath::Sin(Alpha * PI) * RepPhase->ProjectileGravity;
 
 						FHitResult HitResult;
 						if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
@@ -234,16 +231,16 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				}
 				else
 				{
-					// 장애물을 무시하고 사거리 끝단(OriginalEndLoc)까지 스플라인을 그립니다.
+					// 관통/장판: 장애물을 무시하고 사거리 끝단(OriginalEndLoc)까지 스플라인을 그립니다.
 					for (int32 i = 1; i <= NumSegments; ++i)
 					{
 						float Alpha = (float)i / (float)NumSegments;
 						FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
-						if (RepSkillData->ProjectileGravity > 0.f)
-							NextPos.Z += FMath::Sin(Alpha * PI) * RepSkillData->ProjectileGravity;
+						if (RepPhase->ProjectileGravity > 0.f)
+							NextPos.Z += FMath::Sin(Alpha * PI) * RepPhase->ProjectileGravity;
 						TrajectorySpline->AddSplinePoint(NextPos, ESplineCoordinateSpace::World, false);
 					}
-					FinalEndLoc = OriginalEndLoc; // 끝까지 도달
+					FinalEndLoc = OriginalEndLoc;
 				}
 				TrajectorySpline->UpdateSpline();
 			}
@@ -268,33 +265,83 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				GeneratedMeshes.Add(ImpactSphere);
 			}
 
-			// CenterPos(시전자)와 ActualTargetPos(타겟 방향)를 같이 넘겨 타겟 타일을 칠함
-			TSet<FIntPoint> AffectedGridPositions;
-			if (RepSkillData->AoEShape != EPEAoEShape::None)
+			// 페이즈 배열 전체를 순회하며 칠해질 타일들의 합집합(Union)을 수집합니다
+			TSet<FIntPoint> MasterAffectedPositions;
+			if (RepSkillData->HitPhases.Num() > 0)
 			{
-				AffectedGridPositions = RepSkillData->GetAffectedGridPositions(CenterPos, ActualTargetPos);
-				GridSystem->HighlightAoE(OwnerActor, AffectedGridPositions);
+				for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
+				{
+					FIntPoint PhaseTargetPos = RepHoveredTile;
+
+					if (Phase.AoEShape == EPEAoEShape::Line)
+					{
+						FVector2D CasterV(CenterPos.X, CenterPos.Y);
+						FVector2D TargetV(PhaseTargetPos.X, PhaseTargetPos.Y);
+						FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
+						if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
+
+						FIntPoint LastValidPos = CenterPos;
+						for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
+						{
+							FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
+							if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
+							else break;
+						}
+						PhaseTargetPos = LastValidPos;
+					}
+					MasterAffectedPositions.Append(Phase.GetAffectedGridPositions(CenterPos, PhaseTargetPos, RepSkillData->BaseRange));
+				}
+				GridSystem->HighlightAoE(OwnerActor, MasterAffectedPositions);
 			}
 			else
 			{
-				AffectedGridPositions.Add(ActualTargetPos);
+				MasterAffectedPositions.Add(ActualTargetPos);
 				GridSystem->HighlightTarget(OwnerActor, ActualTargetPos);
 			}
 
-			// 연쇄 밀치기 시뮬레이션
+			// 넉백 모듈은 여러 페이즈 중 최초 1개만 찾아서 한 번만 시뮬레이션 및 시각화합니다.
 			const UPE_SkillEffect_Push* PushModule = nullptr;
-			for (const UPE_SkillEffectModule* Module : RepSkillData->EffectModules)
+			FIntPoint PushTargetPos = ActualTargetPos;
+
+			if (RepSkillData->HitPhases.Num() > 0)
 			{
-				if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
+				for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
 				{
-					PushModule = FoundPush;
-					break;
+					for (const UPE_SkillEffectModule* Module : Phase.EffectModules)
+					{
+						if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
+						{
+							PushModule = FoundPush;
+							PushTargetPos = RepHoveredTile;
+
+							// 시각화를 그릴 모듈이 Line 형태에 속한다면 Target 위치 보정 적용
+							if (Phase.AoEShape == EPEAoEShape::Line)
+							{
+								FVector2D CasterV(CenterPos.X, CenterPos.Y);
+								FVector2D TargetV(PushTargetPos.X, PushTargetPos.Y);
+								FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
+								if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
+
+								FIntPoint LastValidPos = CenterPos;
+								for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
+								{
+									FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
+									if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
+									else break;
+								}
+								PushTargetPos = LastValidPos;
+							}
+							break;
+						}
+					}
+					if (PushModule) break; // 모듈을 찾았다면 더 이상 다른 페이즈를 탐색하지 않고 종료
 				}
 			}
 
+			// 단 한 번만 실행되는 밀치기 화살표 시각화 로직
 			if (PushModule)
 			{
-				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, ActualTargetPos, AffectedGridPositions);
+				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, MasterAffectedPositions);
 
 				for (const FPushSimulationResult& Result : PushResults)
 				{

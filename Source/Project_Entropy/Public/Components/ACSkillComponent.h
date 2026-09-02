@@ -38,17 +38,15 @@ public:
 	TArray<UPE_SkillData*> GetActiveSkills() const { return ActiveSkills; }
 
 	// --- 스킬 시각화 멀티캐스트 RPC ---
-	// 시전자(소유자)에서 1번 발생하는 시전 연출
 	UFUNCTION(NetMulticast, Unreliable)
 	void NetMulticast_PlayCastVisuals(const UPE_SkillData* SkillData);
 
-	// 목표 지점에서 1번 발생하는 거대한 광역 폭발 연출
+	// 클라이언트가 페이즈별 이펙트를 꺼내 쓸 수 있도록 PhaseIndex 전달
 	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_PlayExplosionVisuals(const UPE_SkillData* SkillData, FVector TargetLocation, FRotator TargetRotation, FVector2D ExplosionSize, float ExplosionRadius);
+	void NetMulticast_PlayExplosionVisuals(const UPE_SkillData* SkillData, int32 PhaseIndex, FVector TargetLocation, FRotator TargetRotation, FVector2D ExplosionSize, float ExplosionRadius);
 
-	// 개별 대상의 몸에서 발생하는 피격 연출
 	UFUNCTION(NetMulticast, Unreliable)
-	void NetMulticast_PlayHitVisuals(const UPE_SkillData* SkillData, FVector TargetLocation);
+	void NetMulticast_PlayHitVisuals(const UPE_SkillData* SkillData, int32 PhaseIndex, FVector TargetLocation);
 
 protected:
 	virtual void BeginPlay() override;

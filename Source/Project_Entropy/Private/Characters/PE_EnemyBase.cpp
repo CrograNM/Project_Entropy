@@ -236,9 +236,9 @@ void APE_EnemyBase::NetMulticast_ShowSkillIntent_Implementation(UPE_SkillData* S
 			GridSystem->HighlightArea(this, GridMovement->GetGridPosition(), SkillData->BaseRange);
 
 			// 단일/AOE 여부에 따라 타겟팅을 칠합니다.
-			if (SkillData->AoEShape != EPEAoEShape::None)
+			if (SkillData->HitPhases[0].AoEShape != EPEAoEShape::None)
 			{
-				TSet<FIntPoint> AoE = SkillData->GetAffectedGridPositions(GridMovement->GetGridPosition(), TargetTile->GetGridPosition());
+				TSet<FIntPoint> AoE = SkillData->HitPhases[0].GetAffectedGridPositions(GridMovement->GetGridPosition(), TargetTile->GetGridPosition(), SkillData->BaseRange);
 				GridSystem->HighlightAoE(this, AoE);
 			}
 			else
