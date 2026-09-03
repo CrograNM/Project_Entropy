@@ -26,7 +26,7 @@
 <!-- TODO: 실제 스크린샷/GIF로 교체 -->
 | 카드 시스템 | 스킬 & VFX | PVP 대전 |
 |---|---|---|
-| ![카드 시스템 데모](docs/images/card-system.gif) | ![스킬 이펙트 데모](docs/images/skill-vfx.gif) | ![PVP 대전 데모](docs/images/pvp-battle.gif) |
+| ![카드 시스템 데모](_Docs/Images/PE-card-system.gif) | ![스킬 이펙트 데모](_Docs/Images/PE-skill-vfx.gif) | ![PVP 대전 데모](_Docs/Images/PE-pvp-battle.gif) |
 
 <!-- TODO: 데모 버전 개발이 끝나면 플레이 영상 링크/썸네일 추가 -->
 > ▶ **플레이 영상:** (링크 예정)
