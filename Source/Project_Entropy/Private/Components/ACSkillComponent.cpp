@@ -122,7 +122,7 @@ void UACSkillComponent::PrepareQueuedSkill(const FPESkillActionPayload& Payload)
 
 	if (!SkillData || !Caster)
 	{
-		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
+		if (GS) GS->EndAction(Payload.ActionTokenID, Payload.ActionLogID);
 		return;
 	}
 
@@ -190,7 +190,7 @@ void UACSkillComponent::PrepareQueuedSkill(const FPESkillActionPayload& Payload)
 		{
 			PC->Client_CancelSkillExecution(Payload.ClientRequestID);
 		}
-		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
+		if (GS) GS->EndAction(Payload.ActionTokenID, Payload.ActionLogID);
 		return;
 	}
 
@@ -219,7 +219,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 
 	if (!SkillData || !Caster || SkillData->HitPhases.IsEmpty())
 	{
-		if (GS) GS->ReportActionEnded(Payload.ActionLogID);
+		if (GS) GS->EndAction(Payload.ActionTokenID, Payload.ActionLogID);
 		return;
 	}
 
@@ -267,23 +267,28 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	// [수정 핵심] 설정된 페이즈 수만큼 루프를 돌며 각각 독립적인 타이머와 타격 범위를 생성합니다.
 	for (int32 i = 0; i < TotalPhases; ++i)
 	{
-		// 큐 동기화: 페이즈가 시작될 때마다 큐 대기 카운트 추가
-		if (GS) GS->ReportActionStarted();
+		// 마지막 페이즈가 끝날 때 UI의 시전 로그를 함께 날리도록 ID를 분배
+		const int32 LogIDToClear = (i == TotalPhases - 1) ? Payload.ActionLogID : -1;
 
-		auto ExecutePhaseFunc = [this, Caster, Payload, SkillData, i, CasterPos, &TargetPos, OriginalTargetLoc, FinalTargetChar]()
+		// 큐 동기화: 페이즈마다 독립적인 추적 토큰을 발급받습니다.
+		const int32 PhaseToken = GS
+			? GS->BeginAction(FString::Printf(TEXT("SkillPhase:%s[%d/%d]/%s"),
+				*SkillData->SkillID.ToString(), i + 1, TotalPhases, *GetNameSafe(Caster)), LogIDToClear)
+			: INDEX_NONE;
+
+		// [주의] TargetPos를 참조(&)로 캡처하면 TriggerTime 타이머로 지연 실행될 때
+		// 이미 사라진 스택 변수를 건드리게 되므로 반드시 값으로 복사해 둡니다.
+		auto ExecutePhaseFunc = [this, Caster, Payload, SkillData, i, CasterPos, TargetPos, OriginalTargetLoc, FinalTargetChar, LogIDToClear, PhaseToken]() mutable
 			{
 				if (!this || !Caster || !SkillData || !SkillData->HitPhases.IsValidIndex(i))
 				{
 					if (APE_GameState* CheckGS = GetWorld()->GetGameState<APE_GameState>())
-						CheckGS->ReportActionEnded(-1);
+						CheckGS->EndAction(PhaseToken, LogIDToClear);
 					return;
 				}
 
 				const FPESkillHitPhase& CurrentPhase = SkillData->HitPhases[i];
 				float FinalDamage = Payload.CalculatedDamage * CurrentPhase.DamageMultiplier;
-
-				// 마지막 페이즈가 끝날 때 UI의 시전 로그를 함께 날리도록 ID를 분배
-				int32 LogIDToClear = (i == SkillData->HitPhases.Num() - 1) ? Payload.ActionLogID : -1;
 
 				FRotator ExactRotation = Caster->GetActorRotation();
 				TSet<APE_CharacterBase*> AffectedTargets;
@@ -434,13 +439,13 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 					APE_SkillActionActor* ActionActor = GetWorld()->SpawnActor<APE_SkillActionActor>(CurrentPhase.SkillActorClass, SpawnTransform, SpawnParams);
 					if (ActionActor)
 					{
-						// i(PhaseIndex)를 전달하여 액터가 자기 자신의 데이터를 가져오게 합니다.
-						ActionActor->InitializeActionActor(Caster, PhaseTargetChar, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear, AffectedTargets, CasterPos, TargetPos);
+						// i(PhaseIndex)와 이 페이즈의 토큰을 넘겨, 액터가 타격을 마친 뒤 스스로 반납하게 합니다.
+						ActionActor->InitializeActionActor(Caster, PhaseTargetChar, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear, PhaseToken, AffectedTargets, CasterPos, TargetPos);
 					}
 					else
 					{
 						if (APE_GameState* CheckGS = GetWorld()->GetGameState<APE_GameState>())
-							CheckGS->ReportActionEnded(LogIDToClear);
+							CheckGS->EndAction(PhaseToken, LogIDToClear);
 					}
 				}
 				else
@@ -456,7 +461,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 
 					CurrentPhase.GetAoEBoundsAndRotation(CasterPos, TargetPos, SkillData->BaseRange, ExplosionSize, ExplosionRadius, AoERotation);
 
-					auto ApplyHitFunc = [this, Caster, AffectedTargets, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear]()
+					auto ApplyHitFunc = [this, Caster, AffectedTargets, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear, PhaseToken]()
 						{
 							if (!this || !SkillData || !SkillData->HitPhases.IsValidIndex(i)) return;
 							const FPESkillHitPhase& ExecPhase = SkillData->HitPhases[i];
@@ -472,7 +477,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 							}
 							if (APE_GameState* CheckGS = GetWorld()->GetGameState<APE_GameState>())
 							{
-								CheckGS->ReportActionEnded(LogIDToClear);
+								CheckGS->EndAction(PhaseToken, LogIDToClear);
 							}
 						};
 
@@ -518,8 +523,8 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 		}
 	}
 
-	// 기반 스킬의 큐 카운트를 종료. (본체 1개 해제, 위 루프에서 페이즈 수만큼 카운트가 올라가 있음)
-	if (GS) GS->ReportActionEnded(-1);
+	// 기반 스킬 본체의 토큰 반납. (UI 로그는 마지막 페이즈가 책임지므로 여기서는 건드리지 않습니다)
+	if (GS) GS->EndAction(Payload.ActionTokenID);
 }
 
 void UACSkillComponent::NetMulticast_PlayCastVisuals_Implementation(const UPE_SkillData* SkillData)

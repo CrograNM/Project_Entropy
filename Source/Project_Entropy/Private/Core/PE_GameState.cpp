@@ -5,6 +5,7 @@
 #include "Characters/PE_CharacterBase.h"
 #include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACSkillComponent.h"
+#include "CardSystem/PE_SkillData.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/PE_PlayerController.h"
 
@@ -64,28 +65,78 @@ void APE_GameState::EnqueueSkillAction(const FPESkillActionPayload& Payload)
 	}
 }
 
-void APE_GameState::ReportActionStarted()
+int32 APE_GameState::BeginAction(const FString& Context, int32 ActionLogID)
 {
-	if (HasAuthority())
+	if (!HasAuthority()) return INDEX_NONE;
+
+	const int32 TokenID = ++NextActionTokenID;
+
+	FPEPendingAction& NewAction = PendingActions.Add(TokenID);
+	NewAction.ActionLogID = ActionLogID;
+	NewAction.StartTime = GetWorld()->GetTimeSeconds();
+	NewAction.Context = Context;
+
+	PendingActionCount = PendingActions.Num();
+
+	// 미반납 액션이 하나라도 생기면 워치독을 가동합니다.
+	if (!GetWorld()->GetTimerManager().IsTimerActive(ActionWatchdogTimerHandle))
 	{
-		PendingActionCount++;
+		GetWorld()->GetTimerManager().SetTimer(ActionWatchdogTimerHandle, this, &APE_GameState::TickActionWatchdog, WatchdogInterval, true);
 	}
+
+	return TokenID;
 }
 
-void APE_GameState::ReportActionEnded(int32 ActionLogID)
+void APE_GameState::EndAction(int32 TokenID, int32 ActionLogID)
 {
 	if (!HasAuthority()) return;
 
-	PendingActionCount--;
+	if (PendingActions.Remove(TokenID) == 0)
+	{
+		// 발급된 적 없거나 이미 반납된 토큰. 카운터가 음수로 망가지는 것을 막기 위해 흘려보내되 흔적은 남깁니다.
+		UE_LOG(LogTemp, Warning, TEXT("[ActionQueue] 유효하지 않은 토큰 반납 시도 (중복 해제 의심): Token=%d"), TokenID);
+	}
+
+	PendingActionCount = PendingActions.Num();
 
 	// UI 큐 항목 삭제 처리
 	RemoveActionLog(ActionLogID);
 
-	// 꼬리를 무는 넉백을 포함해 파생된 모든 연산이 0이 될 때만 다음 큐로 넘어감
-	if (PendingActionCount <= 0)
+	// 꼬리를 무는 넉백을 포함해 파생된 모든 연산이 끝났을 때만 다음 큐로 넘어감
+	if (PendingActions.Num() == 0)
 	{
-		PendingActionCount = 0;
+		GetWorld()->GetTimerManager().ClearTimer(ActionWatchdogTimerHandle);
 		GetWorld()->GetTimerManager().SetTimer(ActionDelayTimerHandle, this, &APE_GameState::ProcessNextAction, ActionInterval, false);
+	}
+}
+
+void APE_GameState::TickActionWatchdog()
+{
+	if (!HasAuthority()) return;
+
+	const double Now = GetWorld()->GetTimeSeconds();
+
+	// 순회 도중 EndAction이 맵을 수정하므로 대상 토큰을 먼저 모아둡니다.
+	TArray<int32> TimedOutTokens;
+	for (const TPair<int32, FPEPendingAction>& Pair : PendingActions)
+	{
+		if (Now - Pair.Value.StartTime >= ActionTimeout)
+		{
+			TimedOutTokens.Add(Pair.Key);
+		}
+	}
+
+	for (int32 TokenID : TimedOutTokens)
+	{
+		const FPEPendingAction Info = PendingActions.FindChecked(TokenID);
+
+		// 대상이 도중에 파괴되는 등의 이유로 완료 보고가 유실된 경우입니다.
+		// 여기서 풀어주지 않으면 큐가 영구 정지하여 턴 종료까지 막히므로 강제로 해제합니다.
+		UE_LOG(LogTemp, Error,
+			TEXT("[ActionQueue] 액션이 %.1f초간 완료 보고를 하지 않아 강제 해제합니다. Token=%d, Context=%s"),
+			(float)(Now - Info.StartTime), TokenID, *Info.Context);
+
+		EndAction(TokenID, Info.ActionLogID);
 	}
 }
 
@@ -105,10 +156,14 @@ void APE_GameState::ProcessNextAction()
 
 	bIsProcessingAction = true;
 
-	// 1차 스킬 본체의 액션 카운트 부여
-	ReportActionStarted();
-
 	ActionQueue.Dequeue(CurrentProcessingPayload);
+
+	// 1차 스킬 '본체'의 액션 토큰 발급 (개별 타격 페이즈들은 각자 별도 토큰을 발급받습니다)
+	const FString Context = FString::Printf(TEXT("SkillBody:%s/%s"),
+		*GetNameSafe(CurrentProcessingPayload.Instigator),
+		CurrentProcessingPayload.SkillData ? *CurrentProcessingPayload.SkillData->SkillID.ToString() : TEXT("None"));
+
+	CurrentProcessingPayload.ActionTokenID = BeginAction(Context, CurrentProcessingPayload.ActionLogID);
 
 	// 스킬 실제 실행 지시
 	if (CurrentProcessingPayload.Instigator && CurrentProcessingPayload.SkillData)
@@ -117,9 +172,9 @@ void APE_GameState::ProcessNextAction()
 		{
 			SkillComp->PrepareQueuedSkill(CurrentProcessingPayload);
 		}
-		else ReportActionEnded();
+		else EndAction(CurrentProcessingPayload.ActionTokenID, CurrentProcessingPayload.ActionLogID);
 	}
-	else ReportActionEnded();
+	else EndAction(CurrentProcessingPayload.ActionTokenID, CurrentProcessingPayload.ActionLogID);
 }
 
 void APE_GameState::CommitCurrentAction()

@@ -239,10 +239,16 @@ void UPE_TurnManagerComponent::EvaluateTurnEnd()
 	if (TotalPlayerCount > 0 && ReadyTeamPlayerCount >= TotalPlayerCount)
 	{
 		bPendingTurnEnd = true;
-		APE_GameState* GS = Cast<APE_GameState>(GetOwner());
-		if (GS && !GS->IsActionQueueActive())
+
+		// [턴 종료 진입점 ①] 만장일치가 달성된 시점에 액션 큐가 이미 비어 있다면 즉시 종료 시퀀스를 시작합니다.
+		// 큐가 아직 돌고 있다면 여기서는 예약(bPendingTurnEnd)만 걸어두고,
+		// [턴 종료 진입점 ②] APE_GameState::ProcessNextAction()이 큐를 다 비운 순간 대신 호출해 줍니다.
+		if (APE_GameState* GS = Cast<APE_GameState>(GetOwner()))
 		{
-			// ExecuteTurnEnd();
+			if (!GS->IsActionQueueActive())
+			{
+				GS->AdvanceTurnEndPhase();
+			}
 		}
 	}
 	else

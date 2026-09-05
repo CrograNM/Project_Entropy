@@ -23,6 +23,9 @@ struct FGridKnockbackPayload
 	UPROPERTY() TObjectPtr<const UPE_SkillData> SkillData = nullptr;
 
 	UPROPERTY() int32 ActionLogID = -1;
+
+	// 액션 큐에서 발급받은 토큰 (이동/충돌 처리가 끝나면 반납)
+	UPROPERTY() int32 ActionTokenID = -1;
 };
 
 // 큐에 담아둘 단일 이동 명령 구조체
@@ -66,6 +69,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(Replicated)
 	FIntPoint GridPosition;

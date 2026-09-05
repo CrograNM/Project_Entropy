@@ -738,16 +738,12 @@ void APE_PlayerController::Server_TurnEndCardsFinished_Implementation()
 void APE_PlayerController::Server_SetTurnReadyState_Implementation(bool bReady)
 {
 	bIsReadyForTurnEnd = bReady;
+
+	// 레디 상태만 전달합니다. 만장일치 판정과 턴 종료 시퀀스 개시는 TurnManager가 단독으로 책임집니다.
+	// (진입점이 여러 곳으로 흩어지면 콜백 하나만 유실돼도 턴이 멈추므로 의도적으로 한 곳에 모아두었습니다)
 	if (UPE_TurnManagerComponent* TM = GetCachedTurnManager())
 	{
 		TM->RequestTurnEnd(this, bReady);
-		if (TM->IsPendingTurnEnd())
-		{
-			if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
-			{
-				if (!GS->IsActionQueueActive()) GS->AdvanceTurnEndPhase();
-			}
-		}
 	}
 }
 

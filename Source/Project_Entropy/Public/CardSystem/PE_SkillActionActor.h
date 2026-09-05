@@ -23,11 +23,12 @@ class PROJECT_ENTROPY_API APE_SkillActionActor : public AActor
 public:
 	APE_SkillActionActor(); 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override; 
-	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, int32 InPhaseIndex, 
-		float InDamage, int32 InActionLogID, const TSet<class APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos);
+	void InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, int32 InPhaseIndex,
+		float InDamage, int32 InActionLogID, int32 InActionTokenID, const TSet<class APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// 물리 엔진 의존성을 없애고 순수 렌더링용 루트로 변경
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -62,6 +63,13 @@ private:
 
 	float DamageToApply;
 	int32 ActionLogID = -1;
+
+	// 액션 큐에서 발급받은 토큰. 타격을 마치거나 도중에 파괴될 때 반드시 반납해야 합니다.
+	int32 ActionTokenID = -1;
+	bool bHasReportedEnd = false;
+
+	/** 액션 큐 토큰을 1회만 반납하도록 보장합니다. */
+	void ReleaseActionToken();
 
 	// --- [수학적 궤적(포물선) 연산용 변수] ---
 	FVector StartLocation;

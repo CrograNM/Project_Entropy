@@ -44,11 +44,12 @@ void APE_SkillActionActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(APE_SkillActionActor, RepTargetLocation);
 }
 
-void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, int32 InPhaseIndex, float InDamage, int32 InActionLogID, const TSet<APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos)
+void APE_SkillActionActor::InitializeActionActor(AActor* InInstigator, AActor* InTarget, const FVector& InLoc, const UPE_SkillData* InData, int32 InPhaseIndex, float InDamage, int32 InActionLogID, int32 InActionTokenID, const TSet<APE_CharacterBase*>& InTargets, FIntPoint InCasterGridPos, FIntPoint InTargetGridPos)
 {
 	Caster = InInstigator;
 	DamageToApply = InDamage;
 	ActionLogID = InActionLogID;
+	ActionTokenID = InActionTokenID;
 
 	RepTargetActor = InTarget;
 	RepSkillData = InData;
@@ -254,15 +255,36 @@ void APE_SkillActionActor::ApplyHitAndEffects()
 			}
 		}
 
-		// 모든 타격 판정이 끝난 현재 시점에 액션 큐 해제 보고
-		if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
-		{
-			GS->ReportActionEnded(ActionLogID);
-		}
+		// 모든 타격 판정이 끝난 현재 시점에 액션 큐 토큰 반납
+		ReleaseActionToken();
 	}
 
 	// 잔여물 정리
 	if (ActionVFXComponent) ActionVFXComponent->Deactivate();
 	if (ActionSFXComponent) ActionSFXComponent->FadeOut(0.2f, 0.f);
 	SetLifeSpan(0.2f);
+}
+
+void APE_SkillActionActor::ReleaseActionToken()
+{
+	if (bHasReportedEnd || !HasAuthority()) return;
+	bHasReportedEnd = true;
+
+	if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
+	{
+		GS->EndAction(ActionTokenID, ActionLogID);
+	}
+}
+
+void APE_SkillActionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 타격 판정 전에 파괴되면(레벨 전환, 강제 삭제 등) 토큰이 영영 반납되지 않아 큐가 멈춥니다.
+	// 마지막 안전망으로 이 시점에 반드시 정산합니다.
+	if (!bHasReportedEnd && ActionTokenID != INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ActionQueue] %s 가 타격 판정 전에 파괴되어 토큰을 정산합니다. Token=%d"), *GetName(), ActionTokenID);
+		ReleaseActionToken();
+	}
+
+	Super::EndPlay(EndPlayReason);
 }

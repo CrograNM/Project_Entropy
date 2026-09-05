@@ -225,12 +225,14 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			}
 		}
 
-		// 개별 밀치기가 계산될 때마다 UI에 등록
-		if (APE_GameState* GS = Instigator->GetWorld()->GetGameState<APE_GameState>())
+		// 개별 밀치기가 계산될 때마다 UI에 등록하고 전용 토큰을 발급받습니다.
+		APE_GameState* GS = Instigator->GetWorld()->GetGameState<APE_GameState>();
+		if (GS)
 		{
 			FString LogText = FString::Printf(TEXT("%s - %d칸 밀림"), *Task.Actor->GetName(), Task.RemainingDist);
 			Payload.ActionLogID = GS->AddActionLog(Task.Actor->GetTeamID(), LogText);
-			GS->ReportActionStarted();
+			Payload.ActionTokenID = GS->BeginAction(
+				FString::Printf(TEXT("Push:%s(%d칸)"), *Task.Actor->GetName(), Task.RemainingDist), Payload.ActionLogID);
 		}
 
 		if (UACGridMovementComponent* MoveComp = Task.Actor->GetGridMovementComponent())
@@ -241,6 +243,11 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			{
 				CurrentPosMap[Task.Actor] = CurrentPos;
 			}
+		}
+		else if (GS)
+		{
+			// 이동 컴포넌트가 없어 페이로드를 넘기지 못했다면 발급한 토큰을 즉시 되돌려 누수를 막습니다.
+			GS->EndAction(Payload.ActionTokenID, Payload.ActionLogID);
 		}
 	}
 }

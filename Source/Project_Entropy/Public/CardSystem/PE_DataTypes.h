@@ -71,6 +71,9 @@ struct FPESkillActionPayload
 	// 발급받은 UI 큐 로그 고유 ID
 	UPROPERTY() int32 ActionLogID = -1;
 
+	// 액션 큐가 발급한 추적 토큰 ID (스킬 '본체' 1건에 대응, 반드시 EndAction으로 반납해야 함)
+	UPROPERTY() int32 ActionTokenID = -1;
+
 	// 강제 시전(AP 소모 및 환불 면제) 여부
 	UPROPERTY() bool bIsFreeCast = false;
 };

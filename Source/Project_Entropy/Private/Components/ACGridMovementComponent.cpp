@@ -27,6 +27,40 @@ UACGridMovementComponent::UACGridMovementComponent()
 
 void UACGridMovementComponent::BeginPlay() { Super::BeginPlay(); }
 
+void UACGridMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// [액션 큐 안전망]
+	// 넉백으로 밀려나던 도중 충돌 데미지로 사망하면 소유 액터가 파괴되어
+	// ExecuteKnockbackPayload가 영영 실행되지 않고 토큰이 유실됩니다. (= 큐 영구 정지)
+	// 파괴되는 이 시점에 아직 터뜨리지 못한 페이로드를 모두 정산합니다.
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		if (APE_GameState* GS = GetWorld() ? GetWorld()->GetGameState<APE_GameState>() : nullptr)
+		{
+			if (CurrentPayload.bIsActive && !bHasFiredPayload)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[ActionQueue] %s 가 넉백 처리 도중 파괴되어 토큰을 정산합니다. Token=%d"),
+					*GetNameSafe(GetOwner()), CurrentPayload.ActionTokenID);
+
+				bHasFiredPayload = true;
+				GS->EndAction(CurrentPayload.ActionTokenID, CurrentPayload.ActionLogID);
+			}
+
+			// 아직 시작조차 못한 대기 명령들의 토큰도 함께 반납합니다.
+			for (const FGridMoveCommand& Cmd : MoveCommandQueue)
+			{
+				if (Cmd.Payload.bIsActive)
+				{
+					GS->EndAction(Cmd.Payload.ActionTokenID, Cmd.Payload.ActionLogID);
+				}
+			}
+		}
+	}
+	MoveCommandQueue.Empty();
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void UACGridMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -156,7 +190,7 @@ void UACGridMovementComponent::ExecuteKnockbackPayload()
 
 			if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
 			{
-				GS->ReportActionEnded(CurrentPayload.ActionLogID);
+				GS->EndAction(CurrentPayload.ActionTokenID, CurrentPayload.ActionLogID);
 			}
 		}
 
