@@ -34,7 +34,7 @@ public:
 	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 
 	// 좌표 이동 시 점유 여부 확인 및 성공 여부에 따라 OccupancyMap 갱신 (TMap과 실제 캐릭터 위치 동기화)
-	bool UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos);
+	void UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos);
 
 	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false, const class UPE_SkillData* SkillData = nullptr);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
@@ -54,6 +54,10 @@ protected:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
+#if !UE_BUILD_SHIPPING
+	void ValidateOccupancy() const;
 #endif
 
 public:
@@ -92,7 +96,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Grid Data")
 	TMap<FIntPoint, AACTile*> GridTiles;
 
-	// 각 좌표에 어떤 캐릭터가 점유하고 있는지 추적하는 맵 (Key: 좌표, Value: 캐릭터 액터)
+	/*
+		불변식(invariant)
+
+		각 좌표에 어떤 캐릭터가 점유하고 있는지 추적하는 맵 (Key: 좌표, Value: 캐릭터 액터)
+		살아있는 모든 캐릭터의 GridPosition과 TargetGridPosition을 그대로 비추는 거울
+	*/
 	UPROPERTY(VisibleAnywhere, Category = "Grid Occupancy")
 	TMap<FIntPoint, APE_CharacterBase*> OccupancyMap;
 

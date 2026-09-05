@@ -37,13 +37,12 @@ bool AACGridSystem::IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor) const
 	return Occupant != nullptr && Occupant != IgnoreActor;
 }
 
-bool AACGridSystem::UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos)
+void AACGridSystem::UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos)
 {
-	if (!Char) return false;
+	if (!Char) return;
 	if (IsTileOccupied(NewPos, Char))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[GridSystem] %s 가 이미 점유된 좌표 (%d,%d)로 이동하려고 시도함."), *GetNameSafe(Char), NewPos.X, NewPos.Y);
-		return false;
+		UE_LOG(LogTemp, Warning, TEXT("[Occupancy] %s 가 이미 점유된 곳으로 이동을 시도했습니다."), *GetNameSafe(Char));
 	}
 
 	// 이전 위치에서 제거
@@ -55,7 +54,7 @@ bool AACGridSystem::UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, F
 	// 새 위치에 추가
 	OccupancyMap.Add(NewPos, Char);
 	
-	return true;
+	return;
 }
 
 TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos)
@@ -279,6 +278,11 @@ void AACGridSystem::ClearAllHighlightsFor(AActor* Requester)
 void AACGridSystem::BeginPlay()
 {
 	Super::BeginPlay();
+
+#if !UE_BUILD_SHIPPING
+	FTimerHandle TimerHandle;
+	GetWorld()->GetTimerManager().SetTimer(TimerHandle, this, &AACGridSystem::ValidateOccupancy, 1.f, true);
+#endif
 }
 
 void AACGridSystem::RegenerateGrid()
@@ -388,5 +392,37 @@ void AACGridSystem::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
 	{
 		RegenerateGrid();
 	}
+}
+#endif
+
+#if !UE_BUILD_SHIPPING
+void AACGridSystem::ValidateOccupancy() const
+{
+	// 1) 지금 이 순간의 '진짜' 점유 상태를 캐릭터들에게서 직접 만들어봅니다.
+	TMap<FIntPoint, APE_CharacterBase*> Expected;
+	TArray<AActor*> AllChars;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+	for (AActor* Actor : AllChars)
+	{
+		APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor);
+		if (!Char || (Char->GetStatComponent() && Char->GetStatComponent()->IsDead())) continue;
+		if (UACGridMovementComponent* M = Char->GetGridMovementComponent())
+		{
+			Expected.Add(M->GetGridPosition(), Char);
+			Expected.Add(M->GetTargetGridPosition(), Char);
+		}
+	}
+
+	// 2) 현재 맵과 대조합니다.
+	// 누락/불일치: 실제로는 캐릭터가 점유하고 있는데 OccupancyMap이 비어있거나 다른 캐릭터를 가리키고 있는 경우
+	for (const auto& Pair : Expected)
+		if (OccupancyMap.FindRef(Pair.Key) != Pair.Value)
+			UE_LOG(LogTemp, Error, TEXT("[Occupancy] 누락/불일치 (%d,%d): 실제=%s, TMap=%s"), Pair.Key.X, Pair.Key.Y,
+				*GetNameSafe(Pair.Value), *GetNameSafe(OccupancyMap.FindRef(Pair.Key)));
+
+	// 유령 점유: 실제로는 아무도 없는 좌표에 OccupancyMap이 캐릭터를 가리키고 있는 경우
+	for (const auto& Pair : OccupancyMap)
+		if (!Expected.Contains(Pair.Key))
+			UE_LOG(LogTemp, Error, TEXT("[Occupancy] 유령 점유 (%d,%d): %s"), Pair.Key.X, Pair.Key.Y, *GetNameSafe(Pair.Value));
 }
 #endif

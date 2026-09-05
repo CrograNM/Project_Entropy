@@ -99,22 +99,12 @@ void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, boo
 	{
 		ProcessNextCommand();
 	}
-
-	if (AACGridSystem* GridSystem = GetCachedGridSystem())
-	{
-		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, TargetGridPosition);
-	}
 }
 
 void UACGridMovementComponent::SetGridPosition(FIntPoint NewPos)
 {
-	GridPosition = NewPos;
-	TargetGridPosition = NewPos;
-
-	if (AACGridSystem* GridSystem = GetCachedGridSystem())
-	{
-		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, TargetGridPosition);
-	}
+	SetGridPositionInternal(NewPos);
+	SetTargetGridPosition(NewPos);
 }
 
 void UACGridMovementComponent::ProcessNextCommand()
@@ -132,7 +122,7 @@ void UACGridMovementComponent::ProcessNextCommand()
 
 		if (SavedPath.Num() > 0 && SavedPath.Last())
 		{
-			TargetGridPosition = SavedPath.Last()->GetGridPosition();
+			SetTargetGridPosition(SavedPath.Last()->GetGridPosition());
 		}
 
 		float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -154,7 +144,7 @@ void UACGridMovementComponent::ProcessNextCommand()
 		bIsMovingOnGrid = false;
 		bIsWaitingDelay = false;
 
-		TargetGridPosition = FIntPoint(-999, -999);
+		SetTargetGridPosition(GridPosition);
 
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
 		{
@@ -300,10 +290,34 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 
 	if (t >= 1.0f)
 	{
-		GridPosition = SavedPath[CurrentPathIndex]->GetGridPosition();
+		SetGridPositionInternal(SavedPath[CurrentPathIndex]->GetGridPosition());
 		OwnerActor->SetActorLocation(AdjustTarget);
 
 		CurrentPathIndex++;
 		SetNextPathStep();
 	}
+}
+
+void UACGridMovementComponent::SetGridPositionInternal(FIntPoint NewPos)
+{
+	if (GridPosition == NewPos) return;   // 변화 없으면 조기 반환
+
+	if (AACGridSystem* GridSystem = GetCachedGridSystem())
+	{
+		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, NewPos);
+	}
+
+	GridPosition = NewPos;
+}
+
+void UACGridMovementComponent::SetTargetGridPosition(FIntPoint NewPos)
+{
+	if (TargetGridPosition == NewPos) return;   // 변화 없으면 조기 반환
+
+	if (AACGridSystem* GridSystem = GetCachedGridSystem())
+	{
+		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), TargetGridPosition, NewPos);
+	}
+
+	TargetGridPosition = NewPos;
 }

@@ -77,18 +77,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	TObjectPtr<AACGridSystem> CachedGridSystem;
 
-	UPROPERTY(Replicated)
-	FIntPoint GridPosition;
-
-	UPROPERTY(Replicated)
-	FIntPoint TargetGridPosition;
-
 	UPROPERTY(EditAnywhere, Category = "Movement") float GridMoveSpeed = 1000.f;
 	// 튕겨나가는 탄성 강도 조절용 변수
 	UPROPERTY(EditAnywhere, Category = "Movement") float OvershootFactor = 3.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float RotationSpeed = 2000.f;
 
 private:
+	UPROPERTY(Replicated) FIntPoint GridPosition;
+	UPROPERTY(Replicated) FIntPoint TargetGridPosition;
+
+	void SetGridPositionInternal(FIntPoint NewPos);
+	void SetTargetGridPosition(FIntPoint NewPos);
+
 	void ProcessNextCommand();
 	void StartMoving();
 	void SetNextPathStep();
