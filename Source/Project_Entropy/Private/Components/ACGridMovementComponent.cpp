@@ -1,6 +1,7 @@
 // Copyright CrograNM
 
 #include "Components/ACGridMovementComponent.h"
+#include "Characters/PE_CharacterBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Grid/ACTile.h"
@@ -23,6 +24,16 @@ UACGridMovementComponent::UACGridMovementComponent()
 	bIsMovingOnGrid = false;
 	bIsWaitingDelay = false;
 	bHasFiredPayload = false;
+}
+
+AACGridSystem* UACGridMovementComponent::GetCachedGridSystem()
+{
+	if (!CachedGridSystem)
+	{
+		CachedGridSystem = Cast<AACGridSystem>(
+			UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
+	}
+	return CachedGridSystem;
 }
 
 void UACGridMovementComponent::BeginPlay() { Super::BeginPlay(); }
@@ -88,6 +99,22 @@ void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, boo
 	{
 		ProcessNextCommand();
 	}
+
+	if (AACGridSystem* GridSystem = GetCachedGridSystem())
+	{
+		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, TargetGridPosition);
+	}
+}
+
+void UACGridMovementComponent::SetGridPosition(FIntPoint NewPos)
+{
+	GridPosition = NewPos;
+	TargetGridPosition = NewPos;
+
+	if (AACGridSystem* GridSystem = GetCachedGridSystem())
+	{
+		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, TargetGridPosition);
+	}
 }
 
 void UACGridMovementComponent::ProcessNextCommand()
@@ -103,7 +130,7 @@ void UACGridMovementComponent::ProcessNextCommand()
 		bHasFiredPayload = false; // [초기화] 큐가 새로 시작될 때 폭발 장전
 		CurrentPathIndex = 0;
 
-		if (GetOwner()->HasAuthority() && SavedPath.Num() > 0)
+		if (SavedPath.Num() > 0 && SavedPath.Last())
 		{
 			TargetGridPosition = SavedPath.Last()->GetGridPosition();
 		}
@@ -123,10 +150,11 @@ void UACGridMovementComponent::ProcessNextCommand()
 	}
 	else
 	{
+		// 이동 종료 후 상태 초기화
 		bIsMovingOnGrid = false;
 		bIsWaitingDelay = false;
 
-		if (GetOwner()->HasAuthority()) TargetGridPosition = FIntPoint(-999, -999);
+		TargetGridPosition = FIntPoint(-999, -999);
 
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
 		{

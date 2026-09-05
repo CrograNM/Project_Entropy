@@ -2,11 +2,11 @@
 
 #include "Grid/ACGridSystem.h"
 #include "Containers/Queue.h"
-#include "Characters/PE_CharacterBase.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "CardSystem/PE_SkillData.h"
+#include "Characters/PE_CharacterBase.h"
 
 AACGridSystem::AACGridSystem()
 {
@@ -26,28 +26,36 @@ AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 
 APE_CharacterBase* AACGridSystem::GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor) const
 {
-	TArray<AActor*> AllChars;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+	APE_CharacterBase* Occupant = OccupancyMap.FindRef(Pos);
+	return (Occupant && Occupant != IgnoreActor) ? Occupant : nullptr;
+}
 
-	for (AActor* Actor : AllChars)
+bool AACGridSystem::IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor) const
+{
+	// OccupancyMap으로 해당 좌표에 캐릭터가 존재하는지 확인
+	const APE_CharacterBase* Occupant = OccupancyMap.FindRef(Pos);
+	return Occupant != nullptr && Occupant != IgnoreActor;
+}
+
+bool AACGridSystem::UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos)
+{
+	if (!Char) return false;
+	if (IsTileOccupied(NewPos, Char))
 	{
-		if (Actor == IgnoreActor) continue;
-
-		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-		{
-			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
-
-			if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
-			{
-				// 현재 위치 또는 이동 중인 예약 위치와 겹친다면 해당 캐릭터 반환
-				if (MoveComp->GetGridPosition() == Pos || MoveComp->GetTargetGridPosition() == Pos)
-				{
-					return Char;
-				}
-			}
-		}
+		UE_LOG(LogTemp, Warning, TEXT("[GridSystem] %s 가 이미 점유된 좌표 (%d,%d)로 이동하려고 시도함."), *GetNameSafe(Char), NewPos.X, NewPos.Y);
+		return false;
 	}
-	return nullptr;
+
+	// 이전 위치에서 제거
+	if (OccupancyMap.Contains(OldPos) && OccupancyMap[OldPos] == Char)
+	{
+		OccupancyMap.Remove(OldPos);
+	}
+
+	// 새 위치에 추가
+	OccupancyMap.Add(NewPos, Char);
+	
+	return true;
 }
 
 TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos)
@@ -115,7 +123,7 @@ TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint Start
 {
 	ClearRangeFor(Requester);
 
-	TArray<AACTile*>& ValidTiles = PlayerRangeTiles.FindOrAdd(Requester);;
+	TArray<AACTile*>& ValidTiles = PlayerRangeTiles.FindOrAdd(Requester);
 	TQueue<TPair<FIntPoint, int32>> Queue; // <좌표, 거리>
 	TMap<FIntPoint, int32> Visited;
 
@@ -225,33 +233,6 @@ void AACGridSystem::HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPo
 			PathArray.Add(Tile);
 		}
 	}
-}
-
-bool AACGridSystem::IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor) const
-{
-	TArray<AActor*> AllChars;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-
-	for (AActor* Actor : AllChars)
-	{
-		if (Actor == IgnoreActor) continue;
-
-		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-		{
-			// 죽은 캐릭터는 길을 막지 않음
-			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
-
-			if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
-			{
-				// 현재 위치해 있거나, 그곳을 향해 이동 중(예약)이라면 충돌!
-				if (MoveComp->GetGridPosition() == Pos || MoveComp->GetTargetGridPosition() == Pos)
-				{
-					return true;
-				}
-			}
-		}
-	}
-	return false;
 }
 
 void AACGridSystem::ClearPathFor(AActor* Requester)

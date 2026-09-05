@@ -111,6 +111,13 @@ float APE_CharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent cons
 void APE_CharacterBase::HandleDeath()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[%s] 사망 처리되었습니다."), *GetName());
+
+	if (AACGridSystem* Grid = Cast<AACGridSystem>(
+		UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
+	{
+		Grid->UpdateOccupancy(this, GridMovement->GetGridPosition(), FIntPoint(-999, -999));
+	}
+
 	// 충돌체 끄기, 랙돌 전환 또는 파괴 로직 등의 공통 처리를 이곳에서 진행합니다.
 
 	if (HasAuthority())

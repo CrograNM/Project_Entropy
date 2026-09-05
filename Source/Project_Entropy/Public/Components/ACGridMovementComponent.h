@@ -8,6 +8,7 @@
 #include "ACGridMovementComponent.generated.h"
 
 class AACTile;
+class AACGridSystem;
 
 // 이동 완료 시 터뜨릴 데미지 및 이펙트 정보 캡슐화
 USTRUCT()
@@ -57,8 +58,10 @@ public:
 	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f, FGridKnockbackPayload Payload = FGridKnockbackPayload());
 	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f, FGridKnockbackPayload Payload = FGridKnockbackPayload());
 
+	void SetGridPosition(FIntPoint NewPos);
+
+	AACGridSystem* GetCachedGridSystem();
 	FIntPoint GetGridPosition() const { return GridPosition; }
-	void SetGridPosition(FIntPoint NewPos) { GridPosition = NewPos; }
 	FIntPoint GetTargetGridPosition() const { return TargetGridPosition; }
 	float GetGridMoveSpeed() const { return GridMoveSpeed; }
 
@@ -70,6 +73,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	TObjectPtr<AACGridSystem> CachedGridSystem;
 
 	UPROPERTY(Replicated)
 	FIntPoint GridPosition;

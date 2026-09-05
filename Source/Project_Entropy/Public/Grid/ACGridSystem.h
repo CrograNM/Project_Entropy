@@ -7,6 +7,8 @@
 #include "Grid/ACTile.h"
 #include "ACGridSystem.generated.h"
 
+class APE_CharacterBase;
+
 UENUM (BlueprintType)
 enum class EGridShape : uint8
 {
@@ -26,9 +28,13 @@ public:
 	// 특정 좌표의 타일 반환
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
 	// 특정 좌표에 존재하는 캐릭터/동적 장애물 객체 반환
-	class APE_CharacterBase* GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
+	APE_CharacterBase* GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
+
 	// 특정 좌표에 캐릭터/동적 장애물이 존재하는지 여부 반환
 	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
+
+	// 좌표 이동 시 점유 여부 확인 및 성공 여부에 따라 OccupancyMap 갱신 (TMap과 실제 캐릭터 위치 동기화)
+	bool UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos);
 
 	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false, const class UPE_SkillData* SkillData = nullptr);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
@@ -41,6 +47,7 @@ public:
 
 	// 시작점-도착점 단순 그리드 최단 경로 반환
 	TArray<AACTile*> CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos);
+
 	
 protected:
 	virtual void BeginPlay() override;
@@ -84,7 +91,11 @@ protected:
 	/** 실제 전장에 배치된 타일들의 2차원 데이터 맵 (Key: 좌표, Value: 타일 액터) */
 	UPROPERTY(VisibleAnywhere, Category = "Grid Data")
 	TMap<FIntPoint, AACTile*> GridTiles;
-	
+
+	// 각 좌표에 어떤 캐릭터가 점유하고 있는지 추적하는 맵 (Key: 좌표, Value: 캐릭터 액터)
+	UPROPERTY(VisibleAnywhere, Category = "Grid Occupancy")
+	TMap<FIntPoint, APE_CharacterBase*> OccupancyMap;
+
 private:
 	// 각 플레이어(Instigator)가 활성화한 타일 목록을 개별 추적합니다.
 	TMap<AActor*, TArray<AACTile*>> PlayerRangeTiles;
