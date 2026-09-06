@@ -54,6 +54,9 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	void SnapCharacterToNearestTile();
+
 	UFUNCTION(NetMulticast, Reliable)
 	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f, FGridKnockbackPayload Payload = FGridKnockbackPayload());
 	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f, FGridKnockbackPayload Payload = FGridKnockbackPayload());
@@ -62,7 +65,6 @@ public:
 
 	AACGridSystem* GetCachedGridSystem();
 	FIntPoint GetGridPosition() const { return GridPosition; }
-	FIntPoint GetTargetGridPosition() const { return TargetGridPosition; }
 	float GetGridMoveSpeed() const { return GridMoveSpeed; }
 
 	UPROPERTY(BlueprintAssignable)
@@ -83,11 +85,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Movement") float RotationSpeed = 2000.f;
 
 private:
-	UPROPERTY(Replicated) FIntPoint GridPosition;
-	UPROPERTY(Replicated) FIntPoint TargetGridPosition;
+	UPROPERTY(ReplicatedUsing = OnRep_GridPosition) 
+	FIntPoint GridPosition;
 
-	void SetGridPositionInternal(FIntPoint NewPos);
-	void SetTargetGridPosition(FIntPoint NewPos);
+	UFUNCTION()
+	void OnRep_GridPosition(FIntPoint OldPos);
 
 	void ProcessNextCommand();
 	void StartMoving();

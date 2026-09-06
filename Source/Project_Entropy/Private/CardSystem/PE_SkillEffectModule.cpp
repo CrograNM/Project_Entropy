@@ -45,8 +45,7 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
 			if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
 			{
-				FIntPoint Pos = (CharMove->GetTargetGridPosition() != FIntPoint(-999, -999))
-					? CharMove->GetTargetGridPosition() : CharMove->GetGridPosition();
+				FIntPoint Pos = CharMove->GetGridPosition();
 				CurrentPosMap.Add(Char, Pos);
 			}
 		}
@@ -276,8 +275,7 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* 
 			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
 			if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
 			{
-				FIntPoint Pos = (CharMove->GetTargetGridPosition() != FIntPoint(-999, -999))
-					? CharMove->GetTargetGridPosition() : CharMove->GetGridPosition();
+				FIntPoint Pos = CharMove->GetGridPosition();
 
 				InitialPosMap.Add(Char, Pos);
 				CurrentPosMap.Add(Char, Pos);

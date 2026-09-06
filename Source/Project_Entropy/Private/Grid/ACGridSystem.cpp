@@ -18,6 +18,13 @@ AACGridSystem::AACGridSystem()
 	GridShape = EGridShape::Rectangle;
 }
 
+TArray<AACTile*> AACGridSystem::GetAllGridTiles() const
+{
+	TArray<AACTile*> Tiles;
+	GridTiles.GenerateValueArray(Tiles);
+	return Tiles;
+}
+
 AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 {
 	if (GridTiles.Contains(Pos)) return GridTiles[Pos];
@@ -51,10 +58,26 @@ void AACGridSystem::UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, F
 		OccupancyMap.Remove(OldPos);
 	}
 
-	// 새 위치에 추가
-	OccupancyMap.Add(NewPos, Char);
-	
+	// 새 위치에 추가 (값이 같으면 지우기만 하고 다시 넣지 않음)
+	if (OldPos != NewPos)
+	{
+		OccupancyMap.Add(NewPos, Char);
+	}
+
 	return;
+}
+
+void AACGridSystem::RemoveOccupant(APE_CharacterBase* Char) 
+{
+	if (!Char) return;
+
+	for (auto It = OccupancyMap.CreateIterator(); It; ++It) 
+	{
+		if (It->Value == Char)
+		{
+			It.RemoveCurrent();
+		}
+	}
 }
 
 TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos)
@@ -280,6 +303,7 @@ void AACGridSystem::BeginPlay()
 	Super::BeginPlay();
 
 #if !UE_BUILD_SHIPPING
+	// 개발용: OccupancyMap 검증용 타이머 시작 (현재 불변식 검증이 완료되면 주석 처리)
 	FTimerHandle TimerHandle;
 	GetWorld()->GetTimerManager().SetTimer(TimerHandle, this, &AACGridSystem::ValidateOccupancy, 1.f, true);
 #endif
@@ -409,7 +433,6 @@ void AACGridSystem::ValidateOccupancy() const
 		if (UACGridMovementComponent* M = Char->GetGridMovementComponent())
 		{
 			Expected.Add(M->GetGridPosition(), Char);
-			Expected.Add(M->GetTargetGridPosition(), Char);
 		}
 	}
 

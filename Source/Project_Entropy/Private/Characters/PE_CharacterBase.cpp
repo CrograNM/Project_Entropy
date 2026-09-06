@@ -43,46 +43,6 @@ void APE_CharacterBase::BeginPlay()
 	{
 		StatComponent->OnDeath.AddDynamic(this, &APE_CharacterBase::HandleDeath);
 	}
-
-	SnapCharacterToNearestTile();
-}
-
-void APE_CharacterBase::SnapCharacterToNearestTile()
-{
-	// 모든 캐릭터(플레이어/적) 레벨 배치 시 가장 가까운 타일로 스냅
-	if (AActor* FoundGridActor = UGameplayStatics::GetActorOfClass(GetWorld(), AACGridSystem::StaticClass()))
-	{
-		if (AACGridSystem* GridSystem = Cast<AACGridSystem>(FoundGridActor))
-		{
-			FVector Loc = GetActorLocation();
-			AACTile* ClosestTile = nullptr;
-			float MinDistance = MAX_FLT;
-
-			TArray<AActor*> FoundTiles;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), AACTile::StaticClass(), FoundTiles);
-
-			for (AActor* Actor : FoundTiles)
-			{
-				if (AACTile* Tile = Cast<AACTile>(Actor))
-				{
-					float Dist = FVector::DistSquared(Loc, Tile->GetActorLocation());
-					if (Dist < MinDistance)
-					{
-						MinDistance = Dist;
-						ClosestTile = Tile;
-					}
-				}
-			}
-
-			if (ClosestTile && GridMovement)
-			{
-				GridMovement->SetGridPosition(ClosestTile->GetGridPosition());
-				FVector SnapLocation = ClosestTile->GetCenterWorldLocation();
-				SnapLocation.Z = Loc.Z; 
-				SetActorLocation(SnapLocation);
-			}
-		}
-	}
 }
 
 float APE_CharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
@@ -97,12 +57,6 @@ float APE_CharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent cons
 		StatComponent->TakeDamage(ActualDamage);
 
 		UE_LOG(LogTemp, Warning, TEXT("[%s]가 %f 의 데미지를 받았습니다!"), *GetName(), ActualDamage);
-
-		// 3. 만약 체력이 0 이하가 되었다면 사망 처리 로직 호출
-		if (StatComponent->IsDead())
-		{
-			// Die(); 
-		}
 	}
 
 	return ActualDamage;
@@ -111,12 +65,6 @@ float APE_CharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent cons
 void APE_CharacterBase::HandleDeath()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[%s] 사망 처리되었습니다."), *GetName());
-
-	if (AACGridSystem* Grid = Cast<AACGridSystem>(
-		UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass())))
-	{
-		Grid->UpdateOccupancy(this, GridMovement->GetGridPosition(), FIntPoint(-999, -999));
-	}
 
 	// 충돌체 끄기, 랙돌 전환 또는 파괴 로직 등의 공통 처리를 이곳에서 진행합니다.
 

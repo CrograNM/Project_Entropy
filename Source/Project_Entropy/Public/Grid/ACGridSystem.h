@@ -25,6 +25,7 @@ class PROJECT_ENTROPY_API AACGridSystem : public AActor
 public:	
 	AACGridSystem();
 
+	TArray<AACTile*> GetAllGridTiles() const;
 	// 특정 좌표의 타일 반환
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
 	// 특정 좌표에 존재하는 캐릭터/동적 장애물 객체 반환
@@ -35,6 +36,8 @@ public:
 
 	// 좌표 이동 시 점유 여부 확인 및 성공 여부에 따라 OccupancyMap 갱신 (TMap과 실제 캐릭터 위치 동기화)
 	void UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos);
+
+	void RemoveOccupant(APE_CharacterBase* Char);
 
 	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false, const class UPE_SkillData* SkillData = nullptr);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
@@ -100,7 +103,7 @@ protected:
 		불변식(invariant)
 
 		각 좌표에 어떤 캐릭터가 점유하고 있는지 추적하는 맵 (Key: 좌표, Value: 캐릭터 액터)
-		살아있는 모든 캐릭터의 GridPosition과 TargetGridPosition을 그대로 비추는 거울
+		살아있는 모든 캐릭터의 GridPosition을 그대로 비추는 거울
 	*/
 	UPROPERTY(VisibleAnywhere, Category = "Grid Occupancy")
 	TMap<FIntPoint, APE_CharacterBase*> OccupancyMap;

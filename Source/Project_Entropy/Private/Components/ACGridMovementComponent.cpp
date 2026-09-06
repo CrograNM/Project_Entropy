@@ -16,7 +16,6 @@ UACGridMovementComponent::UACGridMovementComponent()
 	SetIsReplicatedByDefault(true);
 
 	GridPosition = FIntPoint(-999, -999);
-	TargetGridPosition = FIntPoint(-999, -999);
 	GridMoveSpeed = 1000.f;
 	OvershootFactor = 3.f;
 	RotationSpeed = 2000.f;
@@ -36,10 +35,20 @@ AACGridSystem* UACGridMovementComponent::GetCachedGridSystem()
 	return CachedGridSystem;
 }
 
-void UACGridMovementComponent::BeginPlay() { Super::BeginPlay(); }
+void UACGridMovementComponent::BeginPlay() 
+{ 
+	Super::BeginPlay(); 
+
+	SnapCharacterToNearestTile();
+}
 
 void UACGridMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (AACGridSystem* GridSystem = GetCachedGridSystem())
+	{
+		GridSystem->RemoveOccupant(Cast<APE_CharacterBase>(GetOwner()));
+	}
+
 	// [액션 큐 안전망]
 	// 넉백으로 밀려나던 도중 충돌 데미지로 사망하면 소유 액터가 파괴되어
 	// ExecuteKnockbackPayload가 영영 실행되지 않고 토큰이 유실됩니다. (= 큐 영구 정지)
@@ -76,7 +85,37 @@ void UACGridMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UACGridMovementComponent, GridPosition);
-	DOREPLIFETIME(UACGridMovementComponent, TargetGridPosition);
+}
+
+void UACGridMovementComponent::SnapCharacterToNearestTile()
+{
+	// 모든 그리드 이동 컴포넌트를 가진 객체 --> 레벨 배치 시 가장 가까운 타일로 스냅
+	if (AACGridSystem* GridSystem = GetCachedGridSystem())
+	{
+		FVector Loc = GetOwner()->GetActorLocation();
+		AACTile* ClosestTile = nullptr;
+		float MinDistance = MAX_FLT;
+
+		TArray<AACTile*> FoundTiles = GridSystem->GetAllGridTiles();
+		for (AACTile* Tile : FoundTiles)
+		{
+			float Dist = FVector::DistSquared(Loc, Tile->GetActorLocation());
+			if (Dist < MinDistance)
+			{
+				MinDistance = Dist;
+				ClosestTile = Tile;
+			}
+		}
+
+		if (ClosestTile)
+		{
+			SetGridPosition(ClosestTile->GetGridPosition());
+			FVector SnapLocation = ClosestTile->GetCenterWorldLocation();
+			SnapLocation.Z = Loc.Z;
+			GetOwner()->SetActorLocation(SnapLocation);
+		}
+	}
+
 }
 
 void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath, bool bRotate, float Delay, FGridKnockbackPayload Payload)
@@ -103,8 +142,24 @@ void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, boo
 
 void UACGridMovementComponent::SetGridPosition(FIntPoint NewPos)
 {
-	SetGridPositionInternal(NewPos);
-	SetTargetGridPosition(NewPos);
+	if (GridPosition == NewPos) return;
+
+	AACGridSystem* GridSystem = GetCachedGridSystem();
+	if (GridSystem)
+	{
+		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, NewPos);
+	}
+
+	GridPosition = NewPos;
+}
+
+void UACGridMovementComponent::OnRep_GridPosition(FIntPoint OldPos)
+{
+	// 복제로 값이 도착했을 때
+	if (AACGridSystem* Grid = GetCachedGridSystem())
+	{
+		Grid->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), OldPos, GridPosition);
+	}
 }
 
 void UACGridMovementComponent::ProcessNextCommand()
@@ -120,9 +175,9 @@ void UACGridMovementComponent::ProcessNextCommand()
 		bHasFiredPayload = false; // [초기화] 큐가 새로 시작될 때 폭발 장전
 		CurrentPathIndex = 0;
 
-		if (SavedPath.Num() > 0 && SavedPath.Last())
+		if (SavedPath.Num() > 0)
 		{
-			SetTargetGridPosition(SavedPath.Last()->GetGridPosition());
+			SetGridPosition(SavedPath.Last()->GetGridPosition());
 		}
 
 		float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -143,8 +198,6 @@ void UACGridMovementComponent::ProcessNextCommand()
 		// 이동 종료 후 상태 초기화
 		bIsMovingOnGrid = false;
 		bIsWaitingDelay = false;
-
-		SetTargetGridPosition(GridPosition);
 
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
 		{
@@ -290,34 +343,11 @@ void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 
 	if (t >= 1.0f)
 	{
-		SetGridPositionInternal(SavedPath[CurrentPathIndex]->GetGridPosition());
+		// SetGridPositionInternal 제거: TMap에는 이미 Occupancy가 TargetGridPosition으로 업데이트되어 있음 (한 캐릭터 당 하나의 위치만 점유 가능)
+		
 		OwnerActor->SetActorLocation(AdjustTarget);
 
 		CurrentPathIndex++;
 		SetNextPathStep();
 	}
-}
-
-void UACGridMovementComponent::SetGridPositionInternal(FIntPoint NewPos)
-{
-	if (GridPosition == NewPos) return;   // 변화 없으면 조기 반환
-
-	if (AACGridSystem* GridSystem = GetCachedGridSystem())
-	{
-		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), GridPosition, NewPos);
-	}
-
-	GridPosition = NewPos;
-}
-
-void UACGridMovementComponent::SetTargetGridPosition(FIntPoint NewPos)
-{
-	if (TargetGridPosition == NewPos) return;   // 변화 없으면 조기 반환
-
-	if (AACGridSystem* GridSystem = GetCachedGridSystem())
-	{
-		GridSystem->UpdateOccupancy(Cast<APE_CharacterBase>(GetOwner()), TargetGridPosition, NewPos);
-	}
-
-	TargetGridPosition = NewPos;
 }

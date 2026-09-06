@@ -24,9 +24,6 @@ protected:
 public:
 	FORCEINLINE UACGridMovementComponent* GetGridMovementComponent() const { return GridMovement; }
 	FORCEINLINE UACStatComponent* GetStatComponent() const { return StatComponent; }
-
-	UFUNCTION(BlueprintCallable, Category = "Movement")
-	void SnapCharacterToNearestTile();
 	
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
