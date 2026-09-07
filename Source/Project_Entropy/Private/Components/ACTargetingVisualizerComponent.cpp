@@ -9,6 +9,7 @@
 #include "Characters/PE_CharacterBase.h"
 #include "CardSystem/PE_SkillData.h"
 #include "CardSystem/PE_SkillEffectModule.h"
+#include "CardSystem/PE_SkillTrajectory.h"
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -98,8 +99,9 @@ void UACTargetingVisualizerComponent::ClearGeneratedMeshes()
 
 void UACTargetingVisualizerComponent::RefreshVisuals()
 {
-	AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
+	// 호버가 바뀔 때마다 호출되므로 월드 전수 스캔 대신 이동 컴포넌트가 캐싱해 둔 그리드를 씁니다.
 	UACGridMovementComponent* MoveComp = GetOwner()->FindComponentByClass<UACGridMovementComponent>();
+	AACGridSystem* GridSystem = MoveComp ? MoveComp->GetCachedGridSystem() : nullptr;
 	if (!GridSystem || !MoveComp) return;
 
 	AActor* OwnerActor = GetOwner();
@@ -127,129 +129,29 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 		}
 		else if (RepTargetingMode == ETargetingMode::Skill && RepSkillData)
 		{
-			FIntPoint ActualTargetPos = RepHoveredTile;
-
-			FVector StartLoc = OwnerActor->GetActorLocation();
-			if (UCapsuleComponent* Cap = OwnerActor->FindComponentByClass<UCapsuleComponent>())
-				StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
-
-			// 캐릭터의 현재 회전값이 아닌, 마우스 타일 방향(예정 회전 방향)을 도출하여 궤적 시작 오프셋을 잡습니다.
-			FVector IntendedDir = OwnerActor->GetActorForwardVector();
-			if (AACTile* HoveredTile = GridSystem->GetTileAtPosition(RepHoveredTile))
-			{
-				FVector TargetLoc = HoveredTile->GetActorLocation();
-				FVector CalcDir = (TargetLoc - OwnerActor->GetActorLocation()).GetSafeNormal2D();
-				if (!CalcDir.IsNearlyZero())
-				{
-					IntendedDir = CalcDir;
-				}
-			}
-			StartLoc += IntendedDir * 70.f;
-
-			FVector OriginalEndLoc = FVector::ZeroVector;
-
 			// 단일 스킬 구조체에서 배열로 바뀌었으므로, 궤적(화살표)을 그릴 대표 페이즈를 첫 번째 페이즈로 지정
 			const FPESkillHitPhase* RepPhase = (RepSkillData->HitPhases.Num() > 0) ? &RepSkillData->HitPhases[0] : nullptr;
 
-			// 레이저 목표 타일이 그리드(맵) 밖을 벗어나지 않도록 최대 사거리 내의 '가장 마지막 유효 타일'로 보정합니다.
-			if (RepPhase && RepPhase->AoEShape == EPEAoEShape::Line)
+			// 페이즈가 아예 없는 스킬은 투사체가 없는 셈이므로 시전자 -> 조준점 직선만 그립니다.
+			FPESkillHitPhase FallbackPhase;
+			FallbackPhase.ProjectileSpeed = 0.f;
+
+			/*
+				좌표 보정(Line 사거리 끝단) / 총구 위치 / 스윕 판정을 전부 FPESkillTrajectory에 위임합니다.
+				서버 판정(UACSkillComponent)이 같은 함수를 호출하므로 "보이는 것"과 "맞는 것"이 어긋날 수 없습니다.
+			*/
+			const FPESkillTrajectoryResult Trajectory = FPESkillTrajectory::Solve(
+				GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile,
+				RepSkillData->BaseRange, RepPhase ? *RepPhase : FallbackPhase);
+
+			FIntPoint ActualTargetPos = Trajectory.EndGridPos;
+			const FVector FinalEndLoc = Trajectory.EndLocation;
+
+			for (const FVector& PathPoint : Trajectory.PathPoints)
 			{
-				FVector2D CasterV(CenterPos.X, CenterPos.Y);
-				FVector2D TargetV(ActualTargetPos.X, ActualTargetPos.Y);
-				FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
-
-				if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
-
-				FIntPoint LastValidPos = CenterPos;
-				for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
-				{
-					FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
-					if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
-					else break;
-				}
-				ActualTargetPos = LastValidPos;
+				TrajectorySpline->AddSplinePoint(PathPoint, ESplineCoordinateSpace::World, false);
 			}
-
-			if (APE_CharacterBase* TargetChar = GridSystem->GetCharacterAtPosition(ActualTargetPos))
-			{
-				OriginalEndLoc = TargetChar->GetActorLocation();
-				if (UCapsuleComponent* TargetCap = TargetChar->FindComponentByClass<UCapsuleComponent>())
-					OriginalEndLoc.Z += TargetCap->GetScaledCapsuleHalfHeight() * 0.8f;
-			}
-			else if (AACTile* HoveredTileActor = GridSystem->GetTileAtPosition(ActualTargetPos))
-			{
-				OriginalEndLoc = HoveredTileActor->GetActorLocation();
-				OriginalEndLoc.Z += 20.f;
-			}
-
-			FVector FinalEndLoc = OriginalEndLoc;
-
-			// 대표 페이즈의 투사체 속성 기반으로 궤적 스플라인 렌더링[cite: 31]
-			if (RepPhase && RepPhase->ProjectileSpeed > 0.f)
-			{
-				int32 NumSegments = 20;
-				FVector LastPos = StartLoc;
-				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
-
-				if (RepPhase->bDestroyOnHit)
-				{
-					FCollisionQueryParams Params;
-					Params.AddIgnoredActor(OwnerActor);
-					FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
-
-					for (int32 i = 1; i <= NumSegments; ++i)
-					{
-						float Alpha = (float)i / (float)NumSegments;
-						FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
-
-						if (RepPhase->ProjectileGravity > 0.f)
-							NextPos.Z += FMath::Sin(Alpha * PI) * RepPhase->ProjectileGravity;
-
-						FHitResult HitResult;
-						if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
-						{
-							FinalEndLoc = HitResult.Location;
-							TrajectorySpline->AddSplinePoint(FinalEndLoc, ESplineCoordinateSpace::World, false);
-
-							if (APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor()))
-							{
-								if (UACGridMovementComponent* HitMove = HitChar->GetGridMovementComponent())
-									ActualTargetPos = HitMove->GetGridPosition();
-							}
-							else if (AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
-							{
-								ActualTargetPos = HitTile->GetGridPosition();
-							}
-							break;
-						}
-						else
-						{
-							TrajectorySpline->AddSplinePoint(NextPos, ESplineCoordinateSpace::World, false);
-							LastPos = NextPos;
-						}
-					}
-				}
-				else
-				{
-					// 관통/장판: 장애물을 무시하고 사거리 끝단(OriginalEndLoc)까지 스플라인을 그립니다.
-					for (int32 i = 1; i <= NumSegments; ++i)
-					{
-						float Alpha = (float)i / (float)NumSegments;
-						FVector NextPos = FMath::Lerp(StartLoc, OriginalEndLoc, Alpha);
-						if (RepPhase->ProjectileGravity > 0.f)
-							NextPos.Z += FMath::Sin(Alpha * PI) * RepPhase->ProjectileGravity;
-						TrajectorySpline->AddSplinePoint(NextPos, ESplineCoordinateSpace::World, false);
-					}
-					FinalEndLoc = OriginalEndLoc;
-				}
-				TrajectorySpline->UpdateSpline();
-			}
-			else
-			{
-				TrajectorySpline->AddSplinePoint(StartLoc, ESplineCoordinateSpace::World, false);
-				TrajectorySpline->AddSplinePoint(OriginalEndLoc, ESplineCoordinateSpace::World, false);
-				TrajectorySpline->UpdateSpline();
-			}
+			TrajectorySpline->UpdateSpline();
 
 			// --- [예측 결과 렌더링: 착탄 지점 구체 생성] ---
 			if (ImpactSphereMesh && ImpactSphereMaterial && TrajectorySpline->GetNumberOfSplinePoints() > 1)
@@ -271,24 +173,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			{
 				for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
 				{
-					FIntPoint PhaseTargetPos = RepHoveredTile;
-
-					if (Phase.AoEShape == EPEAoEShape::Line)
-					{
-						FVector2D CasterV(CenterPos.X, CenterPos.Y);
-						FVector2D TargetV(PhaseTargetPos.X, PhaseTargetPos.Y);
-						FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
-						if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
-
-						FIntPoint LastValidPos = CenterPos;
-						for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
-						{
-							FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
-							if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
-							else break;
-						}
-						PhaseTargetPos = LastValidPos;
-					}
+					const FIntPoint PhaseTargetPos = FPESkillTrajectory::ClampLineTarget(GridSystem, CenterPos, RepHoveredTile, RepSkillData->BaseRange, Phase);
 					MasterAffectedPositions.Append(Phase.GetAffectedGridPositions(CenterPos, PhaseTargetPos, RepSkillData->BaseRange));
 				}
 				GridSystem->HighlightAoE(OwnerActor, MasterAffectedPositions);
@@ -312,25 +197,9 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 						if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
 						{
 							PushModule = FoundPush;
-							PushTargetPos = RepHoveredTile;
 
 							// 시각화를 그릴 모듈이 Line 형태에 속한다면 Target 위치 보정 적용
-							if (Phase.AoEShape == EPEAoEShape::Line)
-							{
-								FVector2D CasterV(CenterPos.X, CenterPos.Y);
-								FVector2D TargetV(PushTargetPos.X, PushTargetPos.Y);
-								FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
-								if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
-
-								FIntPoint LastValidPos = CenterPos;
-								for (int32 i = 1; i <= RepSkillData->BaseRange; ++i)
-								{
-									FIntPoint TestPos = CenterPos + FIntPoint(FMath::RoundToInt(Dir.X * i), FMath::RoundToInt(Dir.Y * i));
-									if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
-									else break;
-								}
-								PushTargetPos = LastValidPos;
-							}
+							PushTargetPos = FPESkillTrajectory::ClampLineTarget(GridSystem, CenterPos, RepHoveredTile, RepSkillData->BaseRange, Phase);
 							break;
 						}
 					}

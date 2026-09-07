@@ -15,6 +15,8 @@
 #include "NiagaraComponent.h"
 #include "Core/PE_GameState.h"
 #include "Components/CapsuleComponent.h"
+#include "CardSystem/PE_SkillTrajectory.h"
+#include "Grid/ACGridSystem.h"
 
 UACSkillComponent::UACSkillComponent()
 {
@@ -276,8 +278,6 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				*SkillData->SkillID.ToString(), i + 1, TotalPhases, *GetNameSafe(Caster)), LogIDToClear)
 			: INDEX_NONE;
 
-		// [주의] TargetPos를 참조(&)로 캡처하면 TriggerTime 타이머로 지연 실행될 때
-		// 이미 사라진 스택 변수를 건드리게 되므로 반드시 값으로 복사해 둡니다.
 		auto ExecutePhaseFunc = [this, Caster, Payload, SkillData, i, CasterPos, TargetPos, OriginalTargetLoc, FinalTargetChar, LogIDToClear, PhaseToken]() mutable
 			{
 				if (!this || !Caster || !SkillData || !SkillData->HitPhases.IsValidIndex(i))
@@ -294,6 +294,9 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				TSet<APE_CharacterBase*> AffectedTargets;
 				FVector PhaseTargetLoc = OriginalTargetLoc;
 				APE_CharacterBase* PhaseTargetChar = FinalTargetChar;
+
+				UACGridMovementComponent* CasterMoveComp = Caster->GetGridMovementComponent();
+				AACGridSystem* GridSystem = CasterMoveComp ? CasterMoveComp->GetCachedGridSystem() : nullptr;
 
 				if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
 				{
@@ -326,36 +329,12 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 						ExactRotation = FVector(DirV.X, DirV.Y, 0).Rotation();
 					}
 
-					if (CurrentPhase.AoEShape == EPEAoEShape::Line && TargetPos != FIntPoint(-999, -999))
+					// 목표 좌표 보정(Line 사거리 끝단)과 조준점 산출은 클라 예측과 반드시 같은 코드를 타야 합니다.
+					if (GridSystem && TargetPos != FIntPoint(-999, -999))
 					{
-						FVector2D CasterV(CasterPos.X, CasterPos.Y);
-						FVector2D TargetV(TargetPos.X, TargetPos.Y);
-						FVector2D Dir = (TargetV - CasterV).GetSafeNormal();
-						if (Dir.IsNearlyZero()) Dir = FVector2D(1, 0);
-
-						AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(this, AACGridSystem::StaticClass()));
-						if (GridSystem)
-						{
-							FIntPoint LastValidPos = CasterPos;
-							for (int32 step = 1; step <= SkillData->BaseRange; ++step)
-							{
-								FIntPoint TestPos = CasterPos + FIntPoint(FMath::RoundToInt(Dir.X * step), FMath::RoundToInt(Dir.Y * step));
-								if (GridSystem->GetTileAtPosition(TestPos)) LastValidPos = TestPos;
-								else break;
-							}
-							TargetPos = LastValidPos;
-
-							if (APE_CharacterBase* EdgeChar = GridSystem->GetCharacterAtPosition(TargetPos))
-							{
-								PhaseTargetLoc = EdgeChar->GetActorLocation();
-								if (UCapsuleComponent* Cap = EdgeChar->FindComponentByClass<UCapsuleComponent>()) PhaseTargetLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.8f;
-							}
-							else if (AACTile* EdgeTile = GridSystem->GetTileAtPosition(TargetPos))
-							{
-								PhaseTargetLoc = EdgeTile->GetActorLocation();
-								PhaseTargetLoc.Z += 20.f;
-							}
-						}
+						const FPESkillAimPoint Aim = FPESkillTrajectory::ResolveAim(GridSystem, CasterPos, TargetPos, SkillData->BaseRange, CurrentPhase);
+						TargetPos = Aim.GridPos;
+						PhaseTargetLoc = Aim.WorldLocation;
 					}
 
 					if (TargetPos != FIntPoint(-999, -999))
@@ -392,37 +371,21 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 
 					if (CurrentPhase.ProjectileSpeed > 0.f)
 					{
-						FVector StartLoc = Caster->GetActorLocation();
-						if (UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
-							StartLoc.Z += Cap->GetScaledCapsuleHalfHeight() * 0.7f;
-
-						SpawnTransform.SetLocation(StartLoc + SpawnTransform.GetRotation().Vector() * 70.0f);
+						// 총구 위치와 스윕 판정은 클라 예측(UACTargetingVisualizerComponent)과 완전히 같은 함수를 씁니다.
+						const FVector MuzzleLoc = FPESkillTrajectory::GetMuzzleLocation(Caster, PhaseTargetLoc);
+						SpawnTransform.SetLocation(MuzzleLoc);
 						SpawnTransform.SetRotation(ExactRotation.Quaternion());
 
-						if (CurrentPhase.bDestroyOnHit)
+						FPESkillAimPoint Aim;
+						Aim.GridPos = TargetPos;
+						Aim.WorldLocation = PhaseTargetLoc;
+
+						const FPESkillTrajectoryResult Trajectory = FPESkillTrajectory::Sweep(GetWorld(), Caster, MuzzleLoc, Aim, CurrentPhase);
+						if (Trajectory.bBlocked)
 						{
-							int32 NumSegments = 20;
-							FVector LastPos = SpawnTransform.GetLocation();
-							FCollisionQueryParams Params;
-							Params.AddIgnoredActor(Caster);
-							FCollisionShape SweepShape = FCollisionShape::MakeSphere(5.f);
-
-							for (int32 step = 1; step <= NumSegments; ++step)
-							{
-								float Alpha = (float)step / (float)NumSegments;
-								FVector NextPos = FMath::Lerp(SpawnTransform.GetLocation(), PhaseTargetLoc, Alpha);
-								if (CurrentPhase.ProjectileGravity > 0.f)
-									NextPos.Z += FMath::Sin(Alpha * PI) * CurrentPhase.ProjectileGravity;
-
-								FHitResult HitResult;
-								if (GetWorld()->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
-								{
-									PhaseTargetLoc = HitResult.Location;
-									PhaseTargetChar = Cast<APE_CharacterBase>(HitResult.GetActor());
-									break;
-								}
-								LastPos = NextPos;
-							}
+							// 도중에 막혔다면 착탄 지점과 실제 피격 대상을 그 지점 기준으로 교체합니다.
+							PhaseTargetLoc = Trajectory.EndLocation;
+							PhaseTargetChar = Trajectory.HitCharacter;
 						}
 					}
 					else
