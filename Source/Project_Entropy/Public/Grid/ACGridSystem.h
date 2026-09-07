@@ -28,6 +28,8 @@ public:
 	TArray<AACTile*> GetAllGridTiles() const;
 	// 특정 좌표의 타일 반환
 	AACTile* GetTileAtPosition(FIntPoint Pos) const;
+	// 임의의 월드 좌표에서 가장 가까운 타일 반환 (레벨 배치 스냅, 투사체 착탄 지점 역산 등)
+	AACTile* GetNearestTile(const FVector& WorldLocation) const;
 	// 특정 좌표에 존재하는 캐릭터/동적 장애물 객체 반환
 	APE_CharacterBase* GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 

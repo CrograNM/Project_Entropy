@@ -2,6 +2,7 @@
 
 #include "CardSystem/PE_SkillTrajectory.h"
 #include "CardSystem/PE_SkillData.h"
+#include "CardSystem/PE_SkillActionActor.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Components/ACGridMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -12,6 +13,37 @@
 namespace
 {
 	const FIntPoint InvalidGridPos(PESkillTrajectory::InvalidCoord, PESkillTrajectory::InvalidCoord);
+
+	/** 투사체가 막힌 지점을 논리 좌표(칸)로 되돌립니다. 되돌릴 수 없으면 InvalidGridPos를 반환합니다. */
+	FIntPoint ResolveGridPosAtImpact(const AACGridSystem* Grid, const FHitResult& HitResult, const APE_CharacterBase* HitCharacter)
+	{
+		// 캐릭터/장애물에 막혔다면 그 대상이 서 있는 칸이 곧 착탄 칸입니다.
+		if (HitCharacter)
+		{
+			if (const UACGridMovementComponent* HitMove = HitCharacter->GetGridMovementComponent())
+				return HitMove->GetGridPosition();
+		}
+
+		if (const AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
+		{
+			return HitTile->GetGridPosition();
+		}
+
+		// 그리드에 속하지 않은 레벨 지오메트리(벽 등)에 막힌 경우: 충돌 지점에서 가장 가까운 칸으로 되돌립니다.
+		if (Grid)
+		{
+			if (const AACTile* NearestTile = Grid->GetNearestTile(HitResult.Location))
+				return NearestTile->GetGridPosition();
+		}
+
+		return InvalidGridPos;
+	}
+}
+
+bool FPESkillTrajectory::CanBeBlocked(const FPESkillHitPhase& Phase)
+{
+	// 스폰될 액터가 없으면 실제로 날아가는 물체가 없으므로 막힐 일도 없습니다.
+	return Phase.SkillActorClass != nullptr && Phase.ProjectileSpeed > 0.f && Phase.bDestroyOnHit;
 }
 
 FIntPoint FPESkillTrajectory::ClampLineTarget(const AACGridSystem* Grid, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase)
@@ -55,23 +87,30 @@ FPESkillAimPoint FPESkillTrajectory::ResolveAim(const AACGridSystem* Grid, FIntP
 	return Aim;
 }
 
-FVector FPESkillTrajectory::GetMuzzleLocation(const AActor* Caster, const FVector& AimLocation)
+FVector FPESkillTrajectory::GetMuzzleLocationForDirection(const AActor* Caster, const FVector& Direction)
 {
-	if (!Caster) return AimLocation;
+	if (!Caster) return FVector::ZeroVector;
 
 	FVector Muzzle = Caster->GetActorLocation();
 	if (const UCapsuleComponent* Cap = Caster->FindComponentByClass<UCapsuleComponent>())
 		Muzzle.Z += Cap->GetScaledCapsuleHalfHeight() * PESkillTrajectory::MuzzleHeightRatio;
 
-	// 시전자의 현재 회전이 아니라 '조준 방향'으로 총구를 밀어냅니다.
-	// (회전 보간이 끝나기 전에 발사되면 궤적이 몸통을 뚫고 나가는 것처럼 보이므로)
-	FVector AimDir = (AimLocation - Caster->GetActorLocation()).GetSafeNormal2D();
-	if (AimDir.IsNearlyZero()) AimDir = Caster->GetActorForwardVector();
+	FVector FlatDir = Direction.GetSafeNormal2D();
+	if (FlatDir.IsNearlyZero()) FlatDir = Caster->GetActorForwardVector();
 
-	return Muzzle + AimDir * PESkillTrajectory::MuzzleForwardOffset;
+	return Muzzle + FlatDir * PESkillTrajectory::MuzzleForwardOffset;
 }
 
-FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AActor* Caster, const FVector& MuzzleLocation, const FPESkillAimPoint& Aim, const FPESkillHitPhase& Phase)
+FVector FPESkillTrajectory::GetMuzzleLocation(const AActor* Caster, const FVector& AimLocation)
+{
+	if (!Caster) return AimLocation;
+
+	// 시전자의 현재 회전이 아니라 '조준 방향'으로 총구를 밀어냅니다.
+	// (회전 보간이 끝나기 전에 발사되면 궤적이 몸통을 뚫고 나가는 것처럼 보이므로)
+	return GetMuzzleLocationForDirection(Caster, AimLocation - Caster->GetActorLocation());
+}
+
+FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AACGridSystem* Grid, const AActor* Caster, const FVector& MuzzleLocation, const FPESkillAimPoint& Aim, const FPESkillHitPhase& Phase)
 {
 	FPESkillTrajectoryResult Result;
 	Result.StartLocation = MuzzleLocation;
@@ -89,6 +128,9 @@ FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AA
 		return Result;
 	}
 
+	// 관통이거나 실제 투사체가 없는 페이즈는 장애물을 무시하고 조준점 끝단까지 그대로 뻗습니다.
+	const bool bCanBeBlocked = CanBeBlocked(Phase);
+
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(Caster);
 	const FCollisionShape SweepShape = FCollisionShape::MakeSphere(PESkillTrajectory::SweepRadius);
@@ -103,8 +145,7 @@ FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AA
 		if (Phase.ProjectileGravity > 0.f)
 			NextPos.Z += FMath::Sin(Alpha * PI) * Phase.ProjectileGravity;
 
-		// 관통(bDestroyOnHit == false)은 장애물을 무시하고 조준점 끝단까지 그대로 뻗습니다.
-		if (Phase.bDestroyOnHit)
+		if (bCanBeBlocked)
 		{
 			FHitResult HitResult;
 			if (World->SweepSingleByChannel(HitResult, LastPos, NextPos, FQuat::Identity, ECC_Visibility, SweepShape, Params))
@@ -114,16 +155,9 @@ FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AA
 				Result.HitCharacter = Cast<APE_CharacterBase>(HitResult.GetActor());
 				Result.PathPoints.Add(Result.EndLocation);
 
-				// 막힌 지점의 논리 좌표를 되짚어 둡니다 (시각화의 단일 타겟 하이라이트용).
-				if (Result.HitCharacter)
-				{
-					if (const UACGridMovementComponent* HitMove = Result.HitCharacter->GetGridMovementComponent())
-						Result.EndGridPos = HitMove->GetGridPosition();
-				}
-				else if (const AACTile* HitTile = Cast<AACTile>(HitResult.GetActor()))
-				{
-					Result.EndGridPos = HitTile->GetGridPosition();
-				}
+				// 되돌릴 수 없는 지점이면 원래 조준 칸을 그대로 둡니다 (범위가 통째로 사라지는 것보다 안전).
+				const FIntPoint ImpactGridPos = ResolveGridPosAtImpact(Grid, HitResult, Result.HitCharacter);
+				if (ImpactGridPos != InvalidGridPos) Result.EndGridPos = ImpactGridPos;
 
 				return Result;
 			}
@@ -139,5 +173,5 @@ FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AA
 FPESkillTrajectoryResult FPESkillTrajectory::Solve(const UWorld* World, const AACGridSystem* Grid, const AActor* Caster, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase)
 {
 	const FPESkillAimPoint Aim = ResolveAim(Grid, CasterPos, TargetPos, BaseRange, Phase);
-	return Sweep(World, Caster, GetMuzzleLocation(Caster, Aim.WorldLocation), Aim, Phase);
+	return Sweep(World, Grid, Caster, GetMuzzleLocation(Caster, Aim.WorldLocation), Aim, Phase);
 }

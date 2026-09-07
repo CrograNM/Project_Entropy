@@ -31,6 +31,26 @@ AACTile* AACGridSystem::GetTileAtPosition(FIntPoint Pos) const
 	return nullptr;
 }
 
+AACTile* AACGridSystem::GetNearestTile(const FVector& WorldLocation) const
+{
+	AACTile* ClosestTile = nullptr;
+	float MinDistanceSq = MAX_FLT;
+
+	for (const TPair<FIntPoint, AACTile*>& Entry : GridTiles)
+	{
+		if (!Entry.Value) continue;
+
+		const float DistSq = FVector::DistSquared(WorldLocation, Entry.Value->GetActorLocation());
+		if (DistSq < MinDistanceSq)
+		{
+			MinDistanceSq = DistSq;
+			ClosestTile = Entry.Value;
+		}
+	}
+
+	return ClosestTile;
+}
+
 APE_CharacterBase* AACGridSystem::GetCharacterAtPosition(FIntPoint Pos, AActor* IgnoreActor) const
 {
 	APE_CharacterBase* Occupant = OccupancyMap.FindRef(Pos);

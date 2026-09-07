@@ -129,25 +129,35 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 		}
 		else if (RepTargetingMode == ETargetingMode::Skill && RepSkillData)
 		{
-			// 단일 스킬 구조체에서 배열로 바뀌었으므로, 궤적(화살표)을 그릴 대표 페이즈를 첫 번째 페이즈로 지정
-			const FPESkillHitPhase* RepPhase = (RepSkillData->HitPhases.Num() > 0) ? &RepSkillData->HitPhases[0] : nullptr;
-
-			// 페이즈가 아예 없는 스킬은 투사체가 없는 셈이므로 시전자 -> 조준점 직선만 그립니다.
-			FPESkillHitPhase FallbackPhase;
-			FallbackPhase.ProjectileSpeed = 0.f;
-
 			/*
-				좌표 보정(Line 사거리 끝단) / 총구 위치 / 스윕 판정을 전부 FPESkillTrajectory에 위임합니다.
-				서버 판정(UACSkillComponent)이 같은 함수를 호출하므로 "보이는 것"과 "맞는 것"이 어긋날 수 없습니다.
+				좌표 보정(Line 사거리 끝단) / 총구 위치 / 막힘 판정을 전부 FPESkillTrajectory에 위임합니다.
+				서버 판정(UACSkillComponent)이 페이즈마다 같은 함수를 호출하므로,
+				여기서도 페이즈마다 풀어야 "보이는 것"과 "맞는 것"이 어긋나지 않습니다.
 			*/
-			const FPESkillTrajectoryResult Trajectory = FPESkillTrajectory::Solve(
-				GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile,
-				RepSkillData->BaseRange, RepPhase ? *RepPhase : FallbackPhase);
+			TArray<FPESkillTrajectoryResult> PhaseTrajectories;
+			PhaseTrajectories.Reserve(RepSkillData->HitPhases.Num());
 
-			FIntPoint ActualTargetPos = Trajectory.EndGridPos;
-			const FVector FinalEndLoc = Trajectory.EndLocation;
+			for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
+			{
+				PhaseTrajectories.Add(FPESkillTrajectory::Solve(
+					GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile, RepSkillData->BaseRange, Phase));
+			}
 
-			for (const FVector& PathPoint : Trajectory.PathPoints)
+			if (PhaseTrajectories.IsEmpty())
+			{
+				// 페이즈가 아예 없는 스킬은 투사체가 없는 셈이므로 시전자 -> 조준점 직선만 그립니다.
+				FPESkillHitPhase FallbackPhase;
+				FallbackPhase.ProjectileSpeed = 0.f;
+				PhaseTrajectories.Add(FPESkillTrajectory::Solve(
+					GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile, RepSkillData->BaseRange, FallbackPhase));
+			}
+
+			// 궤적(화살표)은 대표 페이즈(첫 번째)의 결과로 그립니다.
+			const FPESkillTrajectoryResult& RepTrajectory = PhaseTrajectories[0];
+			const FIntPoint ActualTargetPos = RepTrajectory.EndGridPos;
+			const FVector FinalEndLoc = RepTrajectory.EndLocation;
+
+			for (const FVector& PathPoint : RepTrajectory.PathPoints)
 			{
 				TrajectorySpline->AddSplinePoint(PathPoint, ESplineCoordinateSpace::World, false);
 			}
@@ -171,9 +181,12 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			TSet<FIntPoint> MasterAffectedPositions;
 			if (RepSkillData->HitPhases.Num() > 0)
 			{
-				for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
+				for (int32 PhaseIdx = 0; PhaseIdx < RepSkillData->HitPhases.Num(); ++PhaseIdx)
 				{
-					const FIntPoint PhaseTargetPos = FPESkillTrajectory::ClampLineTarget(GridSystem, CenterPos, RepHoveredTile, RepSkillData->BaseRange, Phase);
+					const FPESkillHitPhase& Phase = RepSkillData->HitPhases[PhaseIdx];
+
+					// 막힌 페이즈는 착탄 칸(EndGridPos)을 중심으로 범위가 잡힙니다.
+					const FIntPoint PhaseTargetPos = PhaseTrajectories[PhaseIdx].EndGridPos;
 					MasterAffectedPositions.Append(Phase.GetAffectedGridPositions(CenterPos, PhaseTargetPos, RepSkillData->BaseRange));
 				}
 				GridSystem->HighlightAoE(OwnerActor, MasterAffectedPositions);
@@ -188,22 +201,18 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			const UPE_SkillEffect_Push* PushModule = nullptr;
 			FIntPoint PushTargetPos = ActualTargetPos;
 
-			if (RepSkillData->HitPhases.Num() > 0)
+			for (int32 PhaseIdx = 0; PhaseIdx < RepSkillData->HitPhases.Num() && !PushModule; ++PhaseIdx)
 			{
-				for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
+				for (const UPE_SkillEffectModule* Module : RepSkillData->HitPhases[PhaseIdx].EffectModules)
 				{
-					for (const UPE_SkillEffectModule* Module : Phase.EffectModules)
+					if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
 					{
-						if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
-						{
-							PushModule = FoundPush;
+						PushModule = FoundPush;
 
-							// 시각화를 그릴 모듈이 Line 형태에 속한다면 Target 위치 보정 적용
-							PushTargetPos = FPESkillTrajectory::ClampLineTarget(GridSystem, CenterPos, RepHoveredTile, RepSkillData->BaseRange, Phase);
-							break;
-						}
+						// 밀치기도 그 페이즈가 실제로 터지는 칸(Line 보정 및 막힘 반영)에서 시작합니다.
+						PushTargetPos = PhaseTrajectories[PhaseIdx].EndGridPos;
+						break;
 					}
-					if (PushModule) break; // 모듈을 찾았다면 더 이상 다른 페이즈를 탐색하지 않고 종료
 				}
 			}
 

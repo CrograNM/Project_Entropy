@@ -298,6 +298,10 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				UACGridMovementComponent* CasterMoveComp = Caster->GetGridMovementComponent();
 				AACGridSystem* GridSystem = CasterMoveComp ? CasterMoveComp->GetCachedGridSystem() : nullptr;
 
+				// 막힘 판정을 위해 스윕을 먼저 돌린 경우, 그때 구한 총구를 투사체 스폰에 그대로 재사용합니다.
+				FVector MuzzleLoc = FVector::ZeroVector;
+				bool bHasMuzzleLoc = false;
+
 				if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
 				{
 					TArray<AActor*> AllChars;
@@ -335,6 +339,25 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 						const FPESkillAimPoint Aim = FPESkillTrajectory::ResolveAim(GridSystem, CasterPos, TargetPos, SkillData->BaseRange, CurrentPhase);
 						TargetPos = Aim.GridPos;
 						PhaseTargetLoc = Aim.WorldLocation;
+
+						/*
+							관통이 아닌 투사체는 목표에 닿기 전에 막힐 수 있습니다.
+							이 판정을 아래 AoE 대상 수집보다 '먼저' 해야 피해 범위가 막힌 칸을 중심으로 잡힙니다.
+							(순서가 뒤바뀌면 폭발 연출은 막힌 지점에서 나오는데 피해는 원래 목표에 들어갑니다)
+						*/
+						if (FPESkillTrajectory::CanBeBlocked(CurrentPhase))
+						{
+							MuzzleLoc = FPESkillTrajectory::GetMuzzleLocation(Caster, Aim.WorldLocation);
+							bHasMuzzleLoc = true;
+
+							const FPESkillTrajectoryResult Trajectory = FPESkillTrajectory::Sweep(GetWorld(), GridSystem, Caster, MuzzleLoc, Aim, CurrentPhase);
+							if (Trajectory.bBlocked)
+							{
+								TargetPos = Trajectory.EndGridPos;
+								PhaseTargetLoc = Trajectory.EndLocation;
+								PhaseTargetChar = Trajectory.HitCharacter;
+							}
+						}
 					}
 
 					if (TargetPos != FIntPoint(-999, -999))
@@ -371,22 +394,16 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 
 					if (CurrentPhase.ProjectileSpeed > 0.f)
 					{
-						// 총구 위치와 스윕 판정은 클라 예측(UACTargetingVisualizerComponent)과 완전히 같은 함수를 씁니다.
-						const FVector MuzzleLoc = FPESkillTrajectory::GetMuzzleLocation(Caster, PhaseTargetLoc);
+						if (!bHasMuzzleLoc)
+						{
+							// 조준점이 없는 스킬(Self / All_Enemies)은 시전자 정면을 총구 방향으로 씁니다.
+							MuzzleLoc = (TargetPos != FIntPoint(-999, -999))
+								? FPESkillTrajectory::GetMuzzleLocation(Caster, PhaseTargetLoc)
+								: FPESkillTrajectory::GetMuzzleLocationForDirection(Caster, ExactRotation.Vector());
+						}
+
 						SpawnTransform.SetLocation(MuzzleLoc);
 						SpawnTransform.SetRotation(ExactRotation.Quaternion());
-
-						FPESkillAimPoint Aim;
-						Aim.GridPos = TargetPos;
-						Aim.WorldLocation = PhaseTargetLoc;
-
-						const FPESkillTrajectoryResult Trajectory = FPESkillTrajectory::Sweep(GetWorld(), Caster, MuzzleLoc, Aim, CurrentPhase);
-						if (Trajectory.bBlocked)
-						{
-							// 도중에 막혔다면 착탄 지점과 실제 피격 대상을 그 지점 기준으로 교체합니다.
-							PhaseTargetLoc = Trajectory.EndLocation;
-							PhaseTargetChar = Trajectory.HitCharacter;
-						}
 					}
 					else
 					{

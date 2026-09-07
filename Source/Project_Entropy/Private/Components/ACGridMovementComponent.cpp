@@ -93,21 +93,8 @@ void UACGridMovementComponent::SnapCharacterToNearestTile()
 	if (AACGridSystem* GridSystem = GetCachedGridSystem())
 	{
 		FVector Loc = GetOwner()->GetActorLocation();
-		AACTile* ClosestTile = nullptr;
-		float MinDistance = MAX_FLT;
 
-		TArray<AACTile*> FoundTiles = GridSystem->GetAllGridTiles();
-		for (AACTile* Tile : FoundTiles)
-		{
-			float Dist = FVector::DistSquared(Loc, Tile->GetActorLocation());
-			if (Dist < MinDistance)
-			{
-				MinDistance = Dist;
-				ClosestTile = Tile;
-			}
-		}
-
-		if (ClosestTile)
+		if (AACTile* ClosestTile = GridSystem->GetNearestTile(Loc))
 		{
 			SetGridPosition(ClosestTile->GetGridPosition());
 			FVector SnapLocation = ClosestTile->GetCenterWorldLocation();

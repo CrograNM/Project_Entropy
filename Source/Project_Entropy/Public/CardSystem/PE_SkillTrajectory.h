@@ -72,9 +72,8 @@ struct FPESkillTrajectoryResult
 
 	/**
 	 * 착탄 지점의 논리 좌표.
-	 * 막히지 않았으면 보정된 조준 좌표, 막혔으면 충돌한 캐릭터/타일의 좌표입니다.
-	 * [주의] 서버 판정은 AoE 범위를 스윕 '이전'의 조준 좌표로 잡으므로 이 값을 쓰지 않습니다.
-	 *        시각화(착탄 마커/단일 타겟 하이라이트) 전용입니다.
+	 * 막히지 않았으면 보정된 조준 좌표, 막혔으면 충돌 지점의 좌표입니다.
+	 * 피해 범위(AoE)와 폭발 연출이 둘 다 이 좌표를 기준으로 잡혀야 서로 어긋나지 않습니다.
 	 */
 	UPROPERTY()
 	FIntPoint EndGridPos = FIntPoint(PESkillTrajectory::InvalidCoord, PESkillTrajectory::InvalidCoord);
@@ -100,18 +99,31 @@ struct FPESkillTrajectoryResult
  */
 struct PROJECT_ENTROPY_API FPESkillTrajectory
 {
+	/**
+	 * 이 페이즈가 '날아가다 도중에 막힐 수 있는' 투사체인지 판정합니다.
+	 * 실제로 스폰되는 액터가 있고(SkillActorClass), 속도가 있고, 관통이 아닐 때만 참입니다.
+	 * 서버 판정과 클라 예측이 반드시 같은 기준으로 막힘을 처리해야 하므로 여기 한 곳에만 둡니다.
+	 */
+	static bool CanBeBlocked(const FPESkillHitPhase& Phase);
+
 	/** Line(직선/관통) 형태일 때 목표를 사거리 내 '가장 마지막 유효 타일'로 당깁니다. 그 외 형태는 그대로 반환합니다. */
 	static FIntPoint ClampLineTarget(const AACGridSystem* Grid, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase);
 
 	/** 좌표 보정(ClampLineTarget) + 그 좌표의 조준 월드 위치 산출. 캐릭터가 서 있으면 타일보다 캐릭터를 우선합니다. */
 	static FPESkillAimPoint ResolveAim(const AACGridSystem* Grid, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase);
 
+	/** 시전자 캡슐 높이에서 주어진 방향으로 총구를 밀어냅니다. 방향이 0이면 시전자 정면을 씁니다. */
+	static FVector GetMuzzleLocationForDirection(const AActor* Caster, const FVector& Direction);
+
 	/** 시전자 캡슐 높이와 조준 방향을 기준으로 투사체가 출발할 총구 위치를 구합니다. */
 	static FVector GetMuzzleLocation(const AActor* Caster, const FVector& AimLocation);
 
-	/** 총구에서 조준점까지 구간을 나눠 스윕합니다. 포물선(ProjectileGravity)도 여기서 함께 적용됩니다. */
-	static FPESkillTrajectoryResult Sweep(const UWorld* World, const AActor* Caster, const FVector& MuzzleLocation, const FPESkillAimPoint& Aim, const FPESkillHitPhase& Phase);
+	/**
+	 * 총구에서 조준점까지 구간을 나눠 스윕합니다. 포물선(ProjectileGravity)도 여기서 함께 적용됩니다.
+	 * 충돌 판정은 CanBeBlocked(Phase)일 때만 수행하며, 그 외에는 궤적 경로만 채워 반환합니다.
+	 */
+	static FPESkillTrajectoryResult Sweep(const UWorld* World, const AACGridSystem* Grid, const AActor* Caster, const FVector& MuzzleLocation, const FPESkillAimPoint& Aim, const FPESkillHitPhase& Phase);
 
-	/** ResolveAim -> GetMuzzleLocation -> Sweep 을 한 번에 수행하는 편의 함수 (클라 예측용). */
+	/** ResolveAim -> GetMuzzleLocation -> Sweep 을 한 번에 수행하는 편의 함수. */
 	static FPESkillTrajectoryResult Solve(const UWorld* World, const AACGridSystem* Grid, const AActor* Caster, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase);
 };
