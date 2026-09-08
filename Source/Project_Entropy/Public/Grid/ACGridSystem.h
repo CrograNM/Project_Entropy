@@ -36,6 +36,15 @@ public:
 	// 특정 좌표에 캐릭터/동적 장애물이 존재하는지 여부 반환
 	bool IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor = nullptr) const;
 
+	// 점유 레지스트리 직접 열람 (연쇄 밀치기 시뮬레이션처럼 전체 배치가 필요한 경우)
+	const TMap<FIntPoint, APE_CharacterBase*>& GetOccupancyMap() const { return OccupancyMap; }
+
+	/**
+	 * 주어진 좌표들을 점유 중인 살아있는 캐릭터를 모읍니다.
+	 * ExcludeTeamID에 팀 번호를 넘기면 그 팀은 제외합니다 (INDEX_NONE이면 팀 구분 없이 전부).
+	 */
+	TSet<APE_CharacterBase*> CollectCharactersInPositions(const TSet<FIntPoint>& Positions, AActor* IgnoreActor = nullptr, int32 ExcludeTeamID = INDEX_NONE) const;
+
 	// 좌표 이동 시 점유 여부 확인 및 성공 여부에 따라 OccupancyMap 갱신 (TMap과 실제 캐릭터 위치 동기화)
 	void UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos);
 

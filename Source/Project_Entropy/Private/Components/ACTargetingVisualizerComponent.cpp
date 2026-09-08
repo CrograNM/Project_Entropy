@@ -1,4 +1,4 @@
-// Copyright CrograNM
+﻿// Copyright CrograNM
 
 #include "Components/ACTargetingVisualizerComponent.h"
 #include "Components/ACGridMovementComponent.h"
@@ -105,6 +105,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 	if (!GridSystem || !MoveComp) return;
 
 	AActor* OwnerActor = GetOwner();
+	APE_CharacterBase* OwnerChar = Cast<APE_CharacterBase>(OwnerActor);
 	FIntPoint CenterPos = MoveComp->GetGridPosition();
 
 	GridSystem->ClearAllHighlightsFor(OwnerActor);
@@ -200,17 +201,20 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			// 넉백 모듈은 여러 페이즈 중 최초 1개만 찾아서 한 번만 시뮬레이션 및 시각화합니다.
 			const UPE_SkillEffect_Push* PushModule = nullptr;
 			FIntPoint PushTargetPos = ActualTargetPos;
+			TSet<FIntPoint> PushAffectedPositions = MasterAffectedPositions;
 
 			for (int32 PhaseIdx = 0; PhaseIdx < RepSkillData->HitPhases.Num() && !PushModule; ++PhaseIdx)
 			{
-				for (const UPE_SkillEffectModule* Module : RepSkillData->HitPhases[PhaseIdx].EffectModules)
+				const FPESkillHitPhase& Phase = RepSkillData->HitPhases[PhaseIdx];
+				for (const UPE_SkillEffectModule* Module : Phase.EffectModules)
 				{
 					if (const UPE_SkillEffect_Push* FoundPush = Cast<UPE_SkillEffect_Push>(Module))
 					{
 						PushModule = FoundPush;
 
-						// 밀치기도 그 페이즈가 실제로 터지는 칸(Line 보정 및 막힘 반영)에서 시작합니다.
+						// 밀치기는 '그 모듈이 붙은 페이즈'의 착탄 칸과 범위만 씁니다 (서버 판정과 동일한 입력).
 						PushTargetPos = PhaseTrajectories[PhaseIdx].EndGridPos;
+						PushAffectedPositions = Phase.GetAffectedGridPositions(CenterPos, PushTargetPos, RepSkillData->BaseRange);
 						break;
 					}
 				}
@@ -219,7 +223,16 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			// 단 한 번만 실행되는 밀치기 화살표 시각화 로직
 			if (PushModule)
 			{
-				TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, MasterAffectedPositions);
+				/*
+					서버가 AoE 대상을 고르는 규칙(CollectCharactersInPositions)과
+					밀치기를 전개하는 규칙(SimulatePush)을 그대로 호출합니다.
+					여기서 나온 결과가 곧 실제로 일어날 밀치기입니다.
+				*/
+				const int32 ExcludeTeamID = (RepSkillData->TargetType != EPESkillTargetType::Snap_Ally && OwnerChar)
+					? OwnerChar->GetTeamID() : INDEX_NONE;
+				const TSet<APE_CharacterBase*> PushTargets = GridSystem->CollectCharactersInPositions(PushAffectedPositions, OwnerActor, ExcludeTeamID);
+
+				const TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, PushTargets);
 
 				for (const FPushSimulationResult& Result : PushResults)
 				{

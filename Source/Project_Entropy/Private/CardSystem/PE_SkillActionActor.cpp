@@ -1,4 +1,4 @@
-// Copyright CrograNM
+﻿// Copyright CrograNM
 
 #include "CardSystem/PE_SkillActionActor.h"
 #include "Components/SphereComponent.h"
@@ -162,9 +162,14 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 			TSet<APE_CharacterBase*> SingleTarget;
 			SingleTarget.Add(HitTarget);
 
+			// 관통 타격은 스쳐 지나간 그 대상이 서 있는 칸을 효과 중심(밀치기 기준점)으로 삼습니다.
+			FIntPoint HitGridPos = TargetGridPos;
+			if (const UACGridMovementComponent* HitMove = HitTarget->GetGridMovementComponent())
+				HitGridPos = HitMove->GetGridPosition();
+
 			for (UPE_SkillEffectModule* Module : RepSkillData->HitPhases[RepPhaseIndex].EffectModules)
 			{
-				Module->ApplyEffects(Caster, SingleTarget, HitTarget->GetActorLocation(), RepSkillData, DamageToApply);
+				Module->ApplyEffects(Caster, SingleTarget, HitTarget->GetActorLocation(), HitGridPos, RepSkillData, DamageToApply);
 			}
 
 			if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
@@ -235,7 +240,7 @@ void APE_SkillActionActor::ApplyHitAndEffects()
 			{
 				if (Module)
 				{
-					Module->ApplyEffects(Caster, PendingTargets, RepTargetLocation, RepSkillData, DamageToApply);
+					Module->ApplyEffects(Caster, PendingTargets, RepTargetLocation, TargetGridPos, RepSkillData, DamageToApply);
 				}
 			}
 

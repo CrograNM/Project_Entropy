@@ -1,4 +1,4 @@
-// Copyright CrograNM
+﻿// Copyright CrograNM
 
 #include "Components/ACSkillComponent.h"
 #include "Core/PE_PlayerController.h"
@@ -360,30 +360,13 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 						}
 					}
 
-					if (TargetPos != FIntPoint(-999, -999))
+					if (GridSystem && TargetPos != FIntPoint(-999, -999))
 					{
-						TSet<FIntPoint> AffectedPositions = CurrentPhase.GetAffectedGridPositions(CasterPos, TargetPos, SkillData->BaseRange);
-						TArray<AActor*> AllChars;
-						UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+						const TSet<FIntPoint> AffectedPositions = CurrentPhase.GetAffectedGridPositions(CasterPos, TargetPos, SkillData->BaseRange);
 
-						for (AActor* Actor : AllChars)
-						{
-							if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-							{
-								bool bIsValidTarget = (Char != Caster) && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead();
-								if (SkillData->TargetType != EPESkillTargetType::Snap_Ally)
-									bIsValidTarget = bIsValidTarget && (Char->GetTeamID() != Caster->GetTeamID());
-
-								if (bIsValidTarget)
-								{
-									if (UACGridMovementComponent* MoveComp = Char->GetGridMovementComponent())
-									{
-										if (AffectedPositions.Contains(MoveComp->GetGridPosition()))
-											AffectedTargets.Add(Char);
-									}
-								}
-							}
-						}
+						// 아군 대상 스킬이 아니면 시전자와 같은 팀은 제외합니다.
+						const int32 ExcludeTeamID = (SkillData->TargetType != EPESkillTargetType::Snap_Ally) ? Caster->GetTeamID() : INDEX_NONE;
+						AffectedTargets = GridSystem->CollectCharactersInPositions(AffectedPositions, Caster, ExcludeTeamID);
 					}
 				}
 
@@ -431,17 +414,13 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 				else
 				{
 					// 즉발 연산 람다 시퀀스 (투사체 없음)
+					// TargetPos는 위에서 이미 조준 보정(Line 사거리 끝단 / 막힘)까지 끝난 값이므로 다시 계산하지 않습니다.
 					FVector2D ExplosionSize;
 					float ExplosionRadius;
 					FRotator AoERotation;
-					if (PhaseTargetChar && PhaseTargetChar->GetGridMovementComponent())
-						TargetPos = PhaseTargetChar->GetGridMovementComponent()->GetGridPosition();
-					else if (Payload.TargetTile)
-						TargetPos = Payload.TargetTile->GetGridPosition();
-
 					CurrentPhase.GetAoEBoundsAndRotation(CasterPos, TargetPos, SkillData->BaseRange, ExplosionSize, ExplosionRadius, AoERotation);
 
-					auto ApplyHitFunc = [this, Caster, AffectedTargets, PhaseTargetLoc, SkillData, i, FinalDamage, LogIDToClear, PhaseToken]()
+					auto ApplyHitFunc = [this, Caster, AffectedTargets, PhaseTargetLoc, TargetPos, SkillData, i, FinalDamage, LogIDToClear, PhaseToken]()
 						{
 							if (!this || !SkillData || !SkillData->HitPhases.IsValidIndex(i)) return;
 							const FPESkillHitPhase& ExecPhase = SkillData->HitPhases[i];
@@ -449,7 +428,7 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 							for (UPE_SkillEffectModule* Module : ExecPhase.EffectModules)
 							{
 								if (Module)
-									Module->ApplyEffects(Caster, AffectedTargets, PhaseTargetLoc, SkillData, FinalDamage);
+									Module->ApplyEffects(Caster, AffectedTargets, PhaseTargetLoc, TargetPos, SkillData, FinalDamage);
 							}
 							for (APE_CharacterBase* Target : AffectedTargets)
 							{

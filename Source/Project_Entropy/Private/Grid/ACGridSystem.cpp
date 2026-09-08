@@ -64,6 +64,28 @@ bool AACGridSystem::IsTileOccupied(FIntPoint Pos, AActor* IgnoreActor) const
 	return Occupant != nullptr && Occupant != IgnoreActor;
 }
 
+TSet<APE_CharacterBase*> AACGridSystem::CollectCharactersInPositions(const TSet<FIntPoint>& Positions, AActor* IgnoreActor, int32 ExcludeTeamID) const
+{
+	TSet<APE_CharacterBase*> Result;
+	Result.Reserve(Positions.Num());
+
+	// 점유 레지스트리 덕분에 칸 수만큼만 조회하면 됩니다 (월드 전수 스캔 불필요).
+	for (const FIntPoint& Pos : Positions)
+	{
+		APE_CharacterBase* Occupant = OccupancyMap.FindRef(Pos);
+		if (!Occupant || Occupant == IgnoreActor) continue;
+
+		// 죽은 캐릭터는 액터가 사라지기 전까지 레지스트리에 남아있으므로 여기서 걸러냅니다.
+		if (!Occupant->GetStatComponent() || Occupant->GetStatComponent()->IsDead()) continue;
+
+		if (ExcludeTeamID != INDEX_NONE && Occupant->GetTeamID() == ExcludeTeamID) continue;
+
+		Result.Add(Occupant);
+	}
+
+	return Result;
+}
+
 void AACGridSystem::UpdateOccupancy(APE_CharacterBase* Char, FIntPoint OldPos, FIntPoint NewPos)
 {
 	if (!Char) return;

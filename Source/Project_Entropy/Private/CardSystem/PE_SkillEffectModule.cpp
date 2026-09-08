@@ -1,4 +1,4 @@
-// Copyright CrograNM
+﻿// Copyright CrograNM
 
 #include "CardSystem/PE_SkillEffectModule.h"
 #include "CardSystem/PE_SkillData.h"
@@ -12,7 +12,7 @@
 #include "Core/PE_GameState.h" 
 
 // --- [모듈 1: 데미지 구현부] ---
-void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
+void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, FIntPoint TargetGridPos, const UPE_SkillData* InSkillData, float CalculatedDamage)
 {
 	for (APE_CharacterBase* Target : Targets)
 	{
@@ -23,154 +23,130 @@ void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_Cha
 	}
 }
 
-// --- [모듈 2: 넉백 구현부 (실제 적용 로직)] ---
-void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
+// --- [모듈 2: 넉백 시뮬레이션 (단일 진실 공급원)] ---
+TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetGridPos, const TSet<APE_CharacterBase*>& Targets) const
 {
-	if (Targets.IsEmpty() || !Instigator || PushDistance <= 0) return;
+	TArray<FPushSimulationResult> Results;
 
-	AACGridSystem* GridSystem = Cast<AACGridSystem>(UGameplayStatics::GetActorOfClass(Instigator, AACGridSystem::StaticClass()));
-	UACGridMovementComponent* InstMove = Cast<APE_CharacterBase>(Instigator)->GetGridMovementComponent();
-	if (!GridSystem || !InstMove) return;
+	APE_CharacterBase* InstigatorChar = Cast<APE_CharacterBase>(Instigator);
+	if (!GridSystem || !InstigatorChar || PushDistance <= 0 || Targets.IsEmpty()) return Results;
 
-	FIntPoint InstPos = InstMove->GetGridPosition();
+	UACGridMovementComponent* InstMove = InstigatorChar->GetGridMovementComponent();
+	if (!InstMove) return Results;
 
+	const FIntPoint InstigatorPos = InstMove->GetGridPosition();
+
+	// 연쇄 충돌 판정을 위해 전장 전체의 배치를 점유 레지스트리에서 스냅샷으로 떠 옵니다.
 	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
-	TArray<AActor*> AllChars;
-	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-
-	for (AActor* Actor : AllChars)
+	for (const TPair<FIntPoint, APE_CharacterBase*>& Entry : GridSystem->GetOccupancyMap())
 	{
-		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-		{
-			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
-			if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
-			{
-				FIntPoint Pos = CharMove->GetGridPosition();
-				CurrentPosMap.Add(Char, Pos);
-			}
-		}
+		APE_CharacterBase* Char = Entry.Value;
+		if (!Char) continue;
+		if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+
+		CurrentPosMap.Add(Char, Entry.Key);
 	}
 
-	// TargetLocation으로부터 가장 가까운 타일을 무조건 찾아내어 스킬의 폭발 중심지로 지정합니다.
-	FIntPoint SkillTargetGridPos(-999, -999);
-	float MinDist = 999999.f;
-	TArray<AActor*> TilesArr;
-	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), AACTile::StaticClass(), TilesArr);
-
-	for (AActor* Actor : TilesArr)
-	{
-		float Dist = FVector::DistXY(Actor->GetActorLocation(), TargetLocation);
-		if (Dist < MinDist)
-		{
-			MinDist = Dist;
-			SkillTargetGridPos = Cast<AACTile>(Actor)->GetGridPosition();
-		}
-
-		if (MinDist < 30.f) break; // 충분히 가까운 타일을 찾으면 더 이상 탐색하지 않음
-	}
-	if (SkillTargetGridPos == FIntPoint(-999, -999)) SkillTargetGridPos = InstPos; // 안전망 보정
-
-	FVector Dir3D = (TargetLocation - Instigator->GetActorLocation()).GetSafeNormal2D();
-	if (Dir3D.IsNearlyZero()) Dir3D = Instigator->GetActorForwardVector();
-	FVector2D DirV(Dir3D.X, Dir3D.Y);
+	// 지향성(Directional) 밀치기는 시전자 -> 목표 칸 방향을 4방향으로 스냅해서 씁니다.
+	FVector2D DirV(TargetGridPos.X - InstigatorPos.X, TargetGridPos.Y - InstigatorPos.Y);
+	if (DirV.IsNearlyZero()) DirV = FVector2D(1, 0);
 	DirV.Normalize();
 
-	float Angle = FMath::Atan2(DirV.Y, DirV.X);
-	int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f));
+	const int32 DirIdx = FMath::RoundToInt(FMath::Atan2(DirV.Y, DirV.X) / (PI / 2.f));
 
-	FIntPoint DirectionalDir(0, 0);
+	FIntPoint DirectionalDir(1, 0);
 	if (DirIdx == 1) DirectionalDir = FIntPoint(0, 1);
 	else if (DirIdx == 2 || DirIdx == -2) DirectionalDir = FIntPoint(-1, 0);
 	else if (DirIdx == -1) DirectionalDir = FIntPoint(0, -1);
-	else DirectionalDir = FIntPoint(1, 0);
 
-	struct FSimulatedPush {
-		APE_CharacterBase* Actor;
-		int32 RemainingDist;
-		FIntPoint PushDir;
-		float Delay;
+	struct FPendingPush
+	{
+		APE_CharacterBase* Actor = nullptr;
+		int32 RemainingDist = 0;
+		FIntPoint PushDir = FIntPoint::ZeroValue;
+		float Delay = 0.f;
 	};
-	TArray<FSimulatedPush> PendingPushes;
+	TArray<FPendingPush> PendingPushes;
 
+	// 1단계: 피격 대상별로 밀려날 방향을 결정합니다.
 	for (APE_CharacterBase* Target : Targets)
 	{
-		if (!Target->IsPushable()) continue;
-		if (!CurrentPosMap.Contains(Target)) continue;
+		if (!Target || !Target->IsPushable() || Target == InstigatorChar) continue;
 
-		FIntPoint TargetGridPos = CurrentPosMap[Target];
+		const FIntPoint* FoundPos = CurrentPosMap.Find(Target);
+		if (!FoundPos) continue;
+
+		const FIntPoint TargetPos = *FoundPos;
 		FIntPoint FinalPushDir(0, 0);
 
 		if (PushType == EPEPushType::Directional)
 		{
 			FinalPushDir = DirectionalDir;
 		}
-		else // 방사형(Radial) 로직 고도화
+		else
 		{
-			if (TargetGridPos == SkillTargetGridPos)
-			{
-				// 정확히 중심에 있는 녀석은 시전자가 바라본 방향으로 넉백
-				FinalPushDir = FIntPoint(
-					FMath::Clamp(TargetGridPos.X - InstPos.X, -1, 1),
-					FMath::Clamp(TargetGridPos.Y - InstPos.Y, -1, 1)
-				);
-			}
-			else
-			{
-				// 그 외 범위 안의 적들은 폭발 중심점(Target) 기준으로 방사형으로 밀려남
-				FinalPushDir = FIntPoint(
-					FMath::Clamp(TargetGridPos.X - SkillTargetGridPos.X, -1, 1),
-					FMath::Clamp(TargetGridPos.Y - SkillTargetGridPos.Y, -1, 1)
-				);
-			}
+			// 폭발 중심에 정확히 선 대상은 시전자가 바라본 방향으로, 나머지는 중심에서 바깥으로 밀립니다.
+			const FIntPoint Origin = (TargetPos == TargetGridPos) ? InstigatorPos : TargetGridPos;
+			FinalPushDir = FIntPoint(
+				FMath::Clamp(TargetPos.X - Origin.X, -1, 1),
+				FMath::Clamp(TargetPos.Y - Origin.Y, -1, 1)
+			);
 
-			// 십자(4방향) 그리드에서 대각선 밀치기를 방지하고 가장 멀리 밀어낼 수 있는 주축(Major Axis)으로 스냅
-			if (FMath::Abs(TargetGridPos.X - SkillTargetGridPos.X) >= FMath::Abs(TargetGridPos.Y - SkillTargetGridPos.Y))
+			// 십자(4방향) 그리드이므로 대각선을 막고 더 멀리 밀 수 있는 주축으로 스냅합니다.
+			if (FMath::Abs(TargetPos.X - TargetGridPos.X) >= FMath::Abs(TargetPos.Y - TargetGridPos.Y))
 				FinalPushDir.Y = 0;
 			else
 				FinalPushDir.X = 0;
 		}
 
-		if (FinalPushDir.X != 0 || FinalPushDir.Y != 0)
+		if (FinalPushDir != FIntPoint::ZeroValue)
 		{
 			PendingPushes.Add({ Target, PushDistance, FinalPushDir, 0.f });
 		}
 	}
 
+	// 2단계: 뒤쪽(진행 방향 기준 앞선) 캐릭터부터 처리하며 연쇄 밀치기를 전개합니다.
 	while (PendingPushes.Num() > 0)
 	{
-		PendingPushes.Sort([&CurrentPosMap](const FSimulatedPush& A, const FSimulatedPush& B) {
-			FIntPoint PosA = CurrentPosMap[A.Actor];
-			FIntPoint PosB = CurrentPosMap[B.Actor];
-			int32 DotA = PosA.X * A.PushDir.X + PosA.Y * A.PushDir.Y;
-			int32 DotB = PosB.X * B.PushDir.X + PosB.Y * B.PushDir.Y;
-			return DotA > DotB;
+		PendingPushes.Sort([&CurrentPosMap](const FPendingPush& A, const FPendingPush& B)
+			{
+				const FIntPoint PosA = CurrentPosMap[A.Actor];
+				const FIntPoint PosB = CurrentPosMap[B.Actor];
+				return (PosA.X * A.PushDir.X + PosA.Y * A.PushDir.Y) > (PosB.X * B.PushDir.X + PosB.Y * B.PushDir.Y);
 			});
 
-		FSimulatedPush Task = PendingPushes[0];
+		const FPendingPush Task = PendingPushes[0];
 		PendingPushes.RemoveAt(0);
 
 		if (!CurrentPosMap.Contains(Task.Actor)) continue;
 
-		FIntPoint CurrentPos = CurrentPosMap[Task.Actor];
-		TArray<AACTile*> KnockbackPath;
+		FPushSimulationResult Result;
+		Result.TargetActor = Task.Actor;
+		Result.StartPos = CurrentPosMap[Task.Actor];
+		Result.PushDir = Task.PushDir;
+		Result.RemainingDist = Task.RemainingDist;
+		Result.Delay = Task.Delay;
 
-		bool bHitSomething = false;
-		APE_CharacterBase* HitCharacter = nullptr;
-		float TimePerTile = 100.f / Task.Actor->GetGridMovementComponent()->GetGridMoveSpeed();
+		// 이 캐릭터가 한 칸 지나가는 데 걸리는 시간 (연쇄 대상의 출발 지연 계산용)
+		const UACGridMovementComponent* TaskMove = Task.Actor->GetGridMovementComponent();
+		const float TimePerTile = (TaskMove && TaskMove->GetGridMoveSpeed() > 0.f) ? (100.f / TaskMove->GetGridMoveSpeed()) : 0.f;
 
-		for (int32 step = 1; step <= Task.RemainingDist; ++step)
+		FIntPoint CurrentPos = Result.StartPos;
+
+		for (int32 Step = 1; Step <= Task.RemainingDist; ++Step)
 		{
-			FIntPoint NextPos = CurrentPos + Task.PushDir;
+			const FIntPoint NextPos = CurrentPos + Task.PushDir;
 			AACTile* NextTile = GridSystem->GetTileAtPosition(NextPos);
 
+			// 맵 밖이거나 고정 장애물 타일이면 그 자리에서 멈춥니다.
 			if (!NextTile || NextTile->IsObstacle())
 			{
-				bHitSomething = true;
+				Result.bBlocked = true;
 				break;
 			}
 
 			APE_CharacterBase* CollidedChar = nullptr;
-			for (const auto& Pair : CurrentPosMap)
+			for (const TPair<APE_CharacterBase*, FIntPoint>& Pair : CurrentPosMap)
 			{
 				if (Pair.Key != Task.Actor && Pair.Value == NextPos)
 				{
@@ -181,67 +157,87 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 
 			if (CollidedChar)
 			{
-				bHitSomething = true;
-				HitCharacter = CollidedChar;
+				Result.bBlocked = true;
+				Result.HitCharacter = CollidedChar;
 
+				// 부딪힌 상대가 밀릴 수 있다면 남은 거리를 넘겨 연쇄시킵니다.
 				if (CollidedChar->IsPushable())
 				{
-					float HitDelay = Task.Delay + (step * TimePerTile);
-					PendingPushes.Add({ CollidedChar, Task.RemainingDist - step, Task.PushDir, HitDelay });
+					PendingPushes.Add({ CollidedChar, Task.RemainingDist - Step, Task.PushDir, Task.Delay + (Step * TimePerTile) });
 				}
 				break;
 			}
 
 			CurrentPos = NextPos;
-			KnockbackPath.Add(NextTile);
+			Result.Path.Add(NextTile);
 		}
+
+		Result.EndPos = CurrentPos;
+		CurrentPosMap[Task.Actor] = CurrentPos;
+
+		Results.Add(Result);
+	}
+
+	return Results;
+}
+
+// --- [모듈 2: 넉백 실행부] ---
+void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, FIntPoint TargetGridPos, const UPE_SkillData* InSkillData, float CalculatedDamage)
+{
+	APE_CharacterBase* InstigatorChar = Cast<APE_CharacterBase>(Instigator);
+	if (!InstigatorChar) return;
+
+	UACGridMovementComponent* InstMove = InstigatorChar->GetGridMovementComponent();
+	AACGridSystem* GridSystem = InstMove ? InstMove->GetCachedGridSystem() : nullptr;
+	if (!GridSystem) return;
+
+	// 계산은 전부 시뮬레이션에 맡기고, 여기서는 그 결과를 실행하기만 합니다.
+	const TArray<FPushSimulationResult> PushResults = SimulatePush(GridSystem, Instigator, TargetGridPos, Targets);
+
+	APE_GameState* GS = Instigator->GetWorld() ? Instigator->GetWorld()->GetGameState<APE_GameState>() : nullptr;
+
+	for (const FPushSimulationResult& Result : PushResults)
+	{
+		if (!Result.TargetActor) continue;
 
 		FGridKnockbackPayload Payload;
 		Payload.bIsActive = true;
 		Payload.Instigator = Instigator;
 		Payload.SkillData = InSkillData;
 
-		if (bHitSomething)
+		// 충돌 피해는 '남아있던 밀림 거리' 비율만큼만 들어갑니다 (덜 밀렸으면 덜 아픔).
+		if (Result.bBlocked)
 		{
-			float ScaledRatio = (float)Task.RemainingDist / (float)PushDistance;
-			float FinalDamageRatio = CollisionDamageRatio * ScaledRatio;
+			const float FinalDamageRatio = CollisionDamageRatio * ((float)Result.RemainingDist / (float)PushDistance);
 
-			if (HitCharacter)
+			if (Result.HitCharacter)
 			{
-				if (UACStatComponent* HitStat = HitCharacter->GetStatComponent())
+				if (UACStatComponent* HitStat = Result.HitCharacter->GetStatComponent())
 				{
 					Payload.TargetDamage = HitStat->GetMaxHP() * FinalDamageRatio;
 					Payload.OtherDamage = Payload.TargetDamage;
-					Payload.HitCharacter = HitCharacter;
+					Payload.HitCharacter = Result.HitCharacter;
 				}
 			}
-			else
+			else if (UACStatComponent* MyStat = Result.TargetActor->GetStatComponent())
 			{
-				if (UACStatComponent* MyStat = Task.Actor->GetStatComponent())
-				{
-					Payload.TargetDamage = MyStat->GetMaxHP() * FinalDamageRatio;
-				}
+				// 벽에 부딪힌 경우는 본인만 피해를 입습니다.
+				Payload.TargetDamage = MyStat->GetMaxHP() * FinalDamageRatio;
 			}
 		}
 
-		// 개별 밀치기가 계산될 때마다 UI에 등록하고 전용 토큰을 발급받습니다.
-		APE_GameState* GS = Instigator->GetWorld()->GetGameState<APE_GameState>();
+		// 개별 밀치기가 실행될 때마다 UI에 등록하고 전용 토큰을 발급받습니다.
 		if (GS)
 		{
-			FString LogText = FString::Printf(TEXT("%s - %d칸 밀림"), *Task.Actor->GetName(), Task.RemainingDist);
-			Payload.ActionLogID = GS->AddActionLog(Task.Actor->GetTeamID(), LogText);
+			FString LogText = FString::Printf(TEXT("%s - %d칸 밀림"), *Result.TargetActor->GetName(), Result.RemainingDist);
+			Payload.ActionLogID = GS->AddActionLog(Result.TargetActor->GetTeamID(), LogText);
 			Payload.ActionTokenID = GS->BeginAction(
-				FString::Printf(TEXT("Push:%s(%d칸)"), *Task.Actor->GetName(), Task.RemainingDist), Payload.ActionLogID);
+				FString::Printf(TEXT("Push:%s(%d칸)"), *Result.TargetActor->GetName(), Result.RemainingDist), Payload.ActionLogID);
 		}
 
-		if (UACGridMovementComponent* MoveComp = Task.Actor->GetGridMovementComponent())
+		if (UACGridMovementComponent* MoveComp = Result.TargetActor->GetGridMovementComponent())
 		{
-			MoveComp->NetMulticast_MoveAlongPath(KnockbackPath, false, Task.Delay, Payload);
-
-			if (KnockbackPath.Num() > 0)
-			{
-				CurrentPosMap[Task.Actor] = CurrentPos;
-			}
+			MoveComp->NetMulticast_MoveAlongPath(Result.Path, false, Result.Delay, Payload);
 		}
 		else if (GS)
 		{
@@ -249,172 +245,4 @@ void UPE_SkillEffect_Push::ApplyEffects(AActor* Instigator, const TSet<APE_Chara
 			GS->EndAction(Payload.ActionTokenID, Payload.ActionLogID);
 		}
 	}
-}
-
-// --- [모듈 2: 시각화를 위한 넉백 시뮬레이션부] ---
-TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetPos, const TSet<FIntPoint>& AffectedGridPositions) const
-{
-	TArray<FPushSimulationResult> Results;
-
-	APE_CharacterBase* InstigatorChar = Cast<APE_CharacterBase>(Instigator);
-	if (!GridSystem || PushDistance <= 0 || !InstigatorChar) return Results;
-
-	FIntPoint InstigatorPos = InstigatorChar->GetGridMovementComponent() ? InstigatorChar->GetGridMovementComponent()->GetGridPosition() : FIntPoint(0, 0);
-
-	TMap<APE_CharacterBase*, FIntPoint> InitialPosMap;
-	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
-	TMap<APE_CharacterBase*, FIntPoint> PushDirMap;
-
-	TArray<AActor*> AllChars;
-	UGameplayStatics::GetAllActorsOfClass(GridSystem->GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-
-	for (AActor* Actor : AllChars)
-	{
-		if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
-		{
-			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
-			if (UACGridMovementComponent* CharMove = Char->GetGridMovementComponent())
-			{
-				FIntPoint Pos = CharMove->GetGridPosition();
-
-				InitialPosMap.Add(Char, Pos);
-				CurrentPosMap.Add(Char, Pos);
-			}
-		}
-	}
-
-	FVector2D DirV(TargetPos.X - InstigatorPos.X, TargetPos.Y - InstigatorPos.Y);
-	if (DirV.IsNearlyZero()) DirV = FVector2D(1, 0);
-	DirV.Normalize();
-
-	float Angle = FMath::Atan2(DirV.Y, DirV.X);
-	int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f));
-
-	FIntPoint DirectionalDir(0, 0);
-	if (DirIdx == 1) DirectionalDir = FIntPoint(0, 1);
-	else if (DirIdx == 2 || DirIdx == -2) DirectionalDir = FIntPoint(-1, 0);
-	else if (DirIdx == -1) DirectionalDir = FIntPoint(0, -1);
-	else DirectionalDir = FIntPoint(1, 0);
-
-	struct FSimulatedPush {
-		APE_CharacterBase* Actor;
-		int32 RemainingDist;
-		FIntPoint PushDir;
-	};
-	TArray<FSimulatedPush> PendingPushes;
-
-	for (const FIntPoint& CurrentTargetPos : AffectedGridPositions)
-	{
-		APE_CharacterBase* HitChar = nullptr;
-		for (const auto& Pair : CurrentPosMap)
-		{
-			if (Pair.Value == CurrentTargetPos)
-			{
-				HitChar = Pair.Key;
-				break;
-			}
-		}
-
-		if (HitChar && HitChar->IsPushable() && HitChar != InstigatorChar && HitChar->GetTeamID() != InstigatorChar->GetTeamID())
-		{
-			FIntPoint PushDir(0, 0);
-
-			if (PushType == EPEPushType::Directional)
-			{
-				PushDir = DirectionalDir;
-			}
-			else // 시각화에서도 방사형 연산을 TargetPos(스킬 타겟 타일) 기준으로 수행
-			{
-				if (CurrentTargetPos == TargetPos)
-				{
-					PushDir = FIntPoint(
-						FMath::Clamp(CurrentTargetPos.X - InstigatorPos.X, -1, 1),
-						FMath::Clamp(CurrentTargetPos.Y - InstigatorPos.Y, -1, 1)
-					);
-				}
-				else
-				{
-					PushDir = FIntPoint(
-						FMath::Clamp(CurrentTargetPos.X - TargetPos.X, -1, 1),
-						FMath::Clamp(CurrentTargetPos.Y - TargetPos.Y, -1, 1)
-					);
-				}
-
-				if (FMath::Abs(CurrentTargetPos.X - TargetPos.X) >= FMath::Abs(CurrentTargetPos.Y - TargetPos.Y))
-					PushDir.Y = 0;
-				else
-					PushDir.X = 0;
-			}
-
-			if (PushDir.X != 0 || PushDir.Y != 0)
-			{
-				PendingPushes.Add({ HitChar, PushDistance, PushDir });
-				PushDirMap.Add(HitChar, PushDir);
-			}
-		}
-	}
-
-	while (PendingPushes.Num() > 0)
-	{
-		// 시각화에서도 실제 처리와 동일하게 Back-to-Front 정렬
-		PendingPushes.Sort([&CurrentPosMap](const FSimulatedPush& A, const FSimulatedPush& B) {
-			FIntPoint PosA = CurrentPosMap[A.Actor];
-			FIntPoint PosB = CurrentPosMap[B.Actor];
-			int32 DotA = PosA.X * A.PushDir.X + PosA.Y * A.PushDir.Y;
-			int32 DotB = PosB.X * B.PushDir.X + PosB.Y * B.PushDir.Y;
-			return DotA > DotB;
-			});
-
-		FSimulatedPush Task = PendingPushes[0];
-		PendingPushes.RemoveAt(0);
-
-		if (!CurrentPosMap.Contains(Task.Actor)) continue;
-
-		FIntPoint CurrentPos = CurrentPosMap[Task.Actor];
-
-		for (int32 step = 1; step <= Task.RemainingDist; ++step)
-		{
-			FIntPoint NextPos = CurrentPos + Task.PushDir;
-			AACTile* NextTile = GridSystem->GetTileAtPosition(NextPos);
-
-			if (!NextTile || NextTile->IsObstacle()) break;
-
-			APE_CharacterBase* CollidedChar = nullptr;
-			for (const auto& Pair : CurrentPosMap)
-			{
-				if (Pair.Key != Task.Actor && Pair.Value == NextPos)
-				{
-					CollidedChar = Pair.Key;
-					break;
-				}
-			}
-
-			if (CollidedChar)
-			{
-				if (CollidedChar->IsPushable())
-				{
-					PendingPushes.Add({ CollidedChar, Task.RemainingDist - step, Task.PushDir });
-					PushDirMap.Add(CollidedChar, Task.PushDir);
-				}
-				break;
-			}
-
-			CurrentPos = NextPos;
-		}
-
-		CurrentPosMap[Task.Actor] = CurrentPos;
-	}
-
-	for (const auto& Pair : PushDirMap)
-	{
-		APE_CharacterBase* Char = Pair.Key;
-		FPushSimulationResult Result;
-		Result.TargetActor = Char;
-		Result.StartPos = InitialPosMap[Char];
-		Result.EndPos = CurrentPosMap[Char];
-		Result.PushDir = Pair.Value;
-		Results.Add(Result);
-	}
-
-	return Results;
 }
