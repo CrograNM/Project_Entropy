@@ -11,6 +11,19 @@
 #include "Containers/Queue.h"
 #include "Core/PE_GameState.h" 
 
+namespace
+{
+	// 격자 델타를 상하좌우 4방향 중 하나로 스냅합니다. 정확한 대각선(|dx| == |dy|)은 항상 '수평'으로 해석합니다.
+	FIntPoint SnapToCardinalDirection(FIntPoint Delta)
+	{
+		if (Delta == FIntPoint::ZeroValue) return FIntPoint::ZeroValue;
+
+		return (FMath::Abs(Delta.X) >= FMath::Abs(Delta.Y))
+			? FIntPoint(Delta.X > 0 ? 1 : -1, 0)
+			: FIntPoint(0, Delta.Y > 0 ? 1 : -1);
+	}
+}
+
 // --- [모듈 1: 데미지 구현부] ---
 void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, FIntPoint TargetGridPos, const UPE_SkillData* InSkillData, float CalculatedDamage)
 {
@@ -48,16 +61,8 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSy
 	}
 
 	// 지향성(Directional) 밀치기는 시전자 -> 목표 칸 방향을 4방향으로 스냅해서 씁니다.
-	FVector2D DirV(TargetGridPos.X - InstigatorPos.X, TargetGridPos.Y - InstigatorPos.Y);
-	if (DirV.IsNearlyZero()) DirV = FVector2D(1, 0);
-	DirV.Normalize();
-
-	const int32 DirIdx = FMath::RoundToInt(FMath::Atan2(DirV.Y, DirV.X) / (PI / 2.f));
-
-	FIntPoint DirectionalDir(1, 0);
-	if (DirIdx == 1) DirectionalDir = FIntPoint(0, 1);
-	else if (DirIdx == 2 || DirIdx == -2) DirectionalDir = FIntPoint(-1, 0);
-	else if (DirIdx == -1) DirectionalDir = FIntPoint(0, -1);
+	FIntPoint DirectionalDir = SnapToCardinalDirection(TargetGridPos - InstigatorPos);
+	if (DirectionalDir == FIntPoint::ZeroValue) DirectionalDir = FIntPoint(1, 0); // 제자리 조준 보호
 
 	struct FPendingPush
 	{
@@ -85,18 +90,11 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSy
 		}
 		else
 		{
-			// 폭발 중심에 정확히 선 대상은 시전자가 바라본 방향으로, 나머지는 중심에서 바깥으로 밀립니다.
+			/*
+				폭발 중심에 정확히 선 대상은 시전자 반대편으로, 나머지는 중심에서 바깥으로 밀립니다.
+			*/
 			const FIntPoint Origin = (TargetPos == TargetGridPos) ? InstigatorPos : TargetGridPos;
-			FinalPushDir = FIntPoint(
-				FMath::Clamp(TargetPos.X - Origin.X, -1, 1),
-				FMath::Clamp(TargetPos.Y - Origin.Y, -1, 1)
-			);
-
-			// 십자(4방향) 그리드이므로 대각선을 막고 더 멀리 밀 수 있는 주축으로 스냅합니다.
-			if (FMath::Abs(TargetPos.X - TargetGridPos.X) >= FMath::Abs(TargetPos.Y - TargetGridPos.Y))
-				FinalPushDir.Y = 0;
-			else
-				FinalPushDir.X = 0;
+			FinalPushDir = SnapToCardinalDirection(TargetPos - Origin);
 		}
 
 		if (FinalPushDir != FIntPoint::ZeroValue)

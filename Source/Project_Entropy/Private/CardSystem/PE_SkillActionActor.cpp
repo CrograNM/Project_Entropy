@@ -162,14 +162,14 @@ void APE_SkillActionActor::Tick(float DeltaTime)
 			TSet<APE_CharacterBase*> SingleTarget;
 			SingleTarget.Add(HitTarget);
 
-			// 관통 타격은 스쳐 지나간 그 대상이 서 있는 칸을 효과 중심(밀치기 기준점)으로 삼습니다.
-			FIntPoint HitGridPos = TargetGridPos;
-			if (const UACGridMovementComponent* HitMove = HitTarget->GetGridMovementComponent())
-				HitGridPos = HitMove->GetGridPosition();
-
+			/*
+				[주의] 대상을 한 명씩 처리하더라도 효과의 기준점은 '이 페이즈의 착탄 칸'이어야 합니다.
+				대상 자신의 칸을 기준으로 삼으면 밀치기 방향이 대상마다 따로 계산되어,
+				조준선이 대각선일 때 시각화(조준 칸 기준 1회 계산)와 축이 어긋납니다.
+			*/
 			for (UPE_SkillEffectModule* Module : RepSkillData->HitPhases[RepPhaseIndex].EffectModules)
 			{
-				Module->ApplyEffects(Caster, SingleTarget, HitTarget->GetActorLocation(), HitGridPos, RepSkillData, DamageToApply);
+				Module->ApplyEffects(Caster, SingleTarget, RepTargetLocation, TargetGridPos, RepSkillData, DamageToApply);
 			}
 
 			if (UACSkillComponent* SkillComp = Caster->FindComponentByClass<UACSkillComponent>())
