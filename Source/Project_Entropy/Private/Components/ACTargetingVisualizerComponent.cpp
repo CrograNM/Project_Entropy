@@ -202,6 +202,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			const UPE_SkillEffect_Push* PushModule = nullptr;
 			FIntPoint PushTargetPos = ActualTargetPos;
 			TSet<FIntPoint> PushAffectedPositions = MasterAffectedPositions;
+			int32 PushPhaseIdx = INDEX_NONE;
 
 			for (int32 PhaseIdx = 0; PhaseIdx < RepSkillData->HitPhases.Num() && !PushModule; ++PhaseIdx)
 			{
@@ -215,6 +216,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 						// 밀치기는 '그 모듈이 붙은 페이즈'의 착탄 칸과 범위만 씁니다 (서버 판정과 동일한 입력).
 						PushTargetPos = PhaseTrajectories[PhaseIdx].EndGridPos;
 						PushAffectedPositions = Phase.GetAffectedGridPositions(CenterPos, PushTargetPos, RepSkillData->BaseRange);
+						PushPhaseIdx = PhaseIdx;
 						break;
 					}
 				}
@@ -232,7 +234,35 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 					? OwnerChar->GetTeamID() : INDEX_NONE;
 				const TSet<APE_CharacterBase*> PushTargets = GridSystem->CollectCharactersInPositions(PushAffectedPositions, OwnerActor, ExcludeTeamID);
 
-				const TArray<FPushSimulationResult> PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, PushTargets);
+				TArray<FPushSimulationResult> PushResults;
+
+				if (PushPhaseIdx != INDEX_NONE && FPESkillTrajectory::IsPiercingProjectile(RepSkillData->HitPhases[PushPhaseIdx]))
+				{
+					/*
+						관통 투사체는 서버가 '스치는 순서대로 한 명씩' 밀칩니다(APE_SkillActionActor::Tick).
+						앞 사람이 밀려나며 비운 자리를 다음 계산이 이어받으므로, 같은 적이 두 번 밀릴 수도 있습니다.
+						그 순서를 그대로 재현해야 화살표가 실제 밀림과 맞습니다.
+					*/
+					TArray<APE_CharacterBase*> OrderedTargets = PushTargets.Array();
+
+					// 투사체가 총구에서 출발해 스쳐가는 순서 = 총구로부터 가까운 순서
+					const FVector MuzzleLoc = PhaseTrajectories[PushPhaseIdx].StartLocation;
+					OrderedTargets.Sort([&MuzzleLoc](const APE_CharacterBase& A, const APE_CharacterBase& B)
+						{
+							return FVector::DistSquared(MuzzleLoc, A.GetActorLocation()) < FVector::DistSquared(MuzzleLoc, B.GetActorLocation());
+						});
+
+					// 배치를 이어서 넘겨 앞선 밀치기의 결과가 다음 계산에 반영되게 합니다.
+					TMap<APE_CharacterBase*, FIntPoint> Board;
+					for (APE_CharacterBase* SingleTarget : OrderedTargets)
+					{
+						PushResults.Append(PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, { SingleTarget }, &Board));
+					}
+				}
+				else
+				{
+					PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, PushTargets);
+				}
 
 				for (const FPushSimulationResult& Result : PushResults)
 				{

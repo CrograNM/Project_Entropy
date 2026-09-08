@@ -9,20 +9,8 @@
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 #include "Containers/Queue.h"
-#include "Core/PE_GameState.h" 
-
-namespace
-{
-	// 격자 델타를 상하좌우 4방향 중 하나로 스냅합니다. 정확한 대각선(|dx| == |dy|)은 항상 '수평'으로 해석합니다.
-	FIntPoint SnapToCardinalDirection(FIntPoint Delta)
-	{
-		if (Delta == FIntPoint::ZeroValue) return FIntPoint::ZeroValue;
-
-		return (FMath::Abs(Delta.X) >= FMath::Abs(Delta.Y))
-			? FIntPoint(Delta.X > 0 ? 1 : -1, 0)
-			: FIntPoint(0, Delta.Y > 0 ? 1 : -1);
-	}
-}
+#include "Core/PE_GameState.h"
+#include "CardSystem/PE_SkillTrajectory.h"
 
 // --- [모듈 1: 데미지 구현부] ---
 void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets, const FVector& TargetLocation, FIntPoint TargetGridPos, const UPE_SkillData* InSkillData, float CalculatedDamage)
@@ -37,7 +25,7 @@ void UPE_SkillEffect_Damage::ApplyEffects(AActor* Instigator, const TSet<APE_Cha
 }
 
 // --- [모듈 2: 넉백 시뮬레이션 (단일 진실 공급원)] ---
-TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetGridPos, const TSet<APE_CharacterBase*>& Targets) const
+TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetGridPos, const TSet<APE_CharacterBase*>& Targets, TMap<APE_CharacterBase*, FIntPoint>* InOutBoard) const
 {
 	TArray<FPushSimulationResult> Results;
 
@@ -49,19 +37,25 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSy
 
 	const FIntPoint InstigatorPos = InstMove->GetGridPosition();
 
-	// 연쇄 충돌 판정을 위해 전장 전체의 배치를 점유 레지스트리에서 스냅샷으로 떠 옵니다.
-	TMap<APE_CharacterBase*, FIntPoint> CurrentPosMap;
-	for (const TPair<FIntPoint, APE_CharacterBase*>& Entry : GridSystem->GetOccupancyMap())
-	{
-		APE_CharacterBase* Char = Entry.Value;
-		if (!Char) continue;
-		if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+	// 연쇄 충돌 판정에는 전장 전체의 배치가 필요합니다.
+	// 호출자가 배치를 이어서 들고 있으면 그것을 쓰고(관통 순차 밀치기), 아니면 점유 레지스트리에서 새로 뜹니다.
+	TMap<APE_CharacterBase*, FIntPoint> LocalBoard;
+	TMap<APE_CharacterBase*, FIntPoint>& CurrentPosMap = InOutBoard ? *InOutBoard : LocalBoard;
 
-		CurrentPosMap.Add(Char, Entry.Key);
+	if (CurrentPosMap.IsEmpty())
+	{
+		for (const TPair<FIntPoint, APE_CharacterBase*>& Entry : GridSystem->GetOccupancyMap())
+		{
+			APE_CharacterBase* Char = Entry.Value;
+			if (!Char) continue;
+			if (Char->GetStatComponent() && Char->GetStatComponent()->IsDead()) continue;
+
+			CurrentPosMap.Add(Char, Entry.Key);
+		}
 	}
 
 	// 지향성(Directional) 밀치기는 시전자 -> 목표 칸 방향을 4방향으로 스냅해서 씁니다.
-	FIntPoint DirectionalDir = SnapToCardinalDirection(TargetGridPos - InstigatorPos);
+	FIntPoint DirectionalDir = FPESkillTrajectory::SnapToCardinalDirection(TargetGridPos - InstigatorPos);
 	if (DirectionalDir == FIntPoint::ZeroValue) DirectionalDir = FIntPoint(1, 0); // 제자리 조준 보호
 
 	struct FPendingPush
@@ -94,7 +88,7 @@ TArray<FPushSimulationResult> UPE_SkillEffect_Push::SimulatePush(const AACGridSy
 				폭발 중심에 정확히 선 대상은 시전자 반대편으로, 나머지는 중심에서 바깥으로 밀립니다.
 			*/
 			const FIntPoint Origin = (TargetPos == TargetGridPos) ? InstigatorPos : TargetGridPos;
-			FinalPushDir = SnapToCardinalDirection(TargetPos - Origin);
+			FinalPushDir = FPESkillTrajectory::SnapToCardinalDirection(TargetPos - Origin);
 		}
 
 		if (FinalPushDir != FIntPoint::ZeroValue)

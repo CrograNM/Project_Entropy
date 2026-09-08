@@ -109,8 +109,13 @@ public:
 	 * 방향 산출 -> Back-to-Front 정렬 -> 연쇄 밀치기 전개를 전부 여기서 끝내고,
 	 * ApplyEffects는 그 결과를 '실행만' 합니다. 시각화는 같은 결과를 '그리기만' 합니다.
 	 * 월드/게임 상태를 바꾸지 않으므로 클라이언트에서도 안전하게 호출할 수 있습니다.
+	 *
+	 * InOutBoard: 전장 배치(캐릭터 -> 칸)를 호출자가 이어서 들고 갈 때 씁니다.
+	 *   null이면 매번 점유 레지스트리에서 새로 읽습니다.
+	 *   비어있지 않은 맵을 넘기면 그 배치에서 시작하고, 밀친 결과를 다시 써서 돌려줍니다.
+	 *   관통 투사체처럼 '한 명씩 순차적으로' 미는 경우를 서버와 동일하게 재현할 때 필요합니다.
 	 */
-	TArray<FPushSimulationResult> SimulatePush(const AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetGridPos, const TSet<APE_CharacterBase*>& Targets) const;
+	TArray<FPushSimulationResult> SimulatePush(const AACGridSystem* GridSystem, AActor* Instigator, FIntPoint TargetGridPos, const TSet<APE_CharacterBase*>& Targets, TMap<APE_CharacterBase*, FIntPoint>* InOutBoard = nullptr) const;
 
 protected:
 	// 방사형 vs 지향성 선택

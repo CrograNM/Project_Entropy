@@ -1,6 +1,7 @@
-// Copyright CrograNM
+﻿// Copyright CrograNM
 
 #include "CardSystem/PE_SkillData.h"
+#include "CardSystem/PE_SkillTrajectory.h"
 
 TSet<FIntPoint> FPESkillHitPhase::GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange) const
 {
@@ -62,8 +63,8 @@ TSet<FIntPoint> FPESkillHitPhase::GetAffectedGridPositions(FIntPoint CasterPos, 
 
 	case EPEAoEShape::Custom:
 	{
-		float Angle = FMath::Atan2(Dir.Y, Dir.X);
-		int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f)); // -2, -1, 0, 1, 2
+		// 밀치기 방향과 같은 규칙으로 스냅합니다 (정확한 대각선은 항상 수평).
+		const int32 QuarterTurns = FPESkillTrajectory::GetCardinalQuarterTurns(TargetPos - CasterPos);
 
 		for (const FIntPoint& Offset : CustomAoEOffsets)
 		{
@@ -71,9 +72,13 @@ TSet<FIntPoint> FPESkillHitPhase::GetAffectedGridPositions(FIntPoint CasterPos, 
 
 			if (bRotateToTarget)
 			{
-				if (DirIdx == 1)      RotatedOffset = FIntPoint(-Offset.Y, Offset.X); // Up
-				else if (DirIdx == 2 || DirIdx == -2) RotatedOffset = FIntPoint(-Offset.X, -Offset.Y); // Left
-				else if (DirIdx == -1)RotatedOffset = FIntPoint(Offset.Y, -Offset.X); // Down
+				switch (QuarterTurns)
+				{
+				case 1: RotatedOffset = FIntPoint(-Offset.Y, Offset.X); break;  // +Y (북)
+				case 2: RotatedOffset = FIntPoint(-Offset.X, -Offset.Y); break; // -X (서)
+				case 3: RotatedOffset = FIntPoint(Offset.Y, -Offset.X); break;  // -Y (남)
+				default: break;                                                 // +X (동)
+				}
 			}
 
 			// 마우스가 위치한 타겟을 중심으로 그려지도록 TargetPos 사용
@@ -163,10 +168,11 @@ void FPESkillHitPhase::GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint Ta
 		OutRadius = FMath::Max(OutSize.X, OutSize.Y) * 0.5f;
 
 		// 커스텀 스킬은 타일 그리드에 맞게 90도(4방향)로 스냅(Snap)된 회전값을 반환
+		// 실제로 칠해지는 칸(GetAffectedGridPositions)과 반드시 같은 스냅 규칙을 써야 합니다.
 		if (bRotateToTarget)
 		{
-			int32 DirIdx = FMath::RoundToInt(Angle / (PI / 2.f));
-			OutRotation = FRotator(0.f, DirIdx * 90.f, 0.f);
+			const int32 QuarterTurns = FPESkillTrajectory::GetCardinalQuarterTurns(TargetPos - CasterPos);
+			OutRotation = FRotator(0.f, QuarterTurns * 90.f, 0.f);
 		}
 		else
 		{
