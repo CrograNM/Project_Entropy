@@ -7,6 +7,7 @@
 #include "Components/ACSkillComponent.h"
 #include "CardSystem/PE_SkillData.h"
 #include "Grid/ACGridSystem.h"
+#include "Combat/PE_TargetRules.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
 #include "Core/PE_GameState.h"
@@ -90,27 +91,26 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 		return;
 	}
 
-	// 맵 위의 모든 플레이어를 탐색하여 가장 가까운 대상을 찾습니다.
-	TArray<AActor*> FoundPlayers;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_PlayerCharacter::StaticClass(), FoundPlayers);
-
+	/*
+		가장 가까운 적대 플레이어를 찾습니다.
+		사거리와 무관한 '접근 목표' 선정이므로 FPETargetRules의 사거리 판정을 쓰지 않고,
+		팀/생존 판정만 같은 규칙(IsTargetableBy)에 맡깁니다.
+		대상을 플레이어로 한정하는 것은 의도입니다. 중립 장애물(TeamID -1)을 쫓아가지 않도록.
+	*/
 	APE_PlayerCharacter* TargetPlayer = nullptr;
 	int32 MinDistance = MAX_int32;
 	FIntPoint MyPos = GridMovement->GetGridPosition();
 
-	for (AActor* Actor : FoundPlayers)
+	for (const TPair<FIntPoint, APE_CharacterBase*>& Entry : GridSystem->GetOccupancyMap())
 	{
-		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(Actor);
-		if (PC && PC->GetStatComponent() && !PC->GetStatComponent()->IsDead())
-		{
-			FIntPoint PlayerPos = PC->GetGridMovementComponent()->GetGridPosition();
-			int32 DistanceToPlayer = FMath::Abs(MyPos.X - PlayerPos.X) + FMath::Abs(MyPos.Y - PlayerPos.Y);
+		APE_PlayerCharacter* PC = Cast<APE_PlayerCharacter>(Entry.Value);
+		if (!PC || !FPETargetRules::IsTargetableBy(PC, this, EPESkillTargetType::Snap_Enemy)) continue;
 
-			if (DistanceToPlayer < MinDistance)
-			{
-				MinDistance = DistanceToPlayer;
-				TargetPlayer = PC;
-			}
+		const int32 DistanceToPlayer = FMath::Abs(MyPos.X - Entry.Key.X) + FMath::Abs(MyPos.Y - Entry.Key.Y);
+		if (DistanceToPlayer < MinDistance)
+		{
+			MinDistance = DistanceToPlayer;
+			TargetPlayer = PC;
 		}
 	}
 
@@ -129,7 +129,12 @@ void APE_EnemyBase::EvaluateAndTakeAction()
 		UPE_SkillData* MainSkill = SkillComponent->GetActiveSkills()[0];
 		AACTile* PlayerTile = GridSystem->GetTileAtPosition(PlayerPos);
 
-		if (MinDistance <= MainSkill->BaseRange && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
+		// 사거리 판정을 플레이어와 같은 규칙으로 통과시킵니다.
+		// 서버(TryExecuteSkillByData)도 같은 규칙으로 재검증하므로 여기서 갈라질 수 없습니다.
+		const FPETargetContext Context = FPETargetRules::MakeContext(GridSystem, this, MainSkill->TargetType, MainSkill->BaseRange);
+		const bool bCanReach = (FPETargetRules::Evaluate(Context, PlayerPos).Result == EPETargetResult::Valid);
+
+		if (bCanReach && StatComponent->GetCurrentAP() >= MainSkill->BaseAPCost)
 		{
 			NetMulticast_ShowSkillIntent(MainSkill, PlayerTile);
 			PendingSkillIndex = 0;

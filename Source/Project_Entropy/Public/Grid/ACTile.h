@@ -13,7 +13,8 @@ enum class ETileHighlightType : uint8
 	InRange,    // 이동 사거리 내 타일 (은은한 불빛)
 	Hovered,    // 마우스가 올라간 도착 타일 (강한 불빛)
 	Path,       // 이동 경로 상의 타일들 (경로 불빛)
-	SkillTarget // 스킬 사용 방향/목표 타일 (위험 불빛)
+	SkillTarget,// 스킬 사용 방향/목표 타일 (위험 불빛)
+	Blocked     // 조준했으나 앞이 막혀 도달하지 못하는 타일 (꺼진 불빛)
 };
 
 UCLASS()
@@ -93,6 +94,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
 	FLinearColor SkillTargetColor = FLinearColor(1.0f, 0.2f, 0.2f, 1.0f);
+
+	// 막힘 표시는 다른 색과 더해지지 않고 최종 색을 덮어씁니다 (섞이면 의미가 흐려지므로).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")
+	FLinearColor BlockedColor = FLinearColor(0.2f, 0.2f, 0.3f, 1.0f); // 꺼진 청회색
 
 	// --- [다른 아군 시각화 전용 색상] ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tile|Visual")

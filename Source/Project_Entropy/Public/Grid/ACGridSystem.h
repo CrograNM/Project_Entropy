@@ -50,10 +50,23 @@ public:
 
 	void RemoveOccupant(APE_CharacterBase* Char);
 
-	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false, const class UPE_SkillData* SkillData = nullptr);
+	/**
+	 * 도달 가능한 좌표 집합을 계산합니다. 부수효과가 없으므로 서버 검증에서도 부를 수 있습니다.
+	 *
+	 * 사거리 모양의 정의는 이 함수 하나뿐입니다.
+	 * 스킬 사거리는 유닛과 지형을 관통해 뻗습니다. 앞이 막혀 일찍 떨어지는지는
+	 * FPESkillTrajectory가 따로 판단하며, 그 결과는 조준 UI가 막힘 표시로 알려줍니다.
+	 */
+	TSet<FIntPoint> ComputeReachablePositions(FIntPoint StartPos, int32 Range, bool bIsMovement, const AActor* Requester = nullptr) const;
+
+	// 위 결과를 타일에 칠합니다.
+	TArray<AACTile*> HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement = false);
 	void HighlightPath(AActor* Requester, FIntPoint StartPos, FIntPoint EndPos, const TArray<AACTile*>& InRangeTiles);
 	void HighlightTarget(AActor* Requester, FIntPoint TargetPos);
 	void HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPositions);
+
+	/** 조준했지만 앞이 막혀 도달하지 못하는 칸. 실제 착탄 칸(SkillTarget)과 구분해 보여줍니다. */
+	void HighlightBlocked(AActor* Requester, FIntPoint TargetPos);
 
 	void ClearAllHighlightsFor(AActor* Requester);
 	void ClearPathFor(AActor* Requester);

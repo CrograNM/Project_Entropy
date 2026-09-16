@@ -17,6 +17,7 @@
 #include "Components/CapsuleComponent.h"
 #include "CardSystem/PE_SkillTrajectory.h"
 #include "Grid/ACGridSystem.h"
+#include "Combat/PE_TargetRules.h"
 
 UACSkillComponent::UACSkillComponent()
 {
@@ -60,16 +61,33 @@ bool UACSkillComponent::TryExecuteSkillByData(UPE_SkillData* SkillData, AACTile*
 
 	APE_CharacterBase* Caster = Cast<APE_CharacterBase>(GetOwner());
 
-	// 타겟 조건이 맞는지 1차 검증 (TargetType 기반)
-	if (SkillData->TargetType == EPESkillTargetType::Tile && !TargetTile)
+	if (!Caster) return false;
+
+	/*
+		타겟 검증. 클라이언트가 보내온 요청을 그대로 믿지 않습니다.
+		조준 UI가 통과시킨 것과 똑같은 규칙(FPETargetRules)을 서버에서 다시 태웁니다.
+		사거리는 예전에도 실행 시점에 검사했지만, 팀/생존은 어디서도 검사하지 않았습니다.
+	*/
+	if (FPETargetRules::RequiresTarget(SkillData->TargetType))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[SkillSystem] 타일 타겟팅 스킬인데 타일이 지정되지 않았습니다."));
-		return false;
-	}
-	if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy && !TargetCharacter)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[SkillSystem] 대상 지정 스킬인데 대상이 지정되지 않았습니다."));
-		return false;
+		UACGridMovementComponent* CasterMove = Caster->GetGridMovementComponent();
+		const AACGridSystem* Grid = CasterMove ? CasterMove->GetCachedGridSystem() : nullptr;
+		const FIntPoint TargetPos = TargetTile ? TargetTile->GetGridPosition() : PEGridMath::InvalidGridPos();
+
+		// BaseRange: 마석/버프로 사거리가 변동되면(P1-1) 이 인자만 최종 사거리로 바꾸면 됩니다.
+		const FPETargetContext Context = FPETargetRules::MakeContext(Grid, Caster, SkillData->TargetType, SkillData->BaseRange);
+		const FPETargetCandidate Candidate = FPETargetRules::Evaluate(Context, TargetPos);
+
+		if (Candidate.Result != EPETargetResult::Valid)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[SkillSystem] 타겟 검증 실패 (%s): %s"),
+				*SkillData->SkillID.ToString(), *FPETargetRules::GetFailureText(Candidate.Result).ToString());
+			return false;
+		}
+
+		// 클라가 지목한 캐릭터가 아니라 서버가 그 칸에서 실제로 찾아낸 대상을 씁니다.
+		TargetTile = Candidate.Tile;
+		TargetCharacter = Candidate.Character;
 	}
 
 	bool bCanCast = true;
@@ -157,25 +175,16 @@ void UACSkillComponent::PrepareQueuedSkill(const FPESkillActionPayload& Payload)
 	}
 
 	// 사거리 및 타겟 유효성 재검증 (실행 시점 최신 기준)
+	// 큐에 들어간 뒤 대상이 움직이거나 쓰러졌을 수 있으므로 같은 규칙을 한 번 더 태웁니다.
 	bool bIsValidTarget = true;
 
-	if (SkillData->TargetType == EPESkillTargetType::Self || SkillData->TargetType == EPESkillTargetType::All_Enemies)
+	if (FPETargetRules::RequiresTarget(SkillData->TargetType))
 	{
-		bIsValidTarget = true;
-	}
-	else if (TargetGridPos == FIntPoint(-999, -999))
-	{
-		bIsValidTarget = false;
-	}
-	else if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)
-	{
-		FIntPoint CasterPos = Caster->GetGridMovementComponent()->GetGridPosition();
-		int32 CurrentDistance = FMath::Abs(CasterPos.X - TargetGridPos.X) + FMath::Abs(CasterPos.Y - TargetGridPos.Y);
+		UACGridMovementComponent* CasterMove = Caster->GetGridMovementComponent();
+		const AACGridSystem* Grid = CasterMove ? CasterMove->GetCachedGridSystem() : nullptr;
+		const FPETargetContext Context = FPETargetRules::MakeContext(Grid, Caster, SkillData->TargetType, SkillData->BaseRange);
 
-		if (CurrentDistance > SkillData->BaseRange)
-		{
-			bIsValidTarget = false;
-		}
+		bIsValidTarget = (FPETargetRules::Evaluate(Context, TargetGridPos).Result == EPETargetResult::Valid);
 	}
 
 	// 검증 실패 시: 환불 및 카드 반환 (ID 전송)
@@ -304,14 +313,15 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 
 				if (SkillData->TargetType == EPESkillTargetType::All_Enemies)
 				{
-					TArray<AActor*> AllChars;
-					UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-					for (AActor* Actor : AllChars)
+					// 전체 대상은 사거리가 없으므로 컨텍스트 없이 팀/생존 규칙만 적용합니다.
+					if (GridSystem)
 					{
-						if (APE_CharacterBase* Char = Cast<APE_CharacterBase>(Actor))
+						for (const TPair<FIntPoint, APE_CharacterBase*>& Entry : GridSystem->GetOccupancyMap())
 						{
-							if (Char->GetTeamID() != Caster->GetTeamID() && Char->GetStatComponent() && !Char->GetStatComponent()->IsDead())
-								AffectedTargets.Add(Char);
+							if (FPETargetRules::IsTargetableBy(Entry.Value, Caster, EPESkillTargetType::All_Enemies))
+							{
+								AffectedTargets.Add(Entry.Value);
+							}
 						}
 					}
 				}

@@ -83,6 +83,9 @@ void AACTile::UpdateVisuals()
 	FLinearColor FinalColor = FLinearColor::Black;
 	float FinalOpacity = 0.0f;
 
+	// 내가 조준한 칸이 막혀 있다는 표시가 하나라도 있으면 최종 색을 덮어씁니다.
+	bool bHasBlocked = false;
+
 	// 화면을 보고 있는 나 자신(로컬 플레이어 폰)을 구합니다.
 	AActor* LocalPawn = GetWorld()->GetFirstPlayerController() ? GetWorld()->GetFirstPlayerController()->GetPawn() : nullptr;
 	APE_CharacterBase* LocalChar = Cast<APE_CharacterBase>(LocalPawn);
@@ -127,11 +130,18 @@ void AACTile::UpdateVisuals()
 			if (bIsHostile) TypeColor = EnemySkillTargetColor;
 			else TypeColor = bIsLocal ? SkillTargetColor : OtherSkillTargetColor;
 			break;
+		case ETileHighlightType::Blocked:
+			// 남의 막힘까지 내 화면을 덮을 이유는 없으므로 로컬 요청만 반영합니다.
+			if (bIsLocal) bHasBlocked = true;
+			TypeColor = FLinearColor::Black;
+			break;
 		}
 
 		FinalColor += TypeColor;
 		FinalOpacity = FMath::Max(FinalOpacity, InsideOpacityValue);
 	}
+
+	if (bHasBlocked) FinalColor = BlockedColor;
 
 	// 색상이 하얗게 타버리는 것을 방지하기 위해 Clamp
 	FinalColor.R = FMath::Min(FinalColor.R, 1.0f);

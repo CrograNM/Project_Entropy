@@ -29,6 +29,9 @@ public:
 	virtual void PlayerTick(float DeltaTime) override;
 	void UpdateGridHovering(); 
 
+	/** 커서 아래의 타일. 캐릭터를 맞았다면 그 캐릭터가 서 있는 칸으로 환산합니다. */
+	class AACTile* GetTileUnderCursor();
+
 	// ----- [Public Functions] -----
 	UFUNCTION(BlueprintCallable, Category = "Battle Input")
 	void ToggleGridMovementActivation(); // 이동 모드 [On/Off]

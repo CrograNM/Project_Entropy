@@ -5,7 +5,6 @@
 #include "Components/ACGridMovementComponent.h"
 #include "Components/ACStatComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "CardSystem/PE_SkillData.h"
 #include "Characters/PE_CharacterBase.h"
 
 AACGridSystem::AACGridSystem()
@@ -183,74 +182,61 @@ TArray<AACTile*> AACGridSystem::CalculatePath(AActor* Requester, FIntPoint Start
 	return Path;
 }
 
-TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement, const UPE_SkillData* SkillData)
+TSet<FIntPoint> AACGridSystem::ComputeReachablePositions(FIntPoint StartPos, int32 Range, bool bIsMovement, const AActor* Requester) const
 {
-	ClearRangeFor(Requester);
+	TSet<FIntPoint> Reachable;
+	if (Range < 0) return Reachable;
 
-	TArray<AACTile*>& ValidTiles = PlayerRangeTiles.FindOrAdd(Requester);
 	TQueue<TPair<FIntPoint, int32>> Queue; // <좌표, 거리>
-	TMap<FIntPoint, int32> Visited;
-
 	Queue.Enqueue(TPair<FIntPoint, int32>(StartPos, 0));
-	Visited.Add(StartPos, 0);
+	Reachable.Add(StartPos);
 
-	FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
+	AActor* IgnoreActor = const_cast<AActor*>(Requester);
+	const FIntPoint Directions[4] = { FIntPoint(1,0), FIntPoint(-1,0), FIntPoint(0,1), FIntPoint(0,-1) };
 
 	while (!Queue.IsEmpty())
 	{
 		TPair<FIntPoint, int32> Current;
 		Queue.Dequeue(Current);
 
-		if (AACTile* Tile = GetTileAtPosition(Current.Key))
-		{
-			ValidTiles.Add(Tile);
-			Tile->RequestHighlight(Requester, ETileHighlightType::InRange);
-		}
-
 		if (Current.Value >= Range) continue; // 최대 사거리 도달 시 더 이상 뻗어나가지 않음
 
 		for (const FIntPoint& Dir : Directions)
 		{
-			FIntPoint NextPos = Current.Key + Dir;
-			if (!Visited.Contains(NextPos))
+			const FIntPoint NextPos = Current.Key + Dir;
+			if (Reachable.Contains(NextPos)) continue;
+
+			if (bIsMovement)
 			{
-				AACTile* NextTile = GetTileAtPosition(NextPos);
-				bool bCanPass = false;
-
-				if (bIsMovement)
-				{
-					// 이동: 맵에 없는 공간(낙사), 비파괴 장애물, 타일 점유(유닛) 모두 통과 불가
-					if (NextTile && !NextTile->IsObstacle() && !IsTileOccupied(NextPos, Requester))
-					{
-						bCanPass = true;
-					}
-				}
-				else
-				{
-					// 스킬: 맵에 없는 공간(낙사)이나 비파괴 장애물(지진, 용암)은 무조건 범위가 통과함
-					if (SkillData && SkillData->HitPhases[0].ProjectileSpeed > 0.f && SkillData->HitPhases[0].ProjectileGravity == 0.f)
-					{
-						// 직사 스킬: 타일 점유(캐릭터/동적장애물)를 통과할 수 없음
-						if (!IsTileOccupied(NextPos, Requester))
-						{
-							bCanPass = true;
-						}
-					}
-					else
-					{
-						// 곡사 스킬: 모든 장애물과 유닛 점유를 통과 가능
-						bCanPass = true;
-					}
-				}
-
-				if (bCanPass)
-				{
-					Visited.Add(NextPos, Current.Value + 1);
-					Queue.Enqueue(TPair<FIntPoint, int32>(NextPos, Current.Value + 1));
-				}
+				// 이동: 맵에 없는 공간(낙사), 비파괴 장애물, 타일 점유(유닛) 모두 통과 불가
+				const AACTile* NextTile = GetTileAtPosition(NextPos);
+				if (!NextTile || NextTile->IsObstacle() || IsTileOccupied(NextPos, IgnoreActor)) continue;
 			}
+
+			Reachable.Add(NextPos);
+			Queue.Enqueue(TPair<FIntPoint, int32>(NextPos, Current.Value + 1));
 		}
 	}
+
+	return Reachable;
+}
+
+TArray<AACTile*> AACGridSystem::HighlightArea(AActor* Requester, FIntPoint StartPos, int32 Range, bool bIsMovement)
+{
+	ClearRangeFor(Requester);
+
+	TArray<AACTile*>& ValidTiles = PlayerRangeTiles.FindOrAdd(Requester);
+
+	// 좌표 집합은 맵 밖도 포함하므로(스킬 사거리는 관통), 실제 타일이 있는 칸만 칠합니다.
+	for (const FIntPoint& Pos : ComputeReachablePositions(StartPos, Range, bIsMovement, Requester))
+	{
+		if (AACTile* Tile = GetTileAtPosition(Pos))
+		{
+			ValidTiles.Add(Tile);
+			Tile->RequestHighlight(Requester, ETileHighlightType::InRange);
+		}
+	}
+
 	return ValidTiles;
 }
 
@@ -296,6 +282,16 @@ void AACGridSystem::HighlightAoE(AActor* Requester, const TSet<FIntPoint>& AoEPo
 			Tile->RequestHighlight(Requester, ETileHighlightType::SkillTarget);
 			PathArray.Add(Tile);
 		}
+	}
+}
+
+void AACGridSystem::HighlightBlocked(AActor* Requester, FIntPoint TargetPos)
+{
+	// ClearPathFor를 부르지 않습니다. 착탄 칸 표시(HighlightAoE/HighlightTarget) 위에 덧그립니다.
+	if (AACTile* Tile = GetTileAtPosition(TargetPos))
+	{
+		Tile->RequestHighlight(Requester, ETileHighlightType::Blocked);
+		PlayerPathTiles.FindOrAdd(Requester).Add(Tile);
 	}
 }
 

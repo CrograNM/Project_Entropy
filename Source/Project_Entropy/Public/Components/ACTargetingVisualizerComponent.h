@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Combat/PE_TargetRules.h"
 #include "ACTargetingVisualizerComponent.generated.h"
 
 class AACTile;
@@ -35,6 +36,14 @@ public:
 	void UpdateHoveredTile(FIntPoint NewPos);
 	void ClearTargeting();
 	bool IsTileInRange(AACTile* TargetTile) const;
+
+	/**
+	 * 이 조준 상태에 대응하는 타겟 판정 컨텍스트.
+	 *
+	 * 사거리 BFS가 여기서 한 번만 돌고, 컨트롤러는 매 프레임 Evaluate로 조회만 합니다.
+	 * 칠해진 칸과 허용되는 칸이 같은 계산에서 나오므로 어긋날 수 없습니다.
+	 */
+	const FPETargetContext& GetTargetContext() const { return TargetContext; }
 
 	// 로컬 예측(Local Prediction) 및 동기화를 위한 핵심 렌더링 함수
 	void RefreshVisuals();
@@ -127,6 +136,9 @@ protected:
 	FVector ImpactSphereScale = FVector(0.5f);
 
 private:
+	// CurrentValidTiles와 같은 계산에서 나온 판정용 컨텍스트 (RefreshVisuals에서 함께 생성)
+	FPETargetContext TargetContext;
+
 	// 현재 시각화에 사용 중인 유효 타일 목록 (내부 보관용)
 	UPROPERTY()
 	TArray<AACTile*> CurrentValidTiles;

@@ -111,6 +111,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 	GridSystem->ClearAllHighlightsFor(OwnerActor);
 	CurrentValidTiles.Empty();
+	TargetContext = FPETargetContext();
 	TrajectorySpline->ClearSplinePoints();
 	PushSpline->ClearSplinePoints();
 	ClearGeneratedMeshes(); // 메쉬 청소
@@ -120,6 +121,12 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 	{
 		bool bIsMovement = (RepTargetingMode == ETargetingMode::Movement);
 		CurrentValidTiles = GridSystem->HighlightArea(OwnerActor, CenterPos, RepRange, bIsMovement);
+
+		// 칠하기와 판정이 같은 도달 집합을 보도록 여기서 함께 만듭니다.
+		if (RepTargetingMode == ETargetingMode::Skill && RepSkillData)
+		{
+			TargetContext = FPETargetRules::MakeContext(GridSystem, OwnerChar, RepSkillData->TargetType, RepRange);
+		}
 	}
 
 	// 2. 조준 및 궤적 계산
@@ -142,7 +149,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			for (const FPESkillHitPhase& Phase : RepSkillData->HitPhases)
 			{
 				PhaseTrajectories.Add(FPESkillTrajectory::Solve(
-					GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile, RepSkillData->BaseRange, Phase));
+					GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile, RepRange, Phase));
 			}
 
 			if (PhaseTrajectories.IsEmpty())
@@ -151,7 +158,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 				FPESkillHitPhase FallbackPhase;
 				FallbackPhase.ProjectileSpeed = 0.f;
 				PhaseTrajectories.Add(FPESkillTrajectory::Solve(
-					GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile, RepSkillData->BaseRange, FallbackPhase));
+					GetWorld(), GridSystem, OwnerActor, CenterPos, RepHoveredTile, RepRange, FallbackPhase));
 			}
 
 			// 궤적(화살표)은 대표 페이즈(첫 번째)의 결과로 그립니다.
@@ -189,7 +196,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 					// 막힌 페이즈는 착탄 칸(EndGridPos)을 중심으로 범위가 잡힙니다.
 					const FIntPoint PhaseTargetPos = PhaseTrajectories[PhaseIdx].EndGridPos;
-					MasterAffectedPositions.Append(Phase.GetAffectedGridPositions(CenterPos, PhaseTargetPos, RepSkillData->BaseRange));
+					MasterAffectedPositions.Append(Phase.GetAffectedGridPositions(CenterPos, PhaseTargetPos, RepRange));
 				}
 				GridSystem->HighlightAoE(OwnerActor, MasterAffectedPositions);
 			}
@@ -197,6 +204,16 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			{
 				MasterAffectedPositions.Add(ActualTargetPos);
 				GridSystem->HighlightTarget(OwnerActor, ActualTargetPos);
+			}
+
+			/*
+				앞이 막혀 조준한 칸까지 닿지 못하는 경우, 노린 칸을 따로 표시합니다.
+				사거리는 그대로 둡니다(스킬 사거리는 관통합니다).
+				"여기를 노렸고, 실제로는 저기 맞는다"를 두 칸으로 보여주는 것이 의도입니다.
+			*/
+			if (RepTrajectory.bBlocked && ActualTargetPos != RepHoveredTile)
+			{
+				GridSystem->HighlightBlocked(OwnerActor, RepHoveredTile);
 			}
 
 			// 넉백 모듈은 여러 페이즈 중 최초 1개만 찾아서 한 번만 시뮬레이션 및 시각화합니다.
@@ -216,7 +233,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 						// 밀치기는 '그 모듈이 붙은 페이즈'의 착탄 칸과 범위만 씁니다 (서버 판정과 동일한 입력).
 						PushTargetPos = PhaseTrajectories[PhaseIdx].EndGridPos;
-						PushAffectedPositions = Phase.GetAffectedGridPositions(CenterPos, PushTargetPos, RepSkillData->BaseRange);
+						PushAffectedPositions = Phase.GetAffectedGridPositions(CenterPos, PushTargetPos, RepRange);
 						PushPhaseIdx = PhaseIdx;
 						break;
 					}

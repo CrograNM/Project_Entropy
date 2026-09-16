@@ -1,6 +1,7 @@
 // Copyright CrograNM
 
 #include "Core/PE_PlayerController.h"
+#include "Combat/PE_TargetRules.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Characters/PE_PlayerCharacter.h"
@@ -256,77 +257,61 @@ void APE_PlayerController::PlayerTick(float DeltaTime)
 
 	UpdateGridHovering();
 }
-void APE_PlayerController::UpdateGridHovering() 
+AACTile* APE_PlayerController::GetTileUnderCursor()
+{
+	FHitResult HitResult;
+	if (!GetHitResultUnderCursor(ECC_Visibility, false, HitResult)) return nullptr;
+
+	if (AACTile* Tile = Cast<AACTile>(HitResult.GetActor())) return Tile;
+
+	// 캐릭터를 맞았다면 그 캐릭터가 선 칸을 조준한 것으로 봅니다.
+	APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor());
+	const UACGridMovementComponent* Move = HitChar ? HitChar->GetGridMovementComponent() : nullptr;
+
+	return (Move && GridSystem) ? GridSystem->GetTileAtPosition(Move->GetGridPosition()) : nullptr;
+}
+
+void APE_PlayerController::UpdateGridHovering()
 {
 	if (!bShowMouseCursor || !GridSystem) return;
 
-	FHitResult HitResult;
-	bool bHit = GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
-	if (!PC || !PC->GetTargetingVisualizer()) return;
+	UACTargetingVisualizerComponent* Visualizer = PC ? PC->GetTargetingVisualizer() : nullptr;
+	if (!Visualizer) return;
 
-	// 1. [이동 모드]
+	// 1. [이동 모드] 이동은 타일을 직접 찍어야 합니다 (캐릭터 위로 환산하지 않음).
 	if (bIsGridMoveActivated)
 	{
-		AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
-		if (HoveredTile)
+		FHitResult HitResult;
+		GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+		if (AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor()))
 		{
-			// [수정됨] 매 프레임 그리지 않고, 마우스가 위치한 타일 좌표만 상태로 넘깁니다.
-			PC->GetTargetingVisualizer()->UpdateHoveredTile(HoveredTile->GetGridPosition());
+			// 매 프레임 그리지 않고, 마우스가 위치한 타일 좌표만 상태로 넘깁니다.
+			Visualizer->UpdateHoveredTile(HoveredTile->GetGridPosition());
 		}
+		return;
 	}
 
 	// 2. [캐스팅 모드]
-	else if (CardInteractionComp && CardInteractionComp->IsPreparingToCast())
-	{
-		APE_CardActor* CastingCard = CardInteractionComp->GetGrabbedCard();
-		if (!CastingCard || !CastingCard->GetSkillData()) return;
+	if (!CardInteractionComp || !CardInteractionComp->IsPreparingToCast()) return;
 
-		if (bHit)
-		{
-			AACTile* HoveredTile = Cast<AACTile>(HitResult.GetActor());
-			if (!HoveredTile)
-			{
-				APE_CharacterBase* HitChar = Cast<APE_CharacterBase>(HitResult.GetActor());
-				if (HitChar && HitChar->GetGridMovementComponent())
-				{
-					HoveredTile = GridSystem->GetTileAtPosition(HitChar->GetGridMovementComponent()->GetGridPosition());
-				}
-			}
+	APE_CardActor* CastingCard = CardInteractionComp->GetGrabbedCard();
+	if (!CastingCard || !CastingCard->GetSkillData()) return;
 
-			if (HoveredTile)
-			{
-				bool bIsValidTarget = false;
-				if (PC->GetTargetingVisualizer()->IsTileInRange(HoveredTile))
-				{
-					if (CastingCard->GetSkillData()->TargetType == EPESkillTargetType::Tile)
-					{
-						bIsValidTarget = true;
-					}
-					else if (CastingCard->GetSkillData()->TargetType == EPESkillTargetType::Snap_Enemy)
-					{
-						TArray<AActor*> AllChars;
-						UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-						for (AActor* Actor : AllChars)
-						{
-							APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
-							if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
-							{
-								if (TargetChar->GetGridMovementComponent()->GetGridPosition() == HoveredTile->GetGridPosition())
-								{
-									bIsValidTarget = true;
-									break;
-								}
-							}
-						}
-					}
-				}
+	AACTile* HoveredTile = GetTileUnderCursor();
+	if (!HoveredTile) return;
 
-				if (bIsValidTarget) PC->GetTargetingVisualizer()->UpdateHoveredTile(HoveredTile->GetGridPosition());
-				else PC->GetTargetingVisualizer()->UpdateHoveredTile(FIntPoint(-999, -999));
-			}
-		}
-	}
+	/*
+		유효성은 사거리 / 팀 / 생존만 봅니다.
+		캐릭터 뒤의 칸을 노리는 것도 유효한 시전이며, 앞에서 막히는지는 궤적이 판단해
+		RefreshVisuals가 막힘 표시(ETileHighlightType::Blocked)로 알려줍니다.
+	*/
+	const FPETargetCandidate Candidate = FPETargetRules::Evaluate(Visualizer->GetTargetContext(), HoveredTile->GetGridPosition());
+
+	Visualizer->UpdateHoveredTile(Candidate.Result == EPETargetResult::Valid
+		? HoveredTile->GetGridPosition()
+		: PEGridMath::InvalidGridPos());
 }
 
 // ----- [Public Functions] -----
@@ -912,60 +897,32 @@ void APE_PlayerController::TryExecuteCardDrop(APE_CardActor* DroppedCard)
 		return;
 	}
 
-	FHitResult HitResult;
-	GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
-	AACTile* TargetTile = Cast<AACTile>(HitResult.GetActor());
-	APE_CharacterBase* TargetCharacter = Cast<APE_CharacterBase>(HitResult.GetActor());
-
-	if (!TargetTile && TargetCharacter && TargetCharacter->GetGridMovementComponent())
-	{
-		TargetTile = GridSystem->GetTileAtPosition(TargetCharacter->GetGridMovementComponent()->GetGridPosition());
-	}
-
+	AACTile* TargetTile = GetTileUnderCursor();
 	if (!TargetTile)
 	{
-		ShowToastMessage(FText::FromString(TEXT("시전 취소: 타겟을 지정하지 않았습니다.")));
+		ShowToastMessage(FPETargetRules::GetFailureText(EPETargetResult::NoTileSpecified));
 		CardInteractionComp->CancelCasting();
 		return;
 	}
 
-	bool bIsValidTarget = false;
-	if (PC->GetTargetingVisualizer()->IsTileInRange(TargetTile))
+	// 조준 중 커서가 통과한 것과 같은 판정입니다. 여기서 갈라질 수 없습니다.
+	const FPETargetCandidate Candidate = FPETargetRules::Evaluate(
+		PC->GetTargetingVisualizer()->GetTargetContext(), TargetTile->GetGridPosition());
+
+	if (Candidate.Result != EPETargetResult::Valid)
 	{
-		if (SkillData->TargetType == EPESkillTargetType::Tile) bIsValidTarget = true;
-		else if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
-		{
-			TArray<AActor*> AllChars;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
-			for (AActor* Actor : AllChars)
-			{
-				APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
-				if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
-				{
-					if (TargetChar->GetGridMovementComponent()->GetGridPosition() == TargetTile->GetGridPosition())
-					{
-						TargetCharacter = TargetChar;
-						bIsValidTarget = true;
-						break;
-					}
-				}
-			}
-		}
+		ShowToastMessage(FPETargetRules::GetFailureText(Candidate.Result));
+		CardInteractionComp->CancelCasting();
+		return;
 	}
 
-	if (bIsValidTarget)
-	{
-		if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
-		SendSkillCastRequest(SkillData, TargetTile, TargetCharacter, DroppedCard);
-		PC->GetTargetingVisualizer()->ClearTargeting();
-		CardInteractionComp->CompleteCasting();
-	}
-	else
-	{
-		ShowToastMessage(FText::FromString(TEXT("시전 취소: 유효하지 않은 타겟입니다.")));
-		CardInteractionComp->CancelCasting();
-	}
+	if (DeckManagerComp) DeckManagerComp->QueueCard(DroppedCard);
+
+	// Tile 대상 스킬은 Character가 비어 옵니다. 서버도 Tile 분기에서 TargetCharacter를 읽지 않습니다.
+	SendSkillCastRequest(SkillData, Candidate.Tile, Candidate.Character, DroppedCard);
+
+	PC->GetTargetingVisualizer()->ClearTargeting();
+	CardInteractionComp->CompleteCasting();
 }
 
 bool APE_PlayerController::GetRandomValidTargetForSkill(UPE_SkillData* SkillData, AACTile*& OutTile, APE_CharacterBase*& OutChar)
@@ -974,67 +931,27 @@ bool APE_PlayerController::GetRandomValidTargetForSkill(UPE_SkillData* SkillData
 	OutChar = nullptr;
 
 	APE_PlayerCharacter* PC = GetCachedPlayerCharacter();
-	if (!PC || !GridSystem) return false;
+	if (!PC || !GridSystem || !SkillData) return false;
 
-	FIntPoint CasterPos = PC->GetGridMovementComponent()->GetGridPosition();
+	// 지정이 필요 없는 스킬(Self / All_Enemies)은 대상 없이 그대로 발동합니다.
+	if (!FPETargetRules::RequiresTarget(SkillData->TargetType)) return true;
 
-	if (SkillData->TargetType == EPESkillTargetType::All_Enemies || SkillData->TargetType == EPESkillTargetType::Self)
-	{
-		return true;
-	}
+	// BaseRange: 마석/버프로 사거리가 변동되면(P1-1) 이 인자만 최종 사거리로 바꾸면 됩니다.
+	const FPETargetContext Context = FPETargetRules::MakeContext(GridSystem, PC, SkillData->TargetType, SkillData->BaseRange);
 
-	if (SkillData->TargetType == EPESkillTargetType::Snap_Enemy)
-	{
-		TArray<AActor*> AllChars;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APE_CharacterBase::StaticClass(), AllChars);
+	const TArray<FPETargetCandidate> Candidates = FPETargetRules::CollectValidTargets(Context);
+	if (Candidates.IsEmpty()) return false;
 
-		TArray<APE_CharacterBase*> ValidEnemies;
-		for (AActor* Actor : AllChars)
-		{
-			APE_CharacterBase* TargetChar = Cast<APE_CharacterBase>(Actor);
-			if (TargetChar && TargetChar->GetTeamID() != PC->GetTeamID() && TargetChar->GetStatComponent() && !TargetChar->GetStatComponent()->IsDead())
-			{
-				FIntPoint TargetPos = TargetChar->GetGridMovementComponent()->GetGridPosition();
-				int32 Dist = FMath::Abs(CasterPos.X - TargetPos.X) + FMath::Abs(CasterPos.Y - TargetPos.Y);
-				if (Dist <= SkillData->BaseRange)
-				{
-					ValidEnemies.Add(TargetChar);
-				}
-			}
-		}
+	/*
+		여기서 런 시드(UPE_RunManagerSubsystem)를 쓰면 안 됩니다.
+		이 함수는 클라이언트에서 돌고 런 시드 스트림은 클라마다 별개이므로,
+		여기서 스트림을 전진시키면 클라마다 시드 위치가 어긋나 시드런 재현성이 깨집니다.
+	*/
+	const FPETargetCandidate& Picked = Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
 
-		if (ValidEnemies.Num() > 0)
-		{
-			OutChar = ValidEnemies[FMath::RandRange(0, ValidEnemies.Num() - 1)];
-			OutTile = GridSystem->GetTileAtPosition(OutChar->GetGridMovementComponent()->GetGridPosition());
-			return true;
-		}
-	}
-	else if (SkillData->TargetType == EPESkillTargetType::Tile)
-	{
-		TArray<AACTile*> ValidTiles;
-		for (int32 x = -SkillData->BaseRange; x <= SkillData->BaseRange; ++x)
-		{
-			for (int32 y = -SkillData->BaseRange; y <= SkillData->BaseRange; ++y)
-			{
-				if (FMath::Abs(x) + FMath::Abs(y) <= SkillData->BaseRange)
-				{
-					if (AACTile* Tile = GridSystem->GetTileAtPosition(CasterPos + FIntPoint(x, y)))
-					{
-						ValidTiles.Add(Tile);
-					}
-				}
-			}
-		}
-
-		if (ValidTiles.Num() > 0)
-		{
-			OutTile = ValidTiles[FMath::RandRange(0, ValidTiles.Num() - 1)];
-			return true;
-		}
-	}
-
-	return false;
+	OutTile = Picked.Tile;
+	OutChar = Picked.Character;
+	return true;
 }
 
 void APE_PlayerController::ForceTriggerCardLocally(APE_CardActor* TriggeredCard)
