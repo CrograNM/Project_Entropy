@@ -78,6 +78,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Deck|Setup")
 	TSubclassOf<APE_CardActor> CardActorClass;
 
+	/** DrawPile을 런 시드 기반으로 균등하게 섞습니다 (Fisher-Yates). */
+	void ShuffleDrawPile();
+
 	// --- 카드 컬렉션 데이터 ---
 
 	// 뽑을 카드 더미 (아직 스폰되지 않은 순수 데이터)

@@ -37,17 +37,7 @@ void UACDeckManagerComponent::InitializeDeck(const TArray<UPE_CardData*>& Initia
 		}
 	}
 
-	// 셔플 로직
-	if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
-	{
-		if (UPE_RunManagerSubsystem* RunManager = GI->GetSubsystem<UPE_RunManagerSubsystem>())
-		{
-			// 인스턴스 배열을 셔플
-			DrawPile.Sort([RunManager](const UPE_CardInstance& A, const UPE_CardInstance& B) {
-				return RunManager->GetRandomBool();
-				});
-		}
-	}
+	ShuffleDrawPile();
 
 	OnDrawPileCountChanged.Broadcast(DrawPile.Num());
 	OnDiscardPileCountChanged.Broadcast(DiscardPile.Num());
@@ -138,6 +128,29 @@ void UACDeckManagerComponent::DiscardCard(APE_CardActor* CardToDiscard)
 	UpdateHandLayout();
 }
 
+void UACDeckManagerComponent::ShuffleDrawPile()
+{
+	if (DrawPile.Num() < 2) return;
+
+	UGameInstance* GI = UGameplayStatics::GetGameInstance(this);
+	UPE_RunManagerSubsystem* RunManager = GI ? GI->GetSubsystem<UPE_RunManagerSubsystem>() : nullptr;
+	if (!RunManager) return;
+
+	/*
+		Fisher-Yates.
+		뒤에서부터 i를 줄이며 [0, i] 구간의 한 칸과 맞바꾸면 n!가지 순열이 정확히 같은 확률로 나옵니다.
+
+		비교 함수에 난수를 넣는 셔플을 쓰면 안 됩니다. 정렬은 비교 결과가 매번 같다는 전제(엄격 약순서) 위에서
+		동작하는데 그 전제가 깨지면 분포가 치우치는 것은 물론 정렬 구현 자체가 미정의 동작이 되고,
+		호출 횟수가 덱 구성에 따라 달라져 같은 시드에서도 결과가 재현되지 않습니다.
+	*/
+	for (int32 i = DrawPile.Num() - 1; i > 0; --i)
+	{
+		const int32 j = RunManager->GetRandomIntInRange(0, i); // 양 끝 포함
+		if (i != j) DrawPile.Swap(i, j);
+	}
+}
+
 void UACDeckManagerComponent::ShuffleDiscardToDraw()
 {
 	if (DiscardPile.IsEmpty()) return;
@@ -146,17 +159,7 @@ void UACDeckManagerComponent::ShuffleDiscardToDraw()
 	DrawPile.Append(DiscardPile);
 	DiscardPile.Empty();
 
-	// 셔플
-	if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
-	{
-		if (UPE_RunManagerSubsystem* RunManager = GI->GetSubsystem<UPE_RunManagerSubsystem>())
-		{
-			// 인스턴스 배열 셔플
-			DrawPile.Sort([RunManager](const UPE_CardInstance& A, const UPE_CardInstance& B) {
-				return RunManager->GetRandomBool();
-				});
-		}
-	}
+	ShuffleDrawPile();
 
 	OnDeckShuffled.Broadcast();
 	OnDrawPileCountChanged.Broadcast(DrawPile.Num());
