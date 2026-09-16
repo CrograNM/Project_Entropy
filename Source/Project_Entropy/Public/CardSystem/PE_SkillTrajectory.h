@@ -1,8 +1,9 @@
-﻿// Copyright CrograNM
+// Copyright CrograNM
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Grid/PE_GridMath.h"
 #include "PE_SkillTrajectory.generated.h"
 
 struct FPESkillHitPhase;
@@ -33,8 +34,8 @@ namespace PESkillTrajectory
 	// 빈 타일을 조준할 때 타일 바닥에서 띄울 높이
 	inline constexpr float TileAimHeightOffset = 20.f;
 
-	// 그리드 밖 / 미지정을 나타내는 무효 좌표
-	inline constexpr int32 InvalidCoord = -999;
+	// 그리드 밖 / 미지정을 나타내는 무효 좌표 (실제 정의는 PEGridMath에 있습니다)
+	inline constexpr int32 InvalidCoord = PEGridMath::InvalidCoord;
 }
 
 /** 논리 좌표(그리드)와 그에 대응하는 조준용 월드 좌표 한 쌍 */
@@ -108,18 +109,6 @@ struct PROJECT_ENTROPY_API FPESkillTrajectory
 
 	/** 관통하며 스치는 대상을 '한 명씩 순차적으로' 타격하는 투사체 페이즈인지 판정합니다. */
 	static bool IsPiercingProjectile(const FPESkillHitPhase& Phase);
-
-	/**
-	 * 격자 델타를 상하좌우 4방향 중 하나로 스냅합니다. 정확한 대각선(|dx| == |dy|)은 항상 '수평'을 택합니다.
-	 *
-	 * 예전에는 Atan2 + RoundToInt로 각도를 반올림했는데, 45도에서 부동소수점 한 틱에 축이 통째로 뒤집혔고
-	 * 북동->북 / 남동->동 / 북서->서 / 남서->남 처럼 회전 규칙성도 없었습니다.
-	 * 밀치기 방향과 Custom AoE 회전이 모두 이 함수를 쓰므로 한 스킬 안에서 규칙이 갈라지지 않습니다.
-	 */
-	static FIntPoint SnapToCardinalDirection(FIntPoint Delta);
-
-	/** 스냅된 4방향을 +X(0)에서 반시계로 센 90도 회전 횟수로 바꿉니다. 0=+X, 1=+Y, 2=-X, 3=-Y */
-	static int32 GetCardinalQuarterTurns(FIntPoint Delta);
 
 	/** Line(직선/관통) 형태일 때 목표를 사거리 내 '가장 마지막 유효 타일'로 당깁니다. 그 외 형태는 그대로 반환합니다. */
 	static FIntPoint ClampLineTarget(const AACGridSystem* Grid, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase);

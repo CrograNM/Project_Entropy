@@ -1,7 +1,8 @@
-﻿// Copyright CrograNM
+// Copyright CrograNM
 
 #include "CardSystem/PE_SkillData.h"
 #include "CardSystem/PE_SkillTrajectory.h"
+#include "Grid/PE_GridMath.h"
 
 TSet<FIntPoint> FPESkillHitPhase::GetAffectedGridPositions(FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange) const
 {
@@ -64,7 +65,7 @@ TSet<FIntPoint> FPESkillHitPhase::GetAffectedGridPositions(FIntPoint CasterPos, 
 	case EPEAoEShape::Custom:
 	{
 		// 밀치기 방향과 같은 규칙으로 스냅합니다 (정확한 대각선은 항상 수평).
-		const int32 QuarterTurns = FPESkillTrajectory::GetCardinalQuarterTurns(TargetPos - CasterPos);
+		const int32 QuarterTurns = FPEGridMath::GetCardinalQuarterTurns(TargetPos - CasterPos);
 
 		for (const FIntPoint& Offset : CustomAoEOffsets)
 		{
@@ -171,7 +172,7 @@ void FPESkillHitPhase::GetAoEBoundsAndRotation(FIntPoint CasterPos, FIntPoint Ta
 		// 실제로 칠해지는 칸(GetAffectedGridPositions)과 반드시 같은 스냅 규칙을 써야 합니다.
 		if (bRotateToTarget)
 		{
-			const int32 QuarterTurns = FPESkillTrajectory::GetCardinalQuarterTurns(TargetPos - CasterPos);
+			const int32 QuarterTurns = FPEGridMath::GetCardinalQuarterTurns(TargetPos - CasterPos);
 			OutRotation = FRotator(0.f, QuarterTurns * 90.f, 0.f);
 		}
 		else

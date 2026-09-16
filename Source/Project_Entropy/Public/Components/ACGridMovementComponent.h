@@ -4,11 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "CardSystem/PE_SkillData.h" 
+#include "CardSystem/PE_SkillData.h"
 #include "ACGridMovementComponent.generated.h"
 
 class AACTile;
 class AACGridSystem;
+class APE_CharacterBase;
 
 // 이동 완료 시 터뜨릴 데미지 및 이펙트 정보 캡슐화
 USTRUCT()
@@ -21,12 +22,14 @@ struct FGridKnockbackPayload
 	UPROPERTY() TObjectPtr<AActor> HitCharacter = nullptr;
 	UPROPERTY() float TargetDamage = 0.f;
 	UPROPERTY() float OtherDamage = 0.f;
-	UPROPERTY() TObjectPtr<const UPE_SkillData> SkillData = nullptr;
 
-	UPROPERTY() int32 ActionLogID = -1;
-
-	// 액션 큐에서 발급받은 토큰 (이동/충돌 처리가 끝나면 반납)
-	UPROPERTY() int32 ActionTokenID = -1;
+	/**
+	 * 이 밀치기를 지시한 연쇄의 ID (UPE_PushCoordinatorComponent가 발급).
+	 * 도착 보고(OnKnockbackSettled)에 그대로 실어 돌려주므로 코디네이터가 역추적 맵을 들 필요가 없습니다.
+	 *
+	 * 액션 큐 토큰과 UI 로그는 더 이상 여기 담기지 않습니다. 연쇄 전체를 코디네이터가 소유합니다.
+	 */
+	UPROPERTY() int32 ChainID = -1;
 };
 
 // 큐에 담아둘 단일 이동 명령 구조체
@@ -37,12 +40,19 @@ struct FGridMoveCommand
 
 	UPROPERTY() TArray<AACTile*> Path;
 	UPROPERTY() bool bRotate = false;
-	UPROPERTY() float AbsoluteStartTime = 0.f;
 	UPROPERTY() FGridKnockbackPayload Payload;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGridMovementFinished);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGridKnockbackImpact);
+
+/**
+ * 넉백 이동이 '실제로 멈춘 순간' 발사됩니다.
+ *
+ * 피해 유무와 무관하게 넉백 명령 1건당 정확히 한 번 나가며, 대상이 처리 도중 파괴되어도 보장됩니다.
+ * 연쇄 밀치기는 예측된 지연이 아니라 오직 이 이벤트로만 출발합니다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGridKnockbackSettled, APE_CharacterBase*, Mover, int32, ChainID);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class PROJECT_ENTROPY_API UACGridMovementComponent : public UActorComponent
@@ -58,8 +68,8 @@ public:
 	void SnapCharacterToNearestTile();
 
 	UFUNCTION(NetMulticast, Reliable)
-	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f, FGridKnockbackPayload Payload = FGridKnockbackPayload());
-	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, float Delay = 0.f, FGridKnockbackPayload Payload = FGridKnockbackPayload());
+	void NetMulticast_MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, FGridKnockbackPayload Payload = FGridKnockbackPayload());
+	void MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate = false, FGridKnockbackPayload Payload = FGridKnockbackPayload());
 
 	void SetGridPosition(FIntPoint NewPos);
 
@@ -71,6 +81,8 @@ public:
 	FOnGridMovementFinished OnMovementFinished;
 	UPROPERTY(BlueprintAssignable, Category = "Movement|Events")
 	FOnGridKnockbackImpact OnKnockbackImpact;
+	UPROPERTY(BlueprintAssignable, Category = "Movement|Events")
+	FOnGridKnockbackSettled OnKnockbackSettled;
 
 protected:
 	virtual void BeginPlay() override;
@@ -85,7 +97,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Movement") float RotationSpeed = 2000.f;
 
 private:
-	UPROPERTY(ReplicatedUsing = OnRep_GridPosition) 
+	UPROPERTY(ReplicatedUsing = OnRep_GridPosition)
 	FIntPoint GridPosition;
 
 	UFUNCTION()
@@ -97,9 +109,6 @@ private:
 	void ExecuteKnockbackPayload();
 
 	UPROPERTY() TArray<FGridMoveCommand> MoveCommandQueue;
-
-	bool bIsWaitingDelay = false;
-	float DelayTimer = 0.f;
 
 	bool bIsMovingOnGrid;
 	bool bShouldRotate;

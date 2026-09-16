@@ -10,6 +10,7 @@
 #include "PE_GameState.generated.h"
 
 class UPE_TurnManagerComponent;
+class UPE_PushCoordinatorComponent;
 
 // UI 갱신 방송용 델리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionQueueUpdatedSignature, const TArray<FPEActionLogData>&, CurrentQueue);
@@ -36,6 +37,7 @@ public:
 	virtual void BeginPlay() override; 
 
 	FORCEINLINE UPE_TurnManagerComponent* GetTurnManager() const { return TurnManager; }
+	FORCEINLINE UPE_PushCoordinatorComponent* GetPushCoordinator() const { return PushCoordinator; }
 	FORCEINLINE EPEGameState GetCurrentState() const { return CurrentState; }
 
 	// --- [Action Queue 시스템] ---
@@ -66,9 +68,19 @@ public:
 
 	int32 AddActionLog(int32 TeamID, const FString& Text);
 
+	/**
+	 * UI 로그 1건을 제거합니다. ID가 -1이면 아무것도 하지 않습니다.
+	 * 밀치기 연쇄는 토큰 1개에 로그 여러 개가 달리므로, 토큰 반납과 별개로 로그를 개별 정리합니다.
+	 */
+	void RemoveActionLog(int32 ActionID);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
 	TObjectPtr<UPE_TurnManagerComponent> TurnManager;
+
+	// 밀치기 실행/연쇄를 전담합니다. 스킬 효과 모듈은 여기로 요청만 넘깁니다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "System")
+	TObjectPtr<UPE_PushCoordinatorComponent> PushCoordinator;
 
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_CurrentState, Category = "State")
 	EPEGameState CurrentState;
@@ -108,7 +120,6 @@ private:
 
 	// 큐에서 다음 행동을 꺼내어 실행
 	void ProcessNextAction();
-	void RemoveActionLog(int32 ActionID);
 
 	/** 완료 보고가 유실된 액션을 찾아 강제 해제하여 큐가 영구 정지하는 것을 막습니다. */
 	void TickActionWatchdog();

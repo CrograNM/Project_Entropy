@@ -2,6 +2,7 @@
 
 #include "Core/PE_GameState.h"
 #include "Core/PE_TurnManagerComponent.h"
+#include "Combat/PE_PushCoordinatorComponent.h"
 #include "Characters/PE_CharacterBase.h"
 #include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACSkillComponent.h"
@@ -13,6 +14,9 @@ APE_GameState::APE_GameState()
 {
 	// 턴 매니저 컴포넌트 생성 및 부착 (기존 GameMode에서 이관)
 	TurnManager = CreateDefaultSubobject<UPE_TurnManagerComponent>(TEXT("TurnManager"));
+
+	// 밀치기 코디네이터. 스킬에 종속되지 않는 밀치기 실행 주체입니다.
+	PushCoordinator = CreateDefaultSubobject<UPE_PushCoordinatorComponent>(TEXT("PushCoordinator"));
 }
 
 void APE_GameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

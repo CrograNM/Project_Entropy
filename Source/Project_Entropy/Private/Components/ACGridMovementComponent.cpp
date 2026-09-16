@@ -8,7 +8,6 @@
 #include "Grid/ACGridSystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
-#include "Core/PE_GameState.h" 
 
 UACGridMovementComponent::UACGridMovementComponent()
 {
@@ -21,7 +20,6 @@ UACGridMovementComponent::UACGridMovementComponent()
 	RotationSpeed = 2000.f;
 
 	bIsMovingOnGrid = false;
-	bIsWaitingDelay = false;
 	bHasFiredPayload = false;
 }
 
@@ -49,30 +47,32 @@ void UACGridMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		GridSystem->RemoveOccupant(Cast<APE_CharacterBase>(GetOwner()));
 	}
 
-	// [액션 큐 안전망]
-	// 넉백으로 밀려나던 도중 충돌 데미지로 사망하면 소유 액터가 파괴되어
-	// ExecuteKnockbackPayload가 영영 실행되지 않고 토큰이 유실됩니다. (= 큐 영구 정지)
-	// 파괴되는 이 시점에 아직 터뜨리지 못한 페이로드를 모두 정산합니다.
+	/*
+		[연쇄 안전망]
+		넉백으로 밀려나던 도중 충돌 데미지로 사망하면 소유 액터가 파괴되어
+		ExecuteKnockbackPayload가 영영 실행되지 않습니다. 그러면 코디네이터가 도착 보고를 받지 못해
+		연쇄가 멈추고 액션 토큰도 워치독이 강제 해제할 때까지 물려 있게 됩니다.
+		파괴되는 이 시점에 아직 보고하지 못한 넉백을 모두 대신 보고합니다.
+	*/
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		if (APE_GameState* GS = GetWorld() ? GetWorld()->GetGameState<APE_GameState>() : nullptr)
+		APE_CharacterBase* OwnerChar = Cast<APE_CharacterBase>(GetOwner());
+
+		if (CurrentPayload.bIsActive && !bHasFiredPayload)
 		{
-			if (CurrentPayload.bIsActive && !bHasFiredPayload)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[ActionQueue] %s 가 넉백 처리 도중 파괴되어 토큰을 정산합니다. Token=%d"),
-					*GetNameSafe(GetOwner()), CurrentPayload.ActionTokenID);
+			UE_LOG(LogTemp, Warning, TEXT("[Push] %s 가 넉백 처리 도중 파괴되어 도착을 대신 보고합니다. Chain=%d"),
+				*GetNameSafe(GetOwner()), CurrentPayload.ChainID);
 
-				bHasFiredPayload = true;
-				GS->EndAction(CurrentPayload.ActionTokenID, CurrentPayload.ActionLogID);
-			}
+			bHasFiredPayload = true;
+			OnKnockbackSettled.Broadcast(OwnerChar, CurrentPayload.ChainID);
+		}
 
-			// 아직 시작조차 못한 대기 명령들의 토큰도 함께 반납합니다.
-			for (const FGridMoveCommand& Cmd : MoveCommandQueue)
+		// 아직 시작조차 못한 대기 명령들도 함께 보고해야 연쇄가 정상 종료됩니다.
+		for (const FGridMoveCommand& Cmd : MoveCommandQueue)
+		{
+			if (Cmd.Payload.bIsActive)
 			{
-				if (Cmd.Payload.bIsActive)
-				{
-					GS->EndAction(Cmd.Payload.ActionTokenID, Cmd.Payload.ActionLogID);
-				}
+				OnKnockbackSettled.Broadcast(OwnerChar, Cmd.Payload.ChainID);
 			}
 		}
 	}
@@ -105,23 +105,27 @@ void UACGridMovementComponent::SnapCharacterToNearestTile()
 
 }
 
-void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath, bool bRotate, float Delay, FGridKnockbackPayload Payload)
+void UACGridMovementComponent::NetMulticast_MoveAlongPath_Implementation(const TArray<AACTile*>& InPath, bool bRotate, FGridKnockbackPayload Payload)
 {
-	MoveAlongPath(InPath, bRotate, Delay, Payload);
+	MoveAlongPath(InPath, bRotate, Payload);
 }
 
-void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate, float Delay, FGridKnockbackPayload Payload)
+void UACGridMovementComponent::MoveAlongPath(const TArray<AACTile*>& InPath, bool bRotate, FGridKnockbackPayload Payload)
 {
 	if (InPath.IsEmpty() && !Payload.bIsActive) return;
 
 	FGridMoveCommand NewCmd;
 	NewCmd.Path = InPath;
 	NewCmd.bRotate = bRotate;
-	NewCmd.AbsoluteStartTime = GetWorld()->GetTimeSeconds() + Delay;
 	NewCmd.Payload = Payload;
 	MoveCommandQueue.Add(NewCmd);
 
-	if (!bIsMovingOnGrid && !bIsWaitingDelay)
+	/*
+		경로가 비어 있으면 아래 호출 안에서 ExecuteKnockbackPayload까지 곧바로 진행되어
+		도착 보고가 이 함수가 끝나기도 전에 호출자에게 되돌아갑니다.
+		코디네이터가 재진입을 견디도록 만들어져 있는 이유입니다.
+	*/
+	if (!bIsMovingOnGrid)
 	{
 		ProcessNextCommand();
 	}
@@ -167,24 +171,12 @@ void UACGridMovementComponent::ProcessNextCommand()
 			SetGridPosition(SavedPath.Last()->GetGridPosition());
 		}
 
-		float CurrentTime = GetWorld()->GetTimeSeconds();
-
-		if (Cmd.AbsoluteStartTime > CurrentTime)
-		{
-			bIsWaitingDelay = true;
-			DelayTimer = Cmd.AbsoluteStartTime - CurrentTime;
-		}
-		else
-		{
-			bIsWaitingDelay = false;
-			StartMoving();
-		}
+		StartMoving();
 	}
 	else
 	{
 		// 이동 종료 후 상태 초기화
 		bIsMovingOnGrid = false;
-		bIsWaitingDelay = false;
 
 		if (ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
 		{
@@ -231,51 +223,49 @@ void UACGridMovementComponent::SetNextPathStep()
 void UACGridMovementComponent::ExecuteKnockbackPayload()
 {
 	// [데미지 적용 및 캐릭터 본연의 이펙트 발생을 전담]
-	if (CurrentPayload.bIsActive && !bHasFiredPayload)
+	if (!CurrentPayload.bIsActive || bHasFiredPayload) return;
+
+	bHasFiredPayload = true;
+
+	/*
+		피해가 소유 액터를 즉사시켜 파괴로 이어질 수 있으므로, 필요한 값을 먼저 떼어내고
+		CurrentPayload를 비웁니다. 그래야 그 사이 EndPlay가 끼어들어도 이중 보고가 나지 않습니다.
+	*/
+	APE_CharacterBase* OwnerChar = Cast<APE_CharacterBase>(GetOwner());
+	const FGridKnockbackPayload Payload = CurrentPayload;
+	CurrentPayload = FGridKnockbackPayload();
+
+	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		bHasFiredPayload = true;
+		AController* InstigatorController = Payload.Instigator ? Payload.Instigator->GetInstigatorController() : nullptr;
 
-		if (GetOwner()->HasAuthority())
+		if (Payload.TargetDamage > 0.f)
 		{
-			if (CurrentPayload.TargetDamage > 0.f && GetOwner())
-			{
-				UGameplayStatics::ApplyDamage(GetOwner(), CurrentPayload.TargetDamage, CurrentPayload.Instigator ? CurrentPayload.Instigator->GetInstigatorController() : nullptr, CurrentPayload.Instigator, UDamageType::StaticClass());
-			}
-			if (CurrentPayload.OtherDamage > 0.f && CurrentPayload.HitCharacter)
-			{
-				UGameplayStatics::ApplyDamage(CurrentPayload.HitCharacter, CurrentPayload.OtherDamage, CurrentPayload.Instigator ? CurrentPayload.Instigator->GetInstigatorController() : nullptr, CurrentPayload.Instigator, UDamageType::StaticClass());
-			}
-
-			if (APE_GameState* GS = GetWorld()->GetGameState<APE_GameState>())
-			{
-				GS->EndAction(CurrentPayload.ActionTokenID, CurrentPayload.ActionLogID);
-			}
+			UGameplayStatics::ApplyDamage(GetOwner(), Payload.TargetDamage, InstigatorController, Payload.Instigator, UDamageType::StaticClass());
 		}
-
-		// [스킬 데이터의 하드코딩된 VFX를 버리고, 이벤트 브로드캐스트로 위임]
-		if (CurrentPayload.TargetDamage > 0.f || CurrentPayload.OtherDamage > 0.f)
+		if (Payload.OtherDamage > 0.f && Payload.HitCharacter)
 		{
-			OnKnockbackImpact.Broadcast();
+			UGameplayStatics::ApplyDamage(Payload.HitCharacter, Payload.OtherDamage, InstigatorController, Payload.Instigator, UDamageType::StaticClass());
 		}
-
-		CurrentPayload = FGridKnockbackPayload();
 	}
+
+	// [스킬 데이터의 하드코딩된 VFX를 버리고, 이벤트 브로드캐스트로 위임]
+	if (Payload.TargetDamage > 0.f || Payload.OtherDamage > 0.f)
+	{
+		OnKnockbackImpact.Broadcast();
+	}
+
+	/*
+		[도착 보고] 연쇄 밀치기는 오직 여기서만 출발합니다.
+		마지막 칸의 오버슈트가 1.0을 돌파하는 순간에 호출되므로,
+		'앞 캐릭터가 눈으로 보기에 닿는 그 프레임'과 연쇄 출발이 일치합니다.
+	*/
+	OnKnockbackSettled.Broadcast(OwnerChar, Payload.ChainID);
 }
 
 void UACGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	if (bIsWaitingDelay)
-	{
-		DelayTimer -= DeltaTime;
-		if (DelayTimer <= 0.f)
-		{
-			bIsWaitingDelay = false;
-			StartMoving();
-		}
-		return;
-	}
 
 	if (!bIsMovingOnGrid || SavedPath.IsEmpty()) return;
 

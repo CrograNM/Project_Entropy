@@ -10,6 +10,7 @@
 #include "CardSystem/PE_SkillData.h"
 #include "CardSystem/PE_SkillEffectModule.h"
 #include "CardSystem/PE_SkillTrajectory.h"
+#include "Combat/PE_PushResolver.h"
 #include "Grid/ACGridSystem.h"
 #include "Grid/ACTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -227,21 +228,26 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			{
 				/*
 					서버가 AoE 대상을 고르는 규칙(CollectCharactersInPositions)과
-					밀치기를 전개하는 규칙(SimulatePush)을 그대로 호출합니다.
+					밀치기를 푸는 규칙(FPEPushResolver)을 그대로 호출합니다.
 					여기서 나온 결과가 곧 실제로 일어날 밀치기입니다.
 				*/
 				const int32 ExcludeTeamID = (RepSkillData->TargetType != EPESkillTargetType::Snap_Ally && OwnerChar)
 					? OwnerChar->GetTeamID() : INDEX_NONE;
 				const TSet<APE_CharacterBase*> PushTargets = GridSystem->CollectCharactersInPositions(PushAffectedPositions, OwnerActor, ExcludeTeamID);
 
-				TArray<FPushSimulationResult> PushResults;
+				/*
+					가정을 누적할 수 있는 전장을 하나 만들어 씁니다.
+					사본이 아니라 GridSystem 위의 얇은 뷰이고, "밀려났다고 치면"은 여기서만 얹힙니다.
+				*/
+				FPEPushField Field(GridSystem);
+				TArray<FPEPushStep> PushResults;
 
 				if (PushPhaseIdx != INDEX_NONE && FPESkillTrajectory::IsPiercingProjectile(RepSkillData->HitPhases[PushPhaseIdx]))
 				{
 					/*
 						관통 투사체는 서버가 '스치는 순서대로 한 명씩' 밀칩니다(APE_SkillActionActor::Tick).
-						앞 사람이 밀려나며 비운 자리를 다음 계산이 이어받으므로, 같은 적이 두 번 밀릴 수도 있습니다.
-						그 순서를 그대로 재현해야 화살표가 실제 밀림과 맞습니다.
+						즉 대상마다 별개의 연쇄가 시차를 두고 시작되고, 앞 사람이 비운 자리를 다음 계산이 이어받습니다.
+						같은 Field를 이어서 넘겨야 그 순서가 그대로 재현됩니다.
 					*/
 					TArray<APE_CharacterBase*> OrderedTargets = PushTargets.Array();
 
@@ -252,27 +258,27 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 							return FVector::DistSquared(MuzzleLoc, A.GetActorLocation()) < FVector::DistSquared(MuzzleLoc, B.GetActorLocation());
 						});
 
-					// 배치를 이어서 넘겨 앞선 밀치기의 결과가 다음 계산에 반영되게 합니다.
-					TMap<APE_CharacterBase*, FIntPoint> Board;
 					for (APE_CharacterBase* SingleTarget : OrderedTargets)
 					{
-						PushResults.Append(PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, { SingleTarget }, &Board));
+						const TArray<FPEPushRequest> Requests = PushModule->BuildPushRequests(Field, OwnerActor, PushTargetPos, { SingleTarget });
+						PushResults.Append(FPEPushResolver::SimulateChain(Field, Requests));
 					}
 				}
 				else
 				{
-					PushResults = PushModule->SimulatePush(GridSystem, OwnerActor, PushTargetPos, PushTargets);
+					const TArray<FPEPushRequest> Requests = PushModule->BuildPushRequests(Field, OwnerActor, PushTargetPos, PushTargets);
+					PushResults = FPEPushResolver::SimulateChain(Field, Requests);
 				}
 
-				for (const FPushSimulationResult& Result : PushResults)
+				for (const FPEPushStep& Result : PushResults)
 				{
-					if (!Result.TargetActor) continue;
+					if (!Result.Target) continue;
 
 					AACTile* StartTile = GridSystem->GetTileAtPosition(Result.StartPos);
 					if (!StartTile) continue;
 
 					FVector PushStart = StartTile->GetActorLocation();
-					if (UCapsuleComponent* Cap = Result.TargetActor->FindComponentByClass<UCapsuleComponent>())
+					if (UCapsuleComponent* Cap = Result.Target->FindComponentByClass<UCapsuleComponent>())
 					{
 						PushStart.Z += Cap->GetScaledCapsuleHalfHeight() * 0.5f;
 					}
