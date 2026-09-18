@@ -16,7 +16,7 @@
 ## ■ 핵심 기술 포인트
 
 - **모듈형 스킬 이펙트 시스템** — `UPE_SkillEffectModule` 기반으로 데미지/넉백 등 효과를 "장착형 모듈"로 분리. 로직별 전용 클래스를 늘리지 않고, 데이터 에셋(`UPE_SkillData`)에서 모듈을 조합하는 것만으로 신규 스킬 제작 가능.
-- **레퍼런스 카운팅 기반 액션 큐** — `APE_GameState`의 `TQueue<FPESkillActionPayload>`와 진행 카운터로 스킬 결제→애니메이션→판정의 비동기 순서를 서버가 강제. 하나의 스킬이 만드는 모든 파생 액션(투사체, 폭발, 연쇄 넉백)이 끝나야 다음 카드가 실행됨.
+- **토큰 기반 액션 큐** — `APE_GameState`의 `TQueue<FPESkillActionPayload>`와 액션 토큰(`BeginAction`/`EndAction`)으로 스킬 결제→애니메이션→판정의 비동기 순서를 서버가 강제. 하나의 스킬이 만드는 모든 파생 액션(투사체, 폭발, 연쇄 넉백)이 토큰을 반납해야 다음 카드가 실행되며, 워치독과 파괴 시점 정산으로 보고 유실에 의한 큐 정지를 차단.
 - **예측-판정 일치형 충돌 시스템** — 클라이언트 예측 시각화(스플라인)와 서버 실제 판정이 동일한 `SweepSingleByChannel` 스윕 알고리즘을 공유해, 직선/곡사/관통 스킬 모두 "보이는 대로 맞는" 결과를 보장.
 - **PVP 멀티플레이 동기화** — Advanced Sessions + Steam Online Subsystem 기반 로비/매치메이킹, 시드 기반 랜덤 동기화, 팀 ID 기반 피아식별 및 턴 종료 만장일치 시스템.
 - **상태 머신 기반 카드 상호작용** — 명시적 상태(`EPEInteractionState`)로 드래그/캐스팅/취소를 관리해 비동기 콜백 타이밍 버그를 구조적으로 차단하고, 나이아가라 VFX·커스텀 머티리얼로 완성한 손맛 있는 카드 연출(Juicy UX).
@@ -129,11 +129,15 @@ void UACCardInteractionComponent::GrabCard()
 UCLASS(Abstract, DefaultToInstanced, EditInlineNew, Blueprintable)
 class UPE_SkillEffectModule : public UObject
 {
+    // TargetLocation(월드)과 TargetGridPos(논리 격자)는 같은 지점을 가리킨다
     virtual void ApplyEffects(AActor* Instigator, const TSet<APE_CharacterBase*>& Targets,
-        const FVector& TargetLocation, const UPE_SkillData* InSkillData, float CalculatedDamage)
+        const FVector& TargetLocation, FIntPoint TargetGridPos,
+        const UPE_SkillData* InSkillData, float CalculatedDamage)
         PURE_VIRTUAL(UPE_SkillEffectModule::ApplyEffects, );
 };
 ```
+
+월드 좌표와 함께 논리 격자 좌표를 넘기는 이유는, 밀치기처럼 칸 단위로 계산하는 모듈이 월드 좌표에서 칸을 역산하지 않고 조준 미리보기와 실제 적용이 **같은 격자 좌표를 입력으로** 받게 하기 위해서다.
 
 각 타격 페이즈(`FPESkillHitPhase`)가 이 모듈을 **배열로 장착**하도록 데이터 구조를 바꿨다.
 
@@ -146,11 +150,11 @@ TArray<TObjectPtr<UPE_SkillEffectModule>> EffectModules;
 
 ```cpp
 for (UPE_SkillEffectModule* Module : ExecPhase.EffectModules)
-    if (Module) Module->ApplyEffects(Caster, AffectedTargets, PhaseTargetLoc, SkillData, FinalDamage);
+    if (Module) Module->ApplyEffects(Caster, AffectedTargets, PhaseTargetLoc, TargetPos, SkillData, FinalDamage);
 ```
 
 **결과** - 
-데미지(`UPE_SkillEffect_Damage`), 넉백(`UPE_SkillEffect_Push`)처럼 효과 하나당 모듈 클래스 하나만 만들면 되고, 새 스킬은 코드 수정 없이 `UPE_SkillData` 에셋에서 페이즈별로 원하는 모듈을 조합해 넣는 것만으로 완성된다. 실제로 이후 레이저·파도·화염구 등 신규 스킬들이 새 클래스 추가 없이 기존 Damage/Push 모듈 조합 + `HitPhases` 데이터 설정만으로 제작됐다.
+데미지(`UPE_SkillEffect_Damage`), 넉백(`UPE_SkillEffect_Push`)처럼 효과 하나당 모듈 클래스 하나만 만들면 되고, 새 스킬은 코드 수정 없이 `UPE_SkillData` 에셋에서 페이즈별로 원하는 모듈을 조합해 넣는 것만으로 완성된다. 실제로 이후 레이저·파도·화염구 등 신규 스킬들이 새 클래스 추가 없이 기존 Damage/Push 모듈 조합 + `HitPhases` 데이터 설정만으로 제작됐다. 이후 넉백 모듈은 밀치기 규칙과 실행을 전담 시스템에 넘기고 요청만 만드는 어댑터로 줄었다 (5번 항목 참고).
 
 ---
 
@@ -163,30 +167,47 @@ for (UPE_SkillEffectModule* Module : ExecPhase.EffectModules)
 스킬 실행이 결제(즉시) → 클라이언트 스킬 애니메이션(비동기 RPC) → 실제 타격(타이머/멀티캐스트)의 여러 비동기 단계로 쪼개져 있는데, 이 단계들의 순서를 보장하는 장치가 없었다. 특히 스킬 하나가 여러 히트 페이즈나 파생 밀치기까지 만들어낼 수 있어서, 그중 하나가 끝나기도 전에 다음 스킬의 결제/실행이 시작될 수 있었다.
 
 **해결** -
-`APE_GameState`에 서버 전용 큐와 레퍼런스 카운터를 두고, 진행 중인 파생 액션이 전부 끝나야 다음 큐 항목으로 넘어가게 만들었다.
+`APE_GameState`에 서버 전용 큐(`TQueue<FPESkillActionPayload>`)를 두고, 진행 중인 파생 액션이 전부 끝나야 다음 큐 항목으로 넘어가게 만들었다. 처음에는 정수 카운터(`ReportActionStarted()` +1 / `ReportActionEnded()` −1)로 구현했지만, 이 방식에서 **게임이 완전히 멈추는 데드락**이 발견되어 토큰 방식으로 다시 설계했다.
+
+카운터의 +1과 −1이 **서로 다른 객체의 생존에 의존**한 것이 원인이었다. 밀치기는 시작할 때 +1을 하고, −1은 밀려나는 캐릭터의 이동 컴포넌트가 도착하는 순간에만 했다. 그런데 연쇄 밀치기 도중 앞 캐릭터의 충돌 피해로 사망한 대상은 0.5초 뒤 파괴되므로, 자기 도착 시점 전에 사라지면 −1이 영영 호출되지 않는다. 카운터가 0으로 내려가지 않으니 다음 액션이 시작되지 않고, 턴 종료까지 막혀 게임이 정지했다.
+
+그래서 익명의 카운터를 **발급과 반납을 추적할 수 있는 토큰**으로 바꿨다.
 
 ```cpp
-// APE_GameState
-TQueue<FPESkillActionPayload> ActionQueue;
-int32 PendingActionCount = 0;
+// APE_GameState — 토큰마다 발급 시각과 발생 지점을 기록
+TMap<int32, FPEPendingAction> PendingActions;   // { ActionLogID, StartTime, Context }
 
-void APE_GameState::ReportActionEnded(int32 ActionLogID)
+int32 BeginAction(const FString& Context, int32 ActionLogID);
+
+void APE_GameState::EndAction(int32 TokenID, int32 ActionLogID)
 {
-    PendingActionCount--;
-    RemoveActionLog(ActionLogID);
-    if (PendingActionCount <= 0) // 파생된 모든 연산이 0이 될 때만
+    if (PendingActions.Remove(TokenID) == 0)
     {
-        PendingActionCount = 0;
+        // 중복 반납은 카운터를 음수로 망가뜨리는 대신 흔적만 남기고 흘려보낸다
+        UE_LOG(LogTemp, Warning, TEXT("[ActionQueue] 유효하지 않은 토큰 반납 시도: Token=%d"), TokenID);
+    }
+    RemoveActionLog(ActionLogID);
+
+    if (PendingActions.Num() == 0)  // 파생된 모든 액션이 반납됐을 때만 다음 카드로
+    {
         GetWorld()->GetTimerManager().SetTimer(ActionDelayTimerHandle, this,
             &APE_GameState::ProcessNextAction, ActionInterval, false);
     }
 }
 ```
 
-스킬의 각 히트 페이즈, 그리고 넉백처럼 스킬에서 파생되는 2차 액션까지도 `ReportActionStarted()` / `ReportActionEnded()`로 카운트에 편입시켜, 하나의 카드가 만든 모든 부수 효과가 끝나야 다음 카드가 시작되도록 했다.
+반납이 유실될 수 있는 지점에는 세 겹의 안전망을 걸었다.
+
+| 위치 | 상황 | 대응 |
+|---|---|---|
+| `UACGridMovementComponent::EndPlay` | 넉백 도중 사망해 액터가 파괴됨 | 보고하지 못한 넉백의 도착을 대신 보고 → 연쇄 토큰이 정상 반납됨 |
+| `APE_SkillActionActor::EndPlay` | 투사체가 타격 판정 전에 파괴됨 | 중복 방지 플래그로 정확히 1회 정산 |
+| 워치독 (1초 주기) | 그 밖의 모든 유실 | 5초(`ActionTimeout`) 넘게 반납이 없으면 강제 해제 + `Context`를 담은 Error 로그 |
+
+API 이름도 `ReportActionStarted/Ended`에서 `BeginAction/EndAction`으로 바꿔, 옛 호출부가 전부 컴파일 에러로 드러나게 해서 하나도 빠짐없이 옮겼다.
 
 **결과** -
-카드 연속 시전 시 소멸 버그가 해결됐고, 멀티 환경에서도 "한 스킬의 전체 연쇄 결과가 끝나야 다음 스킬 처리 시작"이 보장돼 간섭 문제가 사라졌다. 부수적으로 큐에 쌓인 항목을 `FPEActionLogData` + `OnActionQueueUpdated` 델리게이트로 UI에 방송해, 플레이어가 지금 무엇이 대기 중인지 볼 수 있는 액션 로그 UI까지 파생됐다.
+카드 연속 시전 시 소멸 버그가 해결됐고, 멀티 환경에서도 "한 스킬의 전체 연쇄 결과가 끝나야 다음 스킬 처리 시작"이 보장돼 간섭 문제가 사라졌다. 토큰 전환 이후로는 대상이 도중에 파괴돼도 큐가 멈추지 않는다. 정상 동작 중에는 `[ActionQueue]` 경고가 나오지 않도록 설계되어, 경고가 찍히면 그 `Context=` 문자열(`SkillBody:<시전자>/<스킬ID>` 등)이 곧 반납이 새는 지점을 가리킨다. 부수적으로 큐에 쌓인 항목을 `FPEActionLogData` + `OnActionQueueUpdated` 델리게이트로 UI에 방송해, 플레이어가 지금 무엇이 대기 중인지 볼 수 있는 액션 로그 UI까지 파생됐다.
 
 ---
 
