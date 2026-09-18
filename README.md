@@ -227,12 +227,88 @@ for (int32 step = 1; step <= NumSegments; ++step)
 ### 5. 연쇄 밀치기 시각적 타이밍 불일치 해결 및 시스템화
 
 **문제** -
+`[1, 2, _, _, 3]`처럼 일렬로 선 적 중 1과 2가 밀치기에 동시에 맞으면, 범위 밖의 3이 2에게 **닿기도 전에 혼자 밀려나는** 것처럼 보였다. 또 밀치기 로직 전체가 스킬 효과 모듈(`UPE_SkillEffect_Push`) 안에 있어서, 함정·장판·돌진처럼 스킬이 아닌 주체는 밀치기를 일으킬 방법이 없었다.
 
 **원인** -
+연쇄 대상의 출발 시각을 실제 충돌이 아니라 **미리 계산한 예약 시간**으로 정하고 있었다.
+
+```cpp
+// 기존: 부딪힌 칸 번호로 "이때쯤 닿겠지"를 미리 계산해 예약
+const float TimePerTile = 100.f / TaskMove->GetGridMoveSpeed();
+PendingPushes.Add({ CollidedChar, Task.RemainingDist - Step, Task.PushDir,
+                    Task.Delay + (Step * TimePerTile) });
+```
+
+이 예측은 이동 컴포넌트의 실제 보간과 두 곳에서 어긋났다.
+- `Step`은 부딪힌 칸까지 센 값이라 실제 이동한 칸 수(`Step - 1`)보다 한 칸 많다.
+- 넉백의 마지막 칸은 오버슈트 이징(`Alpha = 1 + c3(t-1)³ + c1(t-1)²`, c1=3, c3=4)을 타므로, 시각적 접촉은 마지막 칸 이동 시간의 **25% 지점**(`t = 1 - c1/c3`)에서 일어난다. 예측식은 100%를 가정했다.
+
+이동 속도 1000 기준으로 2가 3에 실제로 닿는 시각은 **0.125초**, 3의 예약 출발은 **0.300초**였다. 3은 오히려 **늦게** 출발했는데, 2가 완전히 멈춘(0.2초) 뒤에 혼자 움직이니 충돌과 끊겨 "닿지도 않았는데 밀린다"로 보였다. 하필 0.300초가 1에게 받힌 2의 두 번째 밀림과 겹쳐 "2와 동시에 밀린다"로도 읽혔다.
+
+근본 원인은 공식의 숫자가 아니라 **밀치기 모듈이 이동 컴포넌트의 타이밍 모델(칸 수·이징 곡선·타일 간격)을 손으로 한 벌 더 들고 있었다**는 점이다. 식을 고쳐도 이징 계수나 타일 간격 하나만 바뀌면 다시 어긋나는 구조였다.
 
 **해결** -
+"언제 닿을지 예측"하는 대신 **닿은 뒤에 보고받도록** 바꿨다. 이동 컴포넌트는 이미 정확한 충돌 프레임(`Alpha`가 1.0을 넘는 순간)에 넉백 페이로드를 발화하고 있었으므로, 그 자리에서 이벤트 하나를 브로드캐스트하면 된다.
 
-**결과** - 
+```cpp
+// UACGridMovementComponent — 넉백 1건당 정확히 1회. 대상이 도중에 파괴돼도 EndPlay에서 보장
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGridKnockbackSettled, APE_CharacterBase*, Mover, int32, ChainID);
+
+void UACGridMovementComponent::ExecuteKnockbackPayload()
+{
+    ...
+    OnKnockbackSettled.Broadcast(OwnerChar, Payload.ChainID);  // 연쇄는 오직 이 이벤트로만 출발
+}
+```
+
+`MoveAlongPath`의 `Delay` 인자는 완전히 삭제해 타이밍의 출처를 하나로 만들었다. 동시에 밀치기를 스킬에서 떼어내 세 계층으로 나눴다.
+
+```
+UPE_SkillEffect_Push          어댑터 — 에디터 설정값을 FPEPushRequest로 바꿔 넘길 뿐 (215줄 → 30줄)
+        │ EnqueuePush
+UPE_PushCoordinatorComponent  실행 주체 (GameState 부착) — 연쇄 전개 · 충돌 피해 · 액션 큐 토큰 소유
+        │ ResolveSingle
+FPEPushResolver               규칙의 단일 출처 — 상태 없는 순수 함수, 월드를 바꾸지 않음
+```
+
+서버는 도착 이벤트마다 `ResolveSingle`을 한 번씩 부르고, 클라이언트 조준 미리보기는 같은 함수를 시계 없이 끝까지 반복(`SimulateChain`)한다. 규칙이 한 곳뿐이라 미리보기와 실제 결과가 구조적으로 갈라질 수 없다. 전장 판정도 배치를 통째로 복사하지 않고 `AACGridSystem` 위의 얇은 뷰(`FPEPushField`)로 읽어, 밀치기마다 전장 전체를 스냅샷 뜨던 비용이 사라졌다.
+
+이벤트 기반으로 바꾸면서 새로 생기는 위험 두 가지도 설계로 막았다.
+
+- **연쇄 도중 액션 큐가 비는 문제** — 대상마다 토큰을 발급하면 한 링크가 끝나고 다음 링크가 시작되기 전 프레임에 토큰 수가 0이 되어 다음 스킬이 끼어든다. 연쇄 전체에 **토큰 1개**를 발급하고, 대기 요청과 이동 중인 대상이 모두 빌 때만 반납한다.
+- **동기 재진입** — 0칸 밀치기는 `MoveAlongPath` 안에서 즉시 도착 이벤트가 되돌아와 코디네이터가 자기 자신을 다시 호출한다. 재진입은 표시만 하고 바깥 루프가 이어서 처리하도록 평탄화했다.
+
+```cpp
+void UPE_PushCoordinatorComponent::Drain()
+{
+    if (bIsDraining) { bDrainRequested = true; return; }  // 재진입은 표시만 하고 복귀
+    bIsDraining = true;
+
+    do
+    {
+        bDrainRequested = false;
+        TArray<int32> ChainIDs;
+        ActiveChains.GenerateKeyArray(ChainIDs);  // 전개 중 연쇄가 추가/종료될 수 있으므로 키를 먼저 뜬다
+
+        for (int32 ChainID : ChainIDs)
+        {
+            const FPEPushChain* Chain = ActiveChains.Find(ChainID);
+            if (!Chain || Chain->Pending.IsEmpty()) continue;
+            DispatchGeneration(ChainID);
+            bDrainRequested = true;
+        }
+    } while (bDrainRequested);
+
+    bIsDraining = false;
+    CloseSettledChains();  // 대기·이동 중이 모두 빈 연쇄만 토큰 반납
+}
+```
+
+**결과** -
+- `[1, 2, _, _, 3]`에서 3이 2와 부딪히는 바로 그 프레임에 출발한다. 예측값 자체가 없으므로 이동 속도·타일 간격을 바꿔도 어긋날 대상이 없다.
+- `FPEPushRequest`만 만들면 스킬이 아닌 주체도 같은 경로로 밀치기를 일으킬 수 있다 (`EPEPushCause { Skill, Collision, Environment }`).
+- 조준 미리보기와 서버 실행이 같은 `ResolveSingle`을 통과해 "예측과 다르게 밀렸다"는 괴리가 사라졌다.
+- 연쇄가 토큰 1개로 묶여, 밀리던 대상이 충돌 피해로 사망해도 액션 큐가 멈추거나 다음 스킬이 끼어들지 않는다.
 
 ## License
 이 저장소는 오픈소스가 아닙니다. 포트폴리오 열람 목적으로만 코드 확인이 가능하며, 명시적 서면 허가 없이 복제·수정·배포·상업적/비상업적 사용을 금지합니다. 자세한 내용은 [LICENSE](LICENSE)를 참고하세요.
