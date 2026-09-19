@@ -13,8 +13,7 @@ bool FPETargetRules::RequiresTarget(EPESkillTargetType TargetType)
 		&& TargetType != EPESkillTargetType::All_Enemies;
 }
 
-FPETargetContext FPETargetRules::MakeContext(const AACGridSystem* Grid, const APE_CharacterBase* Caster,
-	EPESkillTargetType TargetType, int32 Range)
+FPETargetContext FPETargetRules::MakeContext(const AACGridSystem* Grid, const APE_CharacterBase* Caster, EPESkillTargetType TargetType, int32 Range)
 {
 	FPETargetContext Context;
 	Context.Grid = Grid;
@@ -33,8 +32,7 @@ FPETargetContext FPETargetRules::MakeContext(const AACGridSystem* Grid, const AP
 	return Context;
 }
 
-bool FPETargetRules::IsTargetableBy(const APE_CharacterBase* Candidate, const APE_CharacterBase* Caster,
-	EPESkillTargetType TargetType)
+bool FPETargetRules::IsTargetableBy(const APE_CharacterBase* Candidate, const APE_CharacterBase* Caster, EPESkillTargetType TargetType)
 {
 	if (!Candidate) return false;
 
