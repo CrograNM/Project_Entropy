@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Core/PE_PlayerController.h"
+#include "Components/PE_CardCastComponent.h"
 #include "Characters/PE_PlayerCharacter.h"
 #include "Components/ACStatComponent.h"
 
@@ -281,7 +282,10 @@ void UACCardInteractionComponent::ReleaseCard()
 		// 애니메이션이 완전히 끝나기 전에 마우스를 놓으면 시전 취소로 간주
 		if (bIsCastingReadyAnimFinished)
 		{
-			if (PC) PC->TryExecuteCardDrop(GrabbedCard);
+			if (UPE_CardCastComponent* CardCast = PC ? PC->GetCardCast() : nullptr)
+			{
+				CardCast->TryExecuteCardDrop(GrabbedCard);
+			}
 		}
 		else
 		{
@@ -294,45 +298,25 @@ void UACCardInteractionComponent::ReleaseCard()
 	}
 }
 
-void UACCardInteractionComponent::CompleteCasting()
+void UACCardInteractionComponent::CompleteCasting() { ResetInteraction(/*bRestoreCard=*/false); }
+void UACCardInteractionComponent::CancelCasting()   { ResetInteraction(/*bRestoreCard=*/true); }
+
+void UACCardInteractionComponent::ResetInteraction(bool bRestoreCard)
 {
+	/*
+		월드 상태(덱 매니저 / 조준 표시) 정리는 완료 경로에서는 항상 수행하고,
+		취소 경로에서는 잡고 있던 카드가 있을 때만 수행합니다.
+		합치기 이전 두 함수의 동작을 그대로 옮긴 것입니다.
+	*/
+	const bool bClearWorldState = (GrabbedCard != nullptr) || !bRestoreCard;
+
 	if (GrabbedCard)
 	{
 		GrabbedCard->CancelMoveToTarget();
 	}
 
-	if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
+	if (bClearWorldState)
 	{
-		DeckManager->SetCastingCard(nullptr);
-		DeckManager->SetDraggedCard(nullptr);
-		DeckManager->SetInCastingZone(false);
-		DeckManager->UpdateHandLayout();
-	}
-
-	if (PC)
-	{
-		if (APE_PlayerCharacter* PlayerChar = PC->GetCachedPlayerCharacter())
-		{
-			if (UACTargetingVisualizerComponent* Visualizer = PlayerChar->GetTargetingVisualizer())
-				Visualizer->ClearTargeting();
-		}
-	}
-
-	bIsPreparingToCast = false;
-	bIsCastingReadyAnimFinished = false;
-	bIsKeyboardCasting = false; 
-	GrabbedCard = nullptr;
-	HoveredCard = nullptr; 
-	HoveredCardDuringDrag = nullptr;
-	CurrentState = EPEInteractionState::Hovering;
-}
-
-void UACCardInteractionComponent::CancelCasting()
-{
-	if (GrabbedCard)
-	{
-		GrabbedCard->CancelMoveToTarget();
-
 		if (UACDeckManagerComponent* DeckManager = GetOwner()->FindComponentByClass<UACDeckManagerComponent>())
 		{
 			DeckManager->SetCastingCard(nullptr);
@@ -349,7 +333,11 @@ void UACCardInteractionComponent::CancelCasting()
 					Visualizer->ClearTargeting();
 			}
 		}
+	}
 
+	// 취소된 카드는 연출을 멈추고 다시 집을 수 있도록 충돌을 되살립니다.
+	if (bRestoreCard && GrabbedCard)
+	{
 		GrabbedCard->StopCardAnimations();
 		GrabbedCard->SetActorEnableCollision(true);
 	}

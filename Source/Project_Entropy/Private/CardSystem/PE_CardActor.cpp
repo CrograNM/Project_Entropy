@@ -11,6 +11,7 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "NiagaraComponent.h"
 #include "Core/PE_PlayerController.h"
+#include "Components/PE_CardCastComponent.h"
 #include "Components/ACCardInteractionComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -195,7 +196,10 @@ void APE_CardActor::NotifyCastingReadyAnimFinished()
 		}
 
 		// 턴 종료 카드의 애니메이션 완료를 직접 호출하여 델리게이트 크래시 원천 차단
-		PC->NotifyTurnEndCardReadyAnimFinished(this);
+		if (UPE_CardCastComponent* CardCast = PC->GetCardCast())
+		{
+			CardCast->NotifyTurnEndReadyAnimFinished(this);
+		}
 	}
 }
 
@@ -203,6 +207,9 @@ void APE_CardActor::NotifyDiscardAnimFinished()
 {
 	if (APE_PlayerController* PC = Cast<APE_PlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
 	{
-		PC->NotifyDiscardAnimFinishedForCard(this);
+		if (UPE_CardCastComponent* CardCast = PC->GetCardCast())
+		{
+			CardCast->NotifyDiscardAnimFinished(this);
+		}
 	}
 }

@@ -9,6 +9,7 @@
 #include "CardSystem/PE_SkillData.h"
 #include "Net/UnrealNetwork.h"
 #include "Core/PE_PlayerController.h"
+#include "Components/PE_CardCastComponent.h"
 
 APE_GameState::APE_GameState()
 {
@@ -228,7 +229,11 @@ void APE_GameState::AdvanceTurnEndPhase()
 
 		if (NextPC)
 		{
-			NextPC->Client_TriggerTurnEndCards(); // "네 카드들 쏴라"
+			// "네 카드들 쏴라"
+			if (UPE_CardCastComponent* CardCast = NextPC->GetCardCast())
+			{
+				CardCast->Client_TriggerTurnEndCards();
+			}
 		}
 		else
 		{

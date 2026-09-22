@@ -57,31 +57,6 @@ public:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_RequestGridMove(AACTile* TargetTile); // 클라이언트에서 타일 클릭 시 서버로 이동 요청 (충돌 처리 포함)
 
-	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void SendSkillCastRequest(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, class APE_CardActor* SourceCard, bool bIsFreeCast = false);
-	
-	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_RequestSkillCast(class UPE_SkillData* SkillData, class AACTile* TargetTile, class APE_CharacterBase* TargetCharacter, int32 ClientRequestID, bool bIsFreeCast);
-	
-	// 서버가 액션 큐 차례가 되어 클라이언트 측 애니메이션 재생을 명령
-	UFUNCTION(Client, Reliable)
-	void Client_PlaySkillAnim(int32 ClientRequestID);
-
-	// 애니메이션 재생 후 C++ 이벤트를 거쳐 클라이언트가 서버에 완료 보고
-	UFUNCTION(Server, Reliable)
-	void Server_NotifySkillAnimFinished(int32 ClientRequestID);
-
-	// Blueprint 타임라인이 끝나고 CardActor에서 PC를 역참조할 때 사용되는 브릿지
-	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void NotifyDiscardAnimFinishedForCard(class APE_CardActor* Card);
-
-	// 서버 측에서 최종적으로 발사체 스폰 후 클라이언트에 논리적인 버리기를 통보
-	UFUNCTION(Client, Reliable)
-	void Client_ConfirmSkillExecution(int32 ClientRequestID);
-
-	UFUNCTION(Client, Reliable)
-	void Client_CancelSkillExecution(int32 ClientRequestID);
-
 	UFUNCTION(Client, Reliable)
 	void Client_CancelCurrentAction();
 
@@ -95,30 +70,21 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_ResetReadyState(); 
 
-	UFUNCTION(Client, Reliable)
-	void Client_TriggerTurnEndCards();
-
-	UFUNCTION(Server, Reliable)
-	void Server_TurnEndCardsFinished();
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Turn System")
 	bool bIsReadyForTurnEnd = false;
 
-	UFUNCTION(BlueprintCallable, Category = "Battle Input")
-	void TryExecuteCardDrop(class APE_CardActor* DroppedCard);
-
-	UFUNCTION(BlueprintCallable, Category = "Battle Input|Trigger")
-	void ForceTriggerCardLocally(class APE_CardActor* TriggeredCard);
-
-	UFUNCTION(BlueprintCallable, Category = "Turn System")
-	void NotifyTurnEndCardReadyAnimFinished(class APE_CardActor* Card);
-
-	// --- [안전한 멀티플레이어 참조 헬퍼 함수] ---
+	// --- [Getter] ---
 	UFUNCTION(BlueprintCallable, Category = "References")
 	APE_PlayerCharacter* GetCachedPlayerCharacter();
 
 	UFUNCTION(BlueprintCallable, Category = "References")
 	UPE_TurnManagerComponent* GetCachedTurnManager();
+
+	// --- [Getter, Components] ---
+	FORCEINLINE class UPE_CardCastComponent* GetCardCast() const { return CardCastComp; }
+	FORCEINLINE UACCardInteractionComponent* GetCardInteraction() const { return CardInteractionComp; }
+	FORCEINLINE UACDeckManagerComponent* GetDeckManager() const { return DeckManagerComp; }
+	FORCEINLINE AACGridSystem* GetGridSystem() const { return GridSystem; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -178,6 +144,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UACCardInteractionComponent> CardInteractionComp; // 카드 상호작용 컴포넌트
 
+	// 카드 시전 요청 -> 서버 확정/취소 왕복을 전담합니다. 컨트롤러는 입력만 넘깁니다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<class UPE_CardCastComponent> CardCastComp;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<class UPE_CheatComponent> CheatNetworkComp;
 
@@ -213,22 +183,6 @@ private:
 	bool bIsGridMoveActivated = false;
 
 	bool IsMyTurn() const; 
-
-	bool GetRandomValidTargetForSkill(class UPE_SkillData* SkillData, class AACTile*& OutTile, class APE_CharacterBase*& OutChar);
-
-	// 카드 정보 전송용 클라이언트 로컬 매핑 데이터 (시전 요청 ID -> 카드 액터)
-	int32 CurrentSkillRequestID = 0;
-	UPROPERTY()
-	TMap<int32, class APE_CardActor*> PendingSkillRequests;
-
-	TMap<int32, bool> PendingSkillAutoCastFlags;
-
-	// 턴 종료 카드 순차 발동 지원을 위한 임시 캐싱
-	UPROPERTY()
-	class APE_CardActor* PendingTurnEndCard = nullptr;
-
-	UPROPERTY()
-	class APE_CardActor* FailedTurnEndCard = nullptr;
 
 	// ----- [Temporary Variables] -----
 	float StoredMouseX = 0.f;

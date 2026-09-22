@@ -18,6 +18,7 @@
 #include "CardSystem/PE_SkillTrajectory.h"
 #include "Grid/ACGridSystem.h"
 #include "Combat/PE_TargetRules.h"
+#include "Components/PE_CardCastComponent.h"
 
 UACSkillComponent::UACSkillComponent()
 {
@@ -199,7 +200,10 @@ void UACSkillComponent::PrepareQueuedSkill(const FPESkillActionPayload& Payload)
 
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
 		{
-			PC->Client_CancelSkillExecution(Payload.ClientRequestID);
+			if (UPE_CardCastComponent* CardCast = PC->GetCardCast())
+			{
+				CardCast->Client_CancelCardCast(Payload.ClientRequestID);
+			}
 		}
 		if (GS) GS->EndAction(Payload.ActionTokenID, Payload.ActionLogID);
 		return;
@@ -215,7 +219,10 @@ void UACSkillComponent::PrepareQueuedSkill(const FPESkillActionPayload& Payload)
 		// 클라이언트에게 산화(버리기) 애니메이션 재생을 명령하고 대기
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
 		{
-			PC->Client_PlaySkillAnim(Payload.ClientRequestID);
+			if (UPE_CardCastComponent* CardCast = PC->GetCardCast())
+			{
+				CardCast->Client_PlayCardCastAnim(Payload.ClientRequestID);
+			}
 		}
 	}
 }
@@ -257,7 +264,12 @@ void UACSkillComponent::CommitQueuedSkill(const FPESkillActionPayload& Payload)
 	if (Payload.ClientRequestID != -1)
 	{
 		if (APE_PlayerController* PC = Cast<APE_PlayerController>(Caster->GetController()))
-			PC->Client_ConfirmSkillExecution(Payload.ClientRequestID);
+		{
+			if (UPE_CardCastComponent* CardCast = PC->GetCardCast())
+			{
+				CardCast->Client_ConfirmCardCast(Payload.ClientRequestID);
+			}
+		}
 	}
 
 	if (SkillData->TargetType != EPESkillTargetType::Self && SkillData->TargetType != EPESkillTargetType::All_Enemies)

@@ -74,6 +74,14 @@ private:
 	void ProcessHovering();
 	void ProcessDragging();
 
+	/**
+	 * 상호작용 상태를 초기 상태(Hovering)로 되돌립니다.
+	 *
+	 * bRestoreCard = true  (취소) : 잡고 있던 카드의 연출을 멈추고 다시 클릭 가능하게 복구합니다.
+	 * bRestoreCard = false (완료) : 카드는 시전 쪽이 가져갔으므로 손대지 않습니다.
+	 */
+	void ResetInteraction(bool bRestoreCard);
+
 	UPROPERTY() TObjectPtr<APE_CardActor> HoveredCard;
 	UPROPERTY() TObjectPtr<APE_CardActor> GrabbedCard;
 	UPROPERTY() TObjectPtr<APE_CardActor> HoveredCardDuringDrag;
