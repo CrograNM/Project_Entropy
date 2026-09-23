@@ -69,7 +69,14 @@ void UACDeckManagerComponent::DrawCards(int32 Count)
 			ShuffleDiscardToDraw();
 
 			// 섞었는데도 비어있다면(덱 0장) 드로우 종료
-			if (DrawPile.IsEmpty()) break;
+			if (DrawPile.IsEmpty()) 
+			{
+				if (APE_PlayerController* PC = Cast<APE_PlayerController>(GetOwner()))
+				{
+					PC->ShowToastMessage(FText::FromString(ErrorMsg));
+				}
+				break;
+			}
 		}
 
 		// 덱의 맨 위(마지막 인덱스)에서 카드 데이터를 꺼냄
