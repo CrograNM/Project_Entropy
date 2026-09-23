@@ -20,46 +20,46 @@ struct FPESkillHitPhase
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Timing")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Timing", meta = (ClampMin = "0.0", Units = "s"))
 	float TriggerTime = 0.f; // 스킬 시전 시작 후 해당 타격/투사체가 발생할 때까지의 대기 시간
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Stats")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Stats", meta = (ClampMin = "0.0"))
 	float DamageMultiplier = 1.0f; // 기본 데미지 배율 (예: 0.5 = 50% 데미지)
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE")
 	EPEAoEShape AoEShape = EPEAoEShape::None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape != EPEAoEShape::None && AoEShape != EPEAoEShape::Custom && AoEShape != EPEAoEShape::Line"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape != EPEAoEShape::None && AoEShape != EPEAoEShape::Custom && AoEShape != EPEAoEShape::Line", EditConditionHides, ClampMin = "0"))
 	int32 AoESize = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom", EditConditionHides))
 	TArray<FIntPoint> CustomAoEOffsets;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Line"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Line", EditConditionHides, ClampMin = "0.0"))
 	float LineWidth = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|AoE", meta = (EditCondition = "AoEShape == EPEAoEShape::Custom", EditConditionHides))
 	bool bRotateToTarget = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
 	TSubclassOf<APE_SkillActionActor> SkillActorClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action", meta = (EditCondition = "SkillActorClass != nullptr", EditConditionHides))
 	bool bDestroyOnHit = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action", meta = (ClampMin = "0.0"))
 	float ProjectileSpeed = 800.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action", meta = (EditCondition = "ProjectileSpeed > 0.0", EditConditionHides, ClampMin = "0.0"))
 	float ProjectileGravity = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action", meta = (EditCondition = "SkillActorClass != nullptr", EditConditionHides))
 	TObjectPtr<UNiagaraSystem> ActionVFX;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action", meta = (EditCondition = "SkillActorClass != nullptr", EditConditionHides))
 	TObjectPtr<USoundBase> ActionSFX;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Action", meta = (ClampMin = "0.0", Units = "s"))
 	float ExplosionDelay = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion")
@@ -68,7 +68,7 @@ struct FPESkillHitPhase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion")
 	TObjectPtr<USoundBase> ExplosionSFX;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Explosion", meta = (ClampMin = "0.0", Units = "s"))
 	float HitDelay = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Phase|Hit")
@@ -101,16 +101,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Element")
 	FGameplayTag ElementTag;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats", meta = (ClampMin = "0.0"))
 	float BaseDamage = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats", meta = (ClampMin = "0.0"))
 	float BaseHeal = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats", meta = (ClampMin = "0"))
 	int32 BaseAPCost = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Stats", meta = (ClampMin = "0"))
 	int32 BaseRange = 1;
 
 	// ---- 스킬 타격 페이즈 배열
@@ -121,7 +121,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
 	TObjectPtr<UAnimMontage> CastAnimMontage;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast", meta = (EditCondition = "CastAnimMontage != nullptr", EditConditionHides))
 	FName CastAnimSectionName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cast")
