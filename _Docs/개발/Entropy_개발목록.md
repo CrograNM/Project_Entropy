@@ -11,7 +11,7 @@
 |:--:|---|:--:|:--:|
 | **0** | 즉시 수정 (동작 불일치 2건) | 반나절 | — |
 | **1** | 전투 생명주기 (전투 종료 · 드로우 룰) | 반나절~1일 | — |
-| **2** | 이펙트 모듈 컨텍스트 확장 | 1~2시간 | — |
+| **2** | 스킬 실행 구조 재편 | 1~2일 | — |
 | **3** | 상태이상 시스템 | 2~3일 | 2 |
 | **4** | 타일 속성 시스템 | 3~4일 | 2, 3 |
 | **5** | 시각화 정리 | 1일 | 4 |
@@ -116,22 +116,142 @@
 
 ---
 
-# 단계 2 — 이펙트 모듈 컨텍스트 확장
+# 단계 2 — 스킬 실행 구조 재편
 
-### 2-1. `ApplyEffects`에 영향 타일 집합 전달
+`UACSkillComponent::CommitQueuedSkill`이 281줄(230~510)이며 3중 중첩 람다(`ExecutePhaseFunc` → `ExplodeFunc` → `ApplyHitFunc`)로 구성되어 있다. 폭발 → 피격 → 모듈 적용 체인이 즉발 경로와 투사체 경로에 각각 구현되어 있다.
 
-**작업** — `UPE_SkillEffectModule::ApplyEffects` 시그니처에 `const TSet<FIntPoint>& AffectedPositions` 추가. 호출부는 이미 계산해 둔 값을 넘긴다. 기존 모듈 2종(`Damage`, `Push`)의 시그니처를 맞춘다.
+| 단계 | 즉발 경로 | 투사체 경로 |
+|---|---|---|
+| 폭발 연출 | `ACSkillComponent.cpp:470` | `PE_SkillActionActor.cpp:216` |
+| `HitDelay` 타이머 | `ACSkillComponent.cpp:475` | `PE_SkillActionActor.cpp:224` |
+| 모듈 적용 | `ACSkillComponent.cpp:453` | `PE_SkillActionActor.cpp:172`(관통) · `:243`(일반) |
+| 피격 연출 | `ACSkillComponent.cpp:457` | `:177` · `:256` |
 
-**배경** — 현재 모듈이 받는 것은 캐릭터 집합(`TSet<APE_CharacterBase*>`)과 단일 좌표(`TargetGridPos`)뿐이다. 호출부는 바로 앞에서 `AffectedPositions`를 계산하지만 모듈에 넘기지 않는다. 타일을 대상으로 하는 모듈(타일 속성 부여 등)이 AoE 계산을 다시 수행해야 한다.
+`Module->ApplyEffects` 호출부가 3곳, 피격 연출이 3곳이다. P2-1(스윕 궤적 2벌) · P2-2(밀치기 2벌)와 같은 구조이며, 한쪽만 수정하면 즉발 스킬과 투사체 스킬의 동작이 갈라진다.
 
-**대상**
-- `Public/CardSystem/PE_SkillEffectModule.h`
-- `Private/CardSystem/PE_SkillEffectModule.cpp`
-- 계산 위치: `Private/Components/ACSkillComponent.cpp:387`
-- 호출 위치: `Private/Components/ACSkillComponent.cpp:453`
-- 투사체 경로: `Private/CardSystem/PE_SkillActionActor.cpp`
+프로젝트에는 이미 같은 형태의 해법이 세 번 적용되어 있다. 이 단계는 그 패턴을 스킬 실행에 적용한다.
+
+| 규칙 (정적 함수) | 결과 (구조체) |
+|---|---|
+| `FPETargetRules` | `FPETargetCandidate` |
+| `FPESkillTrajectory` | `FPESkillTrajectoryResult` |
+| `FPEPushResolver` | `FPEPushStep` |
+
+**선행 관계** — 단계 4(타일 속성)와 단계 6(동적 수치)이 모두 이 경로를 수정한다. 이 단계를 시그니처 확장으로만 처리하면 같은 함수를 세 번 고치게 된다.
+
+---
+
+### 2-0. `EPESkillTargetType` 2필드 분리
+
+**작업** — 한 열거형에 섞여 있는 두 축을 별도 필드로 쪼갠다.
+
+```
+EPESkillAimMode     조준 방식   Tile / SnapCharacter / Self / None(조준 없음)
+EPESkillTargetTeam  대상 필터   Enemy / Ally / Any
+```
+
+기존 5개 값을 두 필드 조합으로 옮긴다.
+
+| 기존 값 | AimMode | TargetTeam |
+|---|---|---|
+| `Tile` | Tile | Enemy |
+| `Snap_Enemy` | SnapCharacter | Enemy |
+| `Snap_Ally` | SnapCharacter | Ally |
+| `Self` | Self | Ally |
+| `All_Enemies` | None | Enemy |
+
+**배경** — 조준 방식과 대상 필터가 한 열거형에 눌려 있어 조합을 표현할 수 없다. "아군 전체", "타일 지정 + 아군 전용"이 불가능하고, 값을 추가하면 교차곱만큼 늘어난다. 0-2(힐 모듈)가 `Snap_Ally` 하나만 쓸 수 있는 상태다.
+
+**대상** — `Public/CardSystem/PE_DataTypes.h`, `Public/CardSystem/PE_SkillData.h`, `Public/Combat/PE_TargetRules.h`(4곳), `Private/Combat/PE_TargetRules.cpp`(12곳), `Private/Components/ACSkillComponent.cpp`(7곳), `Private/Components/ACCardInteractionComponent.cpp`(2곳), `Private/Components/ACTargetingVisualizerComponent.cpp`, `Private/Components/PE_CardCastComponent.cpp`, `Private/Characters/PE_EnemyBase.cpp`
+
+**주의 — 데이터 마이그레이션 필요.** 열거형 값이 바뀌므로 기존 스킬 데이터 에셋의 `TargetType`이 유실된다. 둘 중 하나를 택한다.
+
+1. 기존 `TargetType` 필드를 남겨둔 채 새 필드 2개를 추가하고, `UPE_SkillData::PostLoad`에서 위 표대로 이관한 뒤 다음 커밋에서 구 필드를 제거
+2. `DefaultEngine.ini`에 `+EnumRedirects`를 작성
+
+스킬 에셋 수가 적으면 1번이 안전하다.
+
+**완료 기준** — "아군 전체 회복" 스킬이 코드 수정 없이 데이터만으로 동작한다.
+
+**선행 관계** — 2-5(`TargetType` 분기 통합)보다 **먼저** 진행한다. 순서를 바꾸면 정리한 분기를 다시 손대게 된다.
+
+---
+
+### 2-1. `FPESkillPhasePlan` 결과 구조체 + 정적 리졸버
+
+**작업** — 페이즈 1건을 "지금 전장"에 대고 푼 결과를 담는 구조체와, 그것을 만드는 상태 없는 정적 함수를 추가한다.
+
+```
+FPESkillPhasePlan
+├─ FIntPoint                 ImpactPos          // Line 끝단 보정 + 막힘 판정까지 끝난 최종 착탄 칸
+├─ FVector                   ImpactLocation
+├─ FVector                   MuzzleLocation
+├─ FRotator                  CasterRotation
+├─ APE_CharacterBase*        ImpactCharacter    // 막혀서 부딪힌 대상 (없으면 null)
+├─ TSet<FIntPoint>           AffectedPositions  // 영향 타일 집합
+├─ TSet<APE_CharacterBase*>  AffectedTargets
+└─ float                     Damage             // BaseDamage × DamageMultiplier
+```
+
+```
+FPEPhaseResolver::Resolve(World, Grid, Caster, CasterPos, TargetPos, Range, Phase, TargetType)
+```
+
+**배경** — 현재 이 값들은 `ExecutePhaseFunc` 람다 안의 지역 변수 6개(`PhaseTargetLoc`, `PhaseTargetChar`, `MuzzleLoc`, `bHasMuzzleLoc`, `ExactRotation`, `AffectedTargets`)로 흩어져 있고, `TargetPos`는 `mutable` 캡처로 스코프를 넘나들며 변형된다.
+
+**대상** — `Public/CardSystem/PE_SkillPhasePlan.h`(신규), `Private/CardSystem/PE_SkillPhasePlan.cpp`(신규)
+
+**완료 기준** — 서버 실행과 클라 예측이 같은 `Resolve`를 호출해 동일한 `FPESkillPhasePlan`을 얻는다.
+
+---
+
+### 2-2. 폭발 → 피격 → 모듈 체인을 단일 경로로 통합
+
+**작업** — 위 표의 두 경로를 하나로 합친다. 투사체 액터는 "도착했다"만 보고하고, 폭발 연출 · `HitDelay` 대기 · 모듈 적용 · 피격 연출 · 액션 큐 토큰 반납은 통합된 실행자 한 곳에서 처리한다.
+
+**대상** — `Private/Components/ACSkillComponent.cpp`, `Private/CardSystem/PE_SkillActionActor.cpp`
+
+**완료 기준** — `Module->ApplyEffects` 호출부가 1곳으로 줄어든다. 즉발 스킬과 투사체 스킬이 같은 함수를 통과한다. 관통 투사체의 순차 타격은 기존 동작을 유지한다.
+
+---
+
+### 2-3. `ApplyEffects`에 페이즈 계획 전달
+
+**작업** — `UPE_SkillEffectModule::ApplyEffects` 시그니처를 개별 인자 6개에서 `const FPESkillPhasePlan&` 전달로 교체한다. 기존 모듈 2종(`Damage`, `Push`)을 맞춘다.
+
+**배경** — 현재 모듈이 받는 것은 캐릭터 집합과 단일 좌표뿐이어서, 타일을 대상으로 하는 모듈(단계 4의 타일 속성 부여)이 AoE 계산을 다시 수행해야 한다.
+
+**대상** — `Public/CardSystem/PE_SkillEffectModule.h`, `Private/CardSystem/PE_SkillEffectModule.cpp`
 
 **완료 기준** — 모듈 내부에서 `GetAffectedGridPositions`를 호출하지 않고 영향 타일 목록을 얻을 수 있다.
+
+---
+
+### 2-4. `InitializeActionActor` 인자를 구조체로
+
+**작업** — 인자 11개(`Caster`, `PhaseTargetChar`, `PhaseTargetLoc`, `SkillData`, `PhaseIndex`, `FinalDamage`, `LogIDToClear`, `PhaseToken`, `AffectedTargets`, `CasterPos`, `TargetPos`)를 `FPESkillPhasePlan` + 토큰 정보 구조체로 교체한다.
+
+**대상** — `Public/CardSystem/PE_SkillActionActor.h`, `Private/CardSystem/PE_SkillActionActor.cpp`, `Private/Components/ACSkillComponent.cpp:428`
+
+---
+
+### 2-5. `TargetType` 분기 통합
+
+**작업** — `CommitQueuedSkill` 안에서 `Self` / `All_Enemies` / 그 외 분기가 회전 결정 · 대상 수집 · 총구 결정 세 곳에 반복된다. 대상 수집은 `FPEPhaseResolver`로 옮기고, 나머지는 분기 1회로 정리한다.
+
+**대상** — `Private/Components/ACSkillComponent.cpp`
+
+---
+
+### 2-6. `-999` 리터럴 교체
+
+**작업** — `FIntPoint(-999, -999)` 리터럴을 `PEGridMath::InvalidGridPos()`로 교체한다.
+
+**배경** — `PEGridMath::InvalidCoord = -999`와 `InvalidGridPos()`가 이미 있고 `ACSkillComponent.cpp`도 이를 사용하지만, 같은 파일 안에 리터럴이 5곳 남아 있다. 전역으로는 10곳이다.
+
+**대상** — `ACSkillComponent.cpp`(153, 283, 351, 359, 385, 405), `ACTargetingVisualizerComponent.cpp`(80, 133) 및 헤더(79), `PE_PlayerCharacter.cpp:74`, `ACGridMovementComponent.cpp:17`, `PE_PlayerController.cpp:534`
+
+**완료 기준** — `grep -rn "\-999" Source/`에서 `PE_GridMath.h`의 정의와 `PE_SkillData.cpp`의 `999999`(무관한 최소/최대 초기값)만 남는다.
 
 ---
 
@@ -292,7 +412,7 @@ FPETileElementState
 
 ### 4-3. 타일 속성 부여 모듈
 
-**작업** — `UPE_SkillEffect_ApplyTileElement` 추가. 단계 2에서 추가한 `AffectedPositions`를 사용한다.
+**작업** — `UPE_SkillEffect_ApplyTileElement` 추가. 단계 2-3에서 전달받는 `FPESkillPhasePlan::AffectedPositions`를 사용한다.
 
 **대상** — `Public/CardSystem/PE_SkillEffectModule.h`
 
@@ -391,7 +511,7 @@ FPESkillContext
 ├─ 손패 장수 / 덱 구성 / 버린 패 구성
 ├─ 이번 턴 사용한 카드 수
 ├─ 현재 턴 번호
-├─ 영향 타일 집합 (단계 2)
+├─ 영향 타일 집합 (단계 2-1의 FPESkillPhasePlan)
 ├─ 대상 타일의 속성 상태 (단계 4)
 └─ 대상 목록
 ```
