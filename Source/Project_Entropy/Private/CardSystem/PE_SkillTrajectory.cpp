@@ -40,15 +40,22 @@ namespace
 	}
 }
 
+bool FPESkillTrajectory::HasFlight(const FPESkillHitPhase& Phase)
+{
+	// 액터가 없으면 스폰되는 물체가 없고(UACSkillComponent가 즉발 경로로 보냄),
+	// 속도가 0이면 액터가 조준점에서 스폰되어 바로 터집니다(APE_SkillActionActor). 둘 다 비행이 없습니다.
+	return Phase.SkillActorClass != nullptr && Phase.ProjectileSpeed > 0.f;
+}
+
 bool FPESkillTrajectory::CanBeBlocked(const FPESkillHitPhase& Phase)
 {
-	// 스폰될 액터가 없으면 실제로 날아가는 물체가 없으므로 막힐 일도 없습니다.
-	return Phase.SkillActorClass != nullptr && Phase.ProjectileSpeed > 0.f && Phase.bDestroyOnHit;
+	// 실제로 날아가는 물체가 없으면 막힐 일도 없습니다.
+	return HasFlight(Phase) && Phase.bDestroyOnHit;
 }
 
 bool FPESkillTrajectory::IsPiercingProjectile(const FPESkillHitPhase& Phase)
 {
-	return Phase.SkillActorClass != nullptr && Phase.ProjectileSpeed > 0.f && !Phase.bDestroyOnHit;
+	return HasFlight(Phase) && !Phase.bDestroyOnHit;
 }
 
 FIntPoint FPESkillTrajectory::ClampLineTarget(const AACGridSystem* Grid, FIntPoint CasterPos, FIntPoint TargetPos, int32 BaseRange, const FPESkillHitPhase& Phase)
@@ -126,8 +133,8 @@ FPESkillTrajectoryResult FPESkillTrajectory::Sweep(const UWorld* World, const AA
 
 	if (!World) return Result;
 
-	// 투사체가 아니면(즉발/근접) 총구에서 조준점까지 직선 한 구간으로 끝냅니다.
-	if (Phase.ProjectileSpeed <= 0.f)
+	// 날아가는 투사체가 없으면(즉발/근접) 총구에서 조준점까지 직선 한 구간으로 끝냅니다.
+	if (!HasFlight(Phase))
 	{
 		Result.PathPoints.Add(Aim.WorldLocation);
 		return Result;

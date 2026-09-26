@@ -101,6 +101,13 @@ struct FPESkillTrajectoryResult
 struct PROJECT_ENTROPY_API FPESkillTrajectory
 {
 	/**
+	 * 이 페이즈에 '실제로 날아가는' 투사체가 있는지 판정합니다.
+	 * 스폰될 액터가 있고(SkillActorClass) 속도가 있을 때만 참이며, 둘 중 하나라도 없으면 조준점에서 즉시 터지는 즉발입니다.
+	 * 막힘 / 관통 / 궤적 표시가 모두 이 정의를 따르므로 판정 기준은 여기 한 곳에만 둡니다.
+	 */
+	static bool HasFlight(const FPESkillHitPhase& Phase);
+
+	/**
 	 * 이 페이즈가 '날아가다 도중에 막힐 수 있는' 투사체인지 판정합니다.
 	 * 실제로 스폰되는 액터가 있고(SkillActorClass), 속도가 있고, 관통이 아닐 때만 참입니다.
 	 * 서버 판정과 클라 예측이 반드시 같은 기준으로 막힘을 처리해야 하므로 여기 한 곳에만 둡니다.

@@ -154,7 +154,7 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 
 			if (PhaseTrajectories.IsEmpty())
 			{
-				// 페이즈가 아예 없는 스킬은 투사체가 없는 셈이므로 시전자 -> 조준점 직선만 그립니다.
+				// 페이즈가 아예 없는 스킬도 착탄 칸(ActualTargetPos)은 필요하므로 투사체 없는 페이즈로 한 번 풉니다.
 				FPESkillHitPhase FallbackPhase;
 				FallbackPhase.ProjectileSpeed = 0.f;
 				PhaseTrajectories.Add(FPESkillTrajectory::Solve(
@@ -166,11 +166,23 @@ void UACTargetingVisualizerComponent::RefreshVisuals()
 			const FIntPoint ActualTargetPos = RepTrajectory.EndGridPos;
 			const FVector FinalEndLoc = RepTrajectory.EndLocation;
 
-			for (const FVector& PathPoint : RepTrajectory.PathPoints)
+			/*
+				궤적 화살표와 착탄 구체는 실제로 날아가는 투사체가 있을 때만 그립니다.
+				즉발 페이즈는 조준점에서 바로 터지므로 칠해진 범위 타일만으로 충분하고,
+				화살표를 그리면 없는 투사체가 날아가는 것처럼 보입니다.
+				(아래 착탄 구체와 화살표 메쉬 생성은 모두 스플라인 점이 2개 이상일 때만 동작합니다)
+			*/
+			const bool bDrawTrajectory = RepSkillData->HitPhases.Num() > 0
+				&& FPESkillTrajectory::HasFlight(RepSkillData->HitPhases[0]);
+
+			if (bDrawTrajectory)
 			{
-				TrajectorySpline->AddSplinePoint(PathPoint, ESplineCoordinateSpace::World, false);
+				for (const FVector& PathPoint : RepTrajectory.PathPoints)
+				{
+					TrajectorySpline->AddSplinePoint(PathPoint, ESplineCoordinateSpace::World, false);
+				}
+				TrajectorySpline->UpdateSpline();
 			}
-			TrajectorySpline->UpdateSpline();
 
 			// --- [예측 결과 렌더링: 착탄 지점 구체 생성] ---
 			if (ImpactSphereMesh && ImpactSphereMaterial && TrajectorySpline->GetNumberOfSplinePoints() > 1)
